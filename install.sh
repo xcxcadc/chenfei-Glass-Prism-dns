@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REPO="mslxi/Liquid-Glass-Prism-dns"
+REPO="${PRISM_UPSTREAM_REPO:-mslxi/Liquid-Glass-Prism-dns}"
 INSTALL_DIR="/opt/prism"
 SERVICE_NAME="prism-controller"
 BINARY_NAME="prism-controller"

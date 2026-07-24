@@ -1,14 +1,14 @@
-# Liquid Glass Prism Gateway
+# chenfei Glass Prism DNS
+
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, and connectivity tests. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
 [中文](README.md) | English
 
-## 🌐 Live Demo
+## 🌐 Project Notes
 
-**Try it now**: [https://prism.ciii.club](https://prism.ciii.club)
-
-> No installation required, experience all features instantly
+The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrates the original Controller. Deploy this fork to use the enhanced UI and routing features.
 
 ## 💬 Join the Community
 
@@ -25,6 +25,11 @@ Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing manageme
 - **Dual-Stack IPv4/IPv6** - Full support for both protocols
 - **Real-time Monitoring** - SSE-based live node status updates
 - **Modern UI** - Liquid Glass design with dark mode support
+- **Chinese Enhanced UI** - Simplified Chinese by default, with English and theme switching
+- **Detailed Service Catalog** - Dynamically parses `stream.smartdns.list` into 170+ service entries
+- **Custom Services** - Add, edit, and delete arbitrary service names and domain lists in the UI
+- **Per-Service Routing** - Bind each service on each DNS client to any proxy agent, or restore Smart/Fallback selection
+- **Connectivity Tests** - Combines native Agent unlock checks with generic DNS/TLS tests
 
 ### Routing Modes
 
@@ -96,22 +101,27 @@ Automatically detect unlock status for the following services:
 ### One-Click Install (Recommended)
 
 ```bash
-curl -sL https://raw.githubusercontent.com/mslxi/Liquid-Glass-Prism-dns/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/enhanced_install.sh | sudo bash
 ```
 
-The script provides the following options:
-- **1. Install** - Fresh installation, displays login password upon completion
-- **2. Upgrade** - Upgrade to latest version, preserves configuration
-- **3. Uninstall** - Complete removal with data cleanup
+Custom ports:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/enhanced_install.sh \
+  | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
+```
+
+The script installs or upgrades the upstream Controller and this fork's enhancer, backing up `data.db` before upgrades.
 
 After installation:
 - Web UI: `http://YOUR_IP:PORT`
 - Username: `admin`
 - Password: Displayed after installation
+- Custom service data: `/var/lib/prism-enhancer/custom-services.json`
 
 ### Manual Installation
 
-Download the binary for your platform from [Releases](https://github.com/mslxi/Liquid-Glass-Prism-dns/releases).
+Controller and Agent binaries come from the [upstream releases](https://github.com/mslxi/Liquid-Glass-Prism-dns/releases). Enhancer binaries come from [this fork's releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases). The one-click installer is recommended.
 
 ```bash
 # Download
@@ -132,7 +142,7 @@ cd /opt/prism && ./prism-controller --host 0.0.0.0 --port 8080
 Install Agent on node servers:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/mslxi/Liquid-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
+curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
 ```
 
 **Parameters**:

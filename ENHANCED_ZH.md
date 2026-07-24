@@ -2,6 +2,9 @@
 
 本 Fork 在原 Controller 前增加一个独立、可审计的增强层。原 Controller 和 Agent 仍使用上游发布的二进制，增强层负责简体中文界面、服务级路由、自定义域名、动态规则集和连通性测试。
 
+- 仓库：[xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns)
+- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)
+
 ## 主要能力
 
 - 默认简体中文，可随时切换英文和深浅主题。

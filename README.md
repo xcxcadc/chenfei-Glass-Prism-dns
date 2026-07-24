@@ -1,16 +1,14 @@
-# Liquid Glass Prism Gateway
+# chenfei Glass Prism DNS
 
-> 本 Fork 新增简体中文增强层、自定义服务域名、服务级解锁机切换及连通性测试。详见 [ENHANCED_ZH.md](ENHANCED_ZH.md)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换和连通性测试。完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，当前增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
 [English](README_EN.md) | 中文
 
-## 🌐 快速体验
+## 🌐 项目说明
 
-**在线演示**: [https://prism.ciii.club](https://prism.ciii.club)
-
-> 无需安装，直接体验完整功能
+上游在线演示 [prism.ciii.club](https://prism.ciii.club) 仅用于了解原始 Controller；本 Fork 的中文增强功能需按下方命令部署。
 
 ## 💬 加入讨论
 
@@ -27,6 +25,11 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **双栈 IPv4/IPv6** - 完整支持双协议
 - **实时监控** - 基于 SSE 的节点状态实时更新
 - **现代 UI** - Liquid Glass 设计风格，支持深色模式
+- **简体中文增强界面** - 默认中文，可切换英文和深浅主题
+- **细化服务域名库** - 动态解析 `stream.smartdns.list`，当前可拆分 170+ 服务条目
+- **自定义服务** - 可在前端新增、编辑、删除任意服务名称与域名
+- **服务级切换** - 每个 DNS 节点可将每项服务绑定到任意解锁机，并恢复 Smart/Fallback 自动选择
+- **通用连通性测试** - 同时提供 Agent 原生解锁检测和 DNS/TLS 测试
 
 ### 路由模式
 
@@ -98,22 +101,27 @@ flowchart LR
 ### 一键安装 (推荐)
 
 ```bash
-wget -O install.sh https://raw.githubusercontent.com/mslxi/Liquid-Glass-Prism-dns/main/install.sh && sudo bash install.sh
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/enhanced_install.sh | sudo bash
 ```
 
-脚本提供以下选项：
-- **1. 安装** - 首次安装，完成后显示登录密码
-- **2. 升级** - 升级到最新版本，保留配置
-- **3. 卸载** - 完全卸载并清理数据
+自定义端口：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/enhanced_install.sh \
+  | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
+```
+
+脚本会安装或升级上游 Controller 和本 Fork 的中文增强层，升级前自动备份 `data.db`。
 
 安装完成后：
 - Web 界面：`http://你的IP:端口`
 - 用户名：`admin`
 - 密码：安装完成时显示
+- 自定义服务数据：`/var/lib/prism-enhancer/custom-services.json`
 
 ### 手动安装
 
-从 [Releases](https://github.com/mslxi/Liquid-Glass-Prism-dns/releases) 下载对应平台的二进制文件。
+Controller/Agent 二进制由[上游 Releases](https://github.com/mslxi/Liquid-Glass-Prism-dns/releases) 提供；中文增强层由[本 Fork Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases) 提供。通常建议直接使用上面的一键安装命令。
 
 ```bash
 # 下载
@@ -134,7 +142,7 @@ cd /opt/prism && ./prism-controller --host 0.0.0.0 --port 8080
 在节点服务器上安装 Agent：
 
 ```bash
-curl -sL https://raw.githubusercontent.com/mslxi/Liquid-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master <Controller地址> --secret <节点密钥>
+curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master <Controller地址> --secret <节点密钥>
 ```
 
 **参数说明**:

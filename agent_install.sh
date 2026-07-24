@@ -2,11 +2,12 @@
 
 set -e
 
-REPO="mslxi/Liquid-Glass-Prism-dns"
+SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
+REPO="${PRISM_AGENT_REPO:-mslxi/Liquid-Glass-Prism-dns}"
 BINARY_NAME="prism-agent"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"
-SCRIPT_URL="https://raw.githubusercontent.com/${REPO}/main/agent_install.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/${SCRIPT_REPO}/main/agent_install.sh"
 CUSTOM_IP=""
 
 RED='\033[0;31m'
@@ -288,7 +289,7 @@ show_banner() {
     echo ""
     echo -e "${BLUE}╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║       Liquid Glass Prism Agent Installer         ║${NC}"
-    echo -e "${BLUE}║       github.com/mslxi/Liquid-Glass-Prism-dns    ║${NC}"
+    echo -e "${BLUE}║      github.com/xcxcadc/chenfei-Glass-Prism-dns  ║${NC}"
     echo -e "${BLUE}╚══════════════════════════════════════════════════╝${NC}"
     echo ""
 }
