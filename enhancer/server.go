@@ -22,6 +22,7 @@ var embeddedWeb embed.FS
 type App struct {
 	catalog   *CatalogManager
 	store     *CustomServiceStore
+	ipStore   *IPConfigStore
 	upstream  *url.URL
 	proxy     *httputil.ReverseProxy
 	client    *http.Client
@@ -29,7 +30,7 @@ type App struct {
 	indexHTML []byte
 }
 
-func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceStore, client *http.Client) (*App, error) {
+func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceStore, ipStore *IPConfigStore, client *http.Client) (*App, error) {
 	upstream, err := url.Parse(upstreamURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse upstream URL: %w", err)
@@ -51,6 +52,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 	return &App{
 		catalog:   catalog,
 		store:     store,
+		ipStore:   ipStore,
 		upstream:  upstream,
 		proxy:     proxy,
 		client:    client,
@@ -66,6 +68,11 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/custom-services", app.handleCustomServices)
 	mux.HandleFunc("/enhancer/api/custom-services/", app.handleCustomService)
 	mux.HandleFunc("/enhancer/api/connectivity", app.handleConnectivity)
+	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
+	mux.HandleFunc("/enhancer/api/ip-configs/", app.handleIPConfig)
+	mux.HandleFunc("/enhancer/api/bootstrap/", app.handleBootstrap)
+	mux.HandleFunc("/enhancer/api/traffic/report", app.handleTrafficReport)
+	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)
 	mux.HandleFunc("/enhancer/rules/", app.handleRuleSet)
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(app.web))))
 	mux.HandleFunc("/", app.handleRoot)

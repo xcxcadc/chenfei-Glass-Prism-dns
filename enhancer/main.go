@@ -23,8 +23,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize custom service store: %v", err)
 	}
+	ipStore, err := NewIPConfigStore(filepath.Join(*dataDir, "ip-configs.json"))
+	if err != nil {
+		log.Fatalf("initialize IP config store: %v", err)
+	}
 	catalog := NewCatalogManager(*catalogURL, client, store)
-	app, err := NewApp(*upstream, catalog, store, client)
+	app, err := NewApp(*upstream, catalog, store, ipStore, client)
 	if err != nil {
 		log.Fatalf("initialize server: %v", err)
 	}

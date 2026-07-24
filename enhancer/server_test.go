@@ -29,7 +29,8 @@ func TestRuleSetHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	catalog := NewCatalogManager("http://127.0.0.1:1/unavailable", upstream.Client(), store)
-	app, err := NewApp(upstream.URL, catalog, store, upstream.Client())
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, err := NewApp(upstream.URL, catalog, store, ipStore, upstream.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +59,8 @@ func TestCustomServiceWriteRequiresAuthentication(t *testing.T) {
 
 	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
 	catalog := NewCatalogManager("http://127.0.0.1:1/unavailable", upstream.Client(), store)
-	app, _ := NewApp(upstream.URL, catalog, store, upstream.Client())
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, _ := NewApp(upstream.URL, catalog, store, ipStore, upstream.Client())
 	body := `{"name":"Private","domains":["example.com"]}`
 
 	unauthorized := httptest.NewRequest(http.MethodPost, "/enhancer/api/custom-services", strings.NewReader(body))

@@ -1,7 +1,7 @@
 const translations = {
   zh: {
     title: "Prism DNS 中文增强版", online: "控制器已连接", loginTitle: "登录 Prism Gateway", loginHint: "使用 Controller 管理员账号登录",
-    username: "用户名", password: "密码", login: "登录", loggingIn: "正在登录...", services: "服务编排", nodes: "节点管理",
+    username: "用户名", password: "密码", login: "登录", loggingIn: "正在登录...", services: "服务编排", nodes: "节点管理", ipConfigs: "IP 配置",
     search: "搜索服务或域名", allCategories: "全部分类", dnsClient: "DNS 节点", selectDNS: "请选择 DNS 节点", addService: "新增服务",
     addNode: "新增节点", refresh: "刷新", logout: "退出", totalServices: "服务数量", configured: "已配置", proxyNodes: "解锁机",
     customServices: "自定义服务", notConfigured: "未配置", auto: "自动选择", manual: "手动", open: "配置", domains: "域名",
@@ -9,15 +9,19 @@ const translations = {
     connectivity: "连通性测试", testing: "正在测试...", triggerUnlock: "运行解锁检测", customEdit: "编辑服务", customDelete: "删除服务",
     serviceName: "服务名称", category: "分类", domainList: "域名列表", save: "保存", cancel: "取消", deleteConfirm: "确认删除这个自定义服务？",
     nodeName: "节点名称", role: "节点类型", proxy: "解锁机", dns: "DNS 客户端", address: "连接 IP / DNS 地址", country: "地区",
-    group: "分组", priority: "优先级", smartMode: "智能模式", createNode: "创建节点", installCommand: "Agent 安装命令",
+    group: "分组", priority: "优先级", smartMode: "智能模式", standardMode: "标准模式", createNode: "创建节点", editNode: "编辑节点", deleteNode: "删除节点", installCommand: "Agent 安装命令", showInstallCommand: "安装命令",
+    nextStep: "下一步", back: "上一步", copy: "复制命令", copied: "已复制", close: "关闭", nodeHint: "支持字母、数字和空格；点、短横线、下划线会自动转换为空格。", groupHint: "支持字母、数字、空格和逗号；其他分隔符会自动转换为空格。",
+    nameRequired: "请输入节点名称", nameInvalid: "节点名称只能包含字母、数字和空格", nameTooLong: "节点名称不能超过 64 个字符", groupInvalid: "分组只能包含字母、数字、空格和逗号", groupTooLong: "分组不能超过 64 个字符", addressInvalid: "连接地址必须是有效的 IPv4 或 IPv6 地址", priorityInvalid: "优先级必须在 1 到 100 之间", deleteNodeConfirm: "确定删除这个节点吗？此操作不可撤销。",
     noDNS: "尚未创建 DNS 节点", noProxy: "尚未添加解锁机", noServices: "没有匹配的服务", sourceUpdated: "名单更新时间",
     supported: "解锁成功", unavailable: "不可用", unknown: "未检测", active: "正在使用", manualOffline: "手动目标离线", ruleCreated: "服务规则已创建",
     saved: "保存成功", deleted: "删除成功", switched: "切换成功", resetDone: "已恢复自动选择", testDone: "测试完成", failed: "操作失败",
     catalogRefresh: "同步域名名单", sourceList: "细化域名库", theme: "切换主题", language: "English", originalStatus: "原生检测",
+    addIP: "添加 IP", editIP: "配置服务", targetIP: "目标 IP", note: "备注", defaultProxy: "默认解锁机", chooseServices: "选择服务", selectedServices: "已选服务", clientScript: "客户端脚本", runScriptHint: "在目标服务器以 root 身份执行，脚本会安装 DNS Agent、测试本机 DNS，并可接管或恢复系统 DNS。", noIPConfigs: "尚未添加 IP 配置", ipDeleteConfirm: "删除该 IP 配置及其 DNS 节点？", saveConfig: "保存配置", scriptCommand: "一键配置命令",
+    totalTraffic: "全体流量", clientTraffic: "客户端网卡流量", clearTraffic: "清零流量", clearAllTraffic: "全部清零", trafficHint: "统计目标服务器默认网卡的 RX/TX 增量，每分钟更新。", trafficUpdated: "流量更新时间",
   },
   en: {
     title: "Prism DNS Enhanced", online: "Controller connected", loginTitle: "Sign in to Prism Gateway", loginHint: "Use your Controller administrator account",
-    username: "Username", password: "Password", login: "Sign in", loggingIn: "Signing in...", services: "Service Routing", nodes: "Nodes",
+    username: "Username", password: "Password", login: "Sign in", loggingIn: "Signing in...", services: "Service Routing", nodes: "Nodes", ipConfigs: "IP Configs",
     search: "Search services or domains", allCategories: "All categories", dnsClient: "DNS client", selectDNS: "Select a DNS client", addService: "Add service",
     addNode: "Add node", refresh: "Refresh", logout: "Sign out", totalServices: "Services", configured: "Configured", proxyNodes: "Proxy nodes",
     customServices: "Custom services", notConfigured: "Not configured", auto: "Automatic", manual: "Manual", open: "Configure", domains: "Domains",
@@ -25,11 +29,15 @@ const translations = {
     connectivity: "Connectivity test", testing: "Testing...", triggerUnlock: "Run unlock check", customEdit: "Edit service", customDelete: "Delete service",
     serviceName: "Service name", category: "Category", domainList: "Domain list", save: "Save", cancel: "Cancel", deleteConfirm: "Delete this custom service?",
     nodeName: "Node name", role: "Node role", proxy: "Proxy agent", dns: "DNS client", address: "Connect IP / DNS address", country: "Region",
-    group: "Group", priority: "Priority", smartMode: "Smart mode", createNode: "Create node", installCommand: "Agent install command",
+    group: "Group", priority: "Priority", smartMode: "Smart mode", standardMode: "Standard mode", createNode: "Create node", editNode: "Edit node", deleteNode: "Delete node", installCommand: "Agent install command", showInstallCommand: "Install command",
+    nextStep: "Next step", back: "Back", copy: "Copy command", copied: "Copied", close: "Close", nodeHint: "Use letters, numbers, and spaces; dots, hyphens, and underscores become spaces.", groupHint: "Use letters, numbers, spaces, and commas; other separators become spaces.",
+    nameRequired: "Node name is required", nameInvalid: "Node name may contain letters, numbers, and spaces only", nameTooLong: "Node name must be 64 characters or fewer", groupInvalid: "Group may contain letters, numbers, spaces, and commas only", groupTooLong: "Group must be 64 characters or fewer", addressInvalid: "Connect address must be a valid IPv4 or IPv6 address", priorityInvalid: "Priority must be between 1 and 100", deleteNodeConfirm: "Delete this node? This action cannot be undone.",
     noDNS: "No DNS client has been created", noProxy: "No proxy agent has been added", noServices: "No matching services", sourceUpdated: "Catalog updated",
     supported: "Unlocked", unavailable: "Unavailable", unknown: "Not checked", active: "Active", manualOffline: "Manual target offline", ruleCreated: "Service rule created",
     saved: "Saved", deleted: "Deleted", switched: "Switched", resetDone: "Automatic selection restored", testDone: "Test completed", failed: "Operation failed",
     catalogRefresh: "Sync domain catalog", sourceList: "Detailed domain catalog", theme: "Toggle theme", language: "简体中文", originalStatus: "Native check",
+    addIP: "Add IP", editIP: "Configure services", targetIP: "Target IP", note: "Note", defaultProxy: "Default proxy", chooseServices: "Choose services", selectedServices: "Selected services", clientScript: "Client script", runScriptHint: "Run as root on the target server. The script installs the DNS Agent, tests local DNS, and can take over or restore system DNS.", noIPConfigs: "No IP configuration yet", ipDeleteConfirm: "Delete this IP configuration and its DNS node?", saveConfig: "Save configuration", scriptCommand: "One-click command",
+    totalTraffic: "Total traffic", clientTraffic: "Client interface traffic", clearTraffic: "Clear traffic", clearAllTraffic: "Clear all", trafficHint: "Counts RX/TX deltas on each target server's default interface and updates every minute.", trafficUpdated: "Traffic updated",
   }
 };
 
@@ -52,7 +60,7 @@ const state = {
   user: JSON.parse(localStorage.getItem("prism_user") || "{}"),
   lang: localStorage.getItem("enhancer_lang") || "zh",
   theme: localStorage.getItem("prism_theme") || "dark",
-  tab: "services", nodes: [], rules: [], catalog: [], catalogMeta: {}, dnsNodeId: localStorage.getItem("enhancer_dns") || "",
+  tab: "services", nodes: [], rules: [], catalog: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
   overrides: {}, activeSelections: {}, search: "", category: "", loading: false, modal: null, testResults: null
 };
 
@@ -121,6 +129,7 @@ function serviceStatus(service, node) {
 function iconFor(service) { return service.custom ? "✚" : serviceIcons[Math.abs(hashCode(service.id)) % serviceIcons.length]; }
 function hashCode(value) { return Array.from(value).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0); }
 function formatDate(value) { if (!value) return "-"; try { return new Date(value).toLocaleString(state.lang === "zh" ? "zh-CN" : "en-US"); } catch { return value; } }
+function formatBytes(value) { const bytes = Number(value) || 0; if (bytes < 1024) return `${bytes} B`; const units = ["KB", "MB", "GB", "TB"]; let size = bytes; let unit = -1; do { size /= 1024; unit++; } while (size >= 1024 && unit < units.length - 1); return `${size >= 100 ? size.toFixed(0) : size.toFixed(2)} ${units[unit]}`; }
 function displayCategory(value) { return state.lang === "zh" ? categoryNames[value] || value : value; }
 function isOnline(node) { if (!node.last_heartbeat) return false; return Date.now() - new Date(node.last_heartbeat).getTime() < 90000; }
 
@@ -159,26 +168,34 @@ async function login(event) {
 
 function logout(callAPI = true) {
   if (callAPI && state.token) fetch("/api/logout", {method:"POST", headers:{Authorization:`Bearer ${state.token}`}}).catch(() => {});
-  state.token = ""; state.user = {}; state.nodes = []; state.rules = [];
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  clearTimeout(reloadTimer);
+  state.token = ""; state.user = {}; state.nodes = []; state.rules = []; state.ipConfigs = [];
   localStorage.removeItem("prism_token"); localStorage.removeItem("prism_user");
   render();
 }
 
 async function loadAll(silent = false) {
   if (!state.token) return render();
-  state.loading = !silent; render();
+  state.loading = !silent;
+  if (!silent) render();
   try {
-    const [nodes, rules, catalog] = await Promise.all([api("/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog")]);
+    const [nodes, rules, catalog, ipConfigs] = await Promise.all([api("/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs")]);
     state.nodes = Array.isArray(nodes) ? nodes : [];
     state.rules = Array.isArray(rules) ? rules : [];
     state.catalog = catalog.services || [];
     state.catalogMeta = catalog;
+    state.ipConfigs = Array.isArray(ipConfigs) ? ipConfigs : [];
     if (!dnsNodes().some(node => nodeID(node.id) === nodeID(state.dnsNodeId))) state.dnsNodeId = dnsNodes()[0]?.id || "";
     localStorage.setItem("enhancer_dns", nodeID(state.dnsNodeId));
     await loadRoutingState();
     connectSSE();
   } catch (error) { toast(error.message, "error"); }
-  finally { state.loading = false; render(); }
+  finally {
+    state.loading = false;
+    const preserveDraft = silent && ["service-form", "node-form", "ip-form"].includes(state.modal?.type);
+    if (!preserveDraft) render();
+  }
 }
 
 async function loadRoutingState() {
@@ -218,13 +235,25 @@ function loginHTML() {
 }
 function bindLogin() { document.getElementById("login-form").addEventListener("submit", login); }
 
+function toolbarActionsHTML() {
+  if (state.tab === "services") return `<button class="btn" id="refresh-catalog">↻ ${t("catalogRefresh")}</button><button class="btn primary" id="add-service">＋ ${t("addService")}</button>`;
+  if (state.tab === "nodes") return `<button class="btn primary" id="add-node">＋ ${t("addNode")}</button>`;
+  return `<button class="btn primary" id="add-ip">＋ ${t("addIP")}</button>`;
+}
+
+function activeContentHTML() {
+  if (state.tab === "services") return servicesHTML();
+  if (state.tab === "nodes") return nodesHTML();
+  return ipConfigsHTML();
+}
+
 function shellHTML() {
   return `<div class="shell"><header class="topbar"><div class="brand"><h1>${escapeHTML(t("title"))}</h1><div class="brand-meta"><span class="status-dot"></span><span>${escapeHTML(t("online"))}</span></div></div>
     <div class="top-actions"><button class="btn icon" id="theme-toggle" title="${t("theme")}">${state.theme === "light" ? "☾" : "☀"}</button>
     <button class="btn" id="lang-toggle">${t("language")}</button><span class="user-label">${escapeHTML(state.user.username || "admin")}</span><button class="btn icon danger" id="logout" title="${t("logout")}">↪</button></div></header>
-    <main class="container"><div class="toolbar"><div class="toolbar-left"><nav class="tabs"><button class="tab ${state.tab === "services" ? "active" : ""}" data-tab="services">${t("services")}</button><button class="tab ${state.tab === "nodes" ? "active" : ""}" data-tab="nodes">${t("nodes")}</button></nav></div>
-    <div class="toolbar-right">${state.tab === "services" ? `<button class="btn" id="refresh-catalog">↻ ${t("catalogRefresh")}</button><button class="btn primary" id="add-service">＋ ${t("addService")}</button>` : `<button class="btn primary" id="add-node">＋ ${t("addNode")}</button>`}<button class="btn icon" id="refresh" title="${t("refresh")}">↻</button></div></div>
-    ${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : state.tab === "services" ? servicesHTML() : nodesHTML()}</main></div>`;
+    <main class="container"><div class="toolbar"><div class="toolbar-left"><nav class="tabs"><button class="tab ${state.tab === "services" ? "active" : ""}" data-tab="services">${t("services")}</button><button class="tab ${state.tab === "nodes" ? "active" : ""}" data-tab="nodes">${t("nodes")}</button><button class="tab ${state.tab === "ips" ? "active" : ""}" data-tab="ips">${t("ipConfigs")}</button></nav></div>
+    <div class="toolbar-right">${toolbarActionsHTML()}<button class="btn icon" id="refresh" title="${t("refresh")}">↻</button></div></div>
+    ${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main></div>`;
 }
 
 function servicesHTML() {
@@ -264,7 +293,18 @@ function nodesHTML() {
     const online = isOnline(node); const unlock = parseUnlock(node); const values = Object.values(unlock).filter(Boolean); const successes = values.filter(value => String(value).startsWith("Yes")).length;
     return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${online ? "var(--good)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${online ? "good" : "bad"}">${online ? "ONLINE" : "OFFLINE"}</span></div>
       <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${t("originalStatus")}</span><strong>${successes}/${values.length}</strong></div></div>
-      <div class="inline" style="margin-top:14px"><button class="btn small node-test" data-node-id="${nodeID(node.id)}" ${node.role !== "proxy" ? "disabled" : ""}>${t("triggerUnlock")}</button></div></article>`;
+      <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button><button class="btn small node-test" data-node-id="${nodeID(node.id)}" ${node.role !== "proxy" ? "disabled" : ""}>${t("triggerUnlock")}</button><button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
+  }).join("")}</section>`;
+}
+
+function ipConfigNode(config) { return state.nodes.find(node => nodeID(node.id) === nodeID(config.dns_node_id)); }
+
+function ipConfigsHTML() {
+  if (!state.ipConfigs.length) return `<div class="panel empty"><strong>${t("noIPConfigs")}</strong><button class="btn primary" id="empty-add-ip">＋ ${t("addIP")}</button></div>`;
+  const totalTraffic = state.ipConfigs.reduce((total, config) => total + Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0), 0);
+  return `<section class="traffic-summary panel"><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small>${t("trafficHint")}</small></div><button class="btn danger" id="clear-all-traffic">${t("clearAllTraffic")}</button></section><section class="ip-list panel"><div class="ip-list-head"><span>${t("targetIP")}</span><span>${t("selectedServices")}</span><span>${t("clientTraffic")}</span><span>${t("dnsClient")}</span><span></span></div>${state.ipConfigs.map(config => {
+    const node = ipConfigNode(config); const online = isOnline(node); const count = Object.keys(config.routes || {}).length; const traffic = Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0);
+    return `<article class="ip-row" data-ip-id="${escapeHTML(config.id)}"><div class="ip-main"><strong>${escapeHTML(config.ip)}</strong><span>${escapeHTML(config.note || config.node_name || "-")}</span></div><div><span class="badge good">${count} / ${state.catalog.length}</span></div><div class="ip-traffic" title="RX ${formatBytes(config.traffic_rx_bytes)} · TX ${formatBytes(config.traffic_tx_bytes)}"><strong>${formatBytes(traffic)}</strong><span>${t("trafficUpdated")}: ${formatDate(config.traffic_updated_at)}</span></div><div class="ip-node-state"><span class="status-dot" style="background:${online ? "var(--good)" : "var(--bad)"}"></span><span>${online ? "ONLINE" : "OFFLINE"}</span></div><div class="ip-row-actions"><button class="btn small ip-script" data-ip-id="${escapeHTML(config.id)}">${t("clientScript")}</button><button class="btn small primary ip-edit" data-ip-id="${escapeHTML(config.id)}">${t("editIP")}</button><button class="btn small ip-clear-traffic" data-ip-id="${escapeHTML(config.id)}">${t("clearTraffic")}</button><button class="btn small danger ip-delete" data-ip-id="${escapeHTML(config.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
 
@@ -275,8 +315,10 @@ function bindShell() {
   document.getElementById("logout").onclick = () => logout(true);
   document.getElementById("refresh").onclick = () => loadAll();
   document.getElementById("add-service")?.addEventListener("click", () => openServiceForm());
-  document.getElementById("add-node")?.addEventListener("click", openNodeForm);
-  document.getElementById("empty-add-node")?.addEventListener("click", openNodeForm);
+  document.getElementById("add-node")?.addEventListener("click", () => openNodeForm());
+  document.getElementById("add-ip")?.addEventListener("click", () => openIPForm());
+  document.getElementById("empty-add-ip")?.addEventListener("click", () => openIPForm());
+  document.getElementById("empty-add-node")?.addEventListener("click", () => openNodeForm());
   document.getElementById("refresh-catalog")?.addEventListener("click", refreshCatalog);
   document.getElementById("service-search")?.addEventListener("input", event => { state.search = event.target.value; render(); document.getElementById("service-search")?.focus(); });
   document.getElementById("category-filter")?.addEventListener("change", event => { state.category = event.target.value; render(); });
@@ -284,7 +326,15 @@ function bindShell() {
   document.getElementById("clear-filter")?.addEventListener("click", () => { state.search = ""; state.category = ""; render(); });
   document.querySelectorAll(".service-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openService(button.dataset.serviceId); }));
   document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openService(card.dataset.serviceId)));
-  document.querySelectorAll(".node-test").forEach(button => button.addEventListener("click", () => triggerNodeCheck(button.dataset.nodeId)));
+  document.querySelectorAll(".node-test").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); triggerNodeCheck(button.dataset.nodeId); }));
+  document.querySelectorAll(".node-install").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openInstallCommand(button.dataset.nodeId); }));
+  document.querySelectorAll(".node-edit").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openNodeForm(state.nodes.find(node => nodeID(node.id) === nodeID(button.dataset.nodeId))); }));
+  document.querySelectorAll(".node-delete").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openDeleteNode(button.dataset.nodeId); }));
+  document.querySelectorAll(".ip-edit").forEach(button => button.addEventListener("click", () => openIPForm(state.ipConfigs.find(config => config.id === button.dataset.ipId))));
+  document.querySelectorAll(".ip-script").forEach(button => button.addEventListener("click", () => openIPScript(button.dataset.ipId)));
+  document.querySelectorAll(".ip-delete").forEach(button => button.addEventListener("click", () => openIPDelete(button.dataset.ipId)));
+  document.querySelectorAll(".ip-clear-traffic").forEach(button => button.addEventListener("click", () => clearTraffic(button.dataset.ipId)));
+  document.getElementById("clear-all-traffic")?.addEventListener("click", clearAllTraffic);
 }
 
 async function refreshCatalog() {
@@ -293,7 +343,47 @@ async function refreshCatalog() {
 
 function openService(id) { const service = state.catalog.find(item => item.id === id); if (!service) return; state.modal = {type:"service", service, proxyId:nodeID(activeNodeFor(serviceRule(service))?.id)}; state.testResults = null; renderModal(); }
 function openServiceForm(service = null) { state.modal = {type:"service-form", service}; renderModal(); }
-function openNodeForm() { state.modal = {type:"node-form"}; renderModal(); }
+function randomSecret() { return Math.random().toString(36).slice(-8); }
+function emptyNodeDraft() { return {id:"", name:"", role:"proxy", public_ip:"", country:"", group:"", priority:1, secret:randomSecret()}; }
+function openNodeForm(node = null) {
+  const draft = node ? {...node, public_ip:node.public_ip || "", group:node.group || "", priority:node.priority || 1} : emptyNodeDraft();
+  state.modal = {type:"node-form", node:node ? {...node} : null, draft, step:node ? 1 : 1, smartMode:node?.smart ? "smart" : "standard", error:""};
+  renderModal();
+}
+function openDeleteNode(id) {
+  const node = state.nodes.find(item => nodeID(item.id) === nodeID(id));
+  if (!node) return;
+  state.modal = {type:"node-delete", node};
+  renderModal();
+}
+function openInstallCommand(id) {
+  const node = state.nodes.find(item => nodeID(item.id) === nodeID(id));
+  if (!node) return;
+  const smartMode = node.role === "dns" && (node.smart === true || String(node.smart).toLowerCase() === "true") ? "smart" : "standard";
+  state.modal = {type:"install-command", node, command:installCommand(node, smartMode)};
+  renderModal();
+}
+function openIPForm(config = null) {
+  const routes = {...(config?.routes || {})};
+  const defaultProxy = Object.values(routes)[0] || nodeID(proxyNodes()[0]?.id);
+  state.modal = {type:"ip-form", config, step:1, draft:{ip:config?.ip || "", note:config?.note || "", smart:config?.smart !== false}, routes, defaultProxy, serviceSearch:"", error:""};
+  renderModal();
+}
+function ipScriptCommand(config) {
+  return `wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click`;
+}
+function openIPScript(id) {
+  const config = state.ipConfigs.find(item => item.id === id);
+  if (!config) return;
+  state.modal = {type:"ip-script", config, command:ipScriptCommand(config)};
+  renderModal();
+}
+function openIPDelete(id) {
+  const config = state.ipConfigs.find(item => item.id === id);
+  if (!config) return;
+  state.modal = {type:"ip-delete", config};
+  renderModal();
+}
 function closeModal() { state.modal = null; state.testResults = null; renderModal(); }
 
 function renderModal() {
@@ -302,6 +392,11 @@ function renderModal() {
   if (state.modal.type === "service") root.innerHTML = serviceModalHTML(state.modal.service);
   if (state.modal.type === "service-form") root.innerHTML = serviceFormHTML(state.modal.service);
   if (state.modal.type === "node-form") root.innerHTML = nodeFormHTML();
+  if (state.modal.type === "install-command") root.innerHTML = installCommandHTML();
+  if (state.modal.type === "node-delete") root.innerHTML = nodeDeleteHTML();
+  if (state.modal.type === "ip-form") root.innerHTML = ipFormHTML();
+  if (state.modal.type === "ip-script") root.innerHTML = ipScriptHTML();
+  if (state.modal.type === "ip-delete") root.innerHTML = ipDeleteHTML();
   bindModal();
 }
 
@@ -331,14 +426,55 @@ function serviceFormHTML(service) {
 }
 
 function nodeFormHTML() {
-  return `<div class="modal-backdrop"><form class="modal medium panel" id="node-form"><header class="modal-head"><div><h2>${t("addNode")}</h2></div><button class="btn icon modal-close" type="button">×</button></header>
-    <div class="modal-body form-stack"><div class="field"><label>${t("nodeName")}</label><input class="input" name="name" required maxlength="32"></div>
-    <div class="field"><label>${t("role")}</label><select class="select" name="role"><option value="proxy">${t("proxy")}</option><option value="dns">${t("dns")}</option></select></div>
-    <div class="field"><label>${t("address")}</label><input class="input" name="public_ip" placeholder="203.0.113.10"></div>
-    <div class="field"><label>${t("country")}</label><input class="input" name="country" placeholder="SG / JP / US"></div>
-    <div class="field"><label>${t("group")}</label><input class="input" name="group" value="unlock-all"></div>
-    <div class="field"><label>${t("priority")}</label><input class="input" type="number" name="priority" min="1" max="100" value="50"></div></div>
-    <footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit">${t("createNode")}</button></div></footer></form></div>`;
+  const modal = state.modal; const draft = modal.draft || emptyNodeDraft(); const editing = !!modal.node;
+  if (!editing && modal.step === 2) {
+    return `<div class="modal-backdrop"><form class="modal medium panel" id="node-form"><header class="modal-head"><div><h2>${t("createNode")}</h2><p>${t("nextStep")}</p></div><button class="btn icon modal-close" type="button">×</button></header>
+      <div class="modal-body form-stack"><div class="node-summary"><strong>${escapeHTML(draft.name)}</strong><span>${draft.role === "proxy" ? t("proxy") : t("dns")} · ${escapeHTML(draft.public_ip || "-")}</span><span>${escapeHTML(draft.group || "-")} · ${t("priority")} ${draft.priority}</span></div>
+      ${draft.role === "dns" ? `<div class="field"><label>${t("smartMode")}</label><select class="select" name="smart_mode"><option value="standard" ${modal.smartMode !== "smart" ? "selected" : ""}>${t("standardMode")}</option><option value="smart" ${modal.smartMode === "smart" ? "selected" : ""}>${t("smartMode")}</option></select><span class="hint">DNS Agent</span></div>` : ""}
+      <div class="form-error">${escapeHTML(modal.error || "")}</div></div>
+      <footer class="modal-foot"><button class="btn" id="node-back" type="button">${t("back")}</button><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit">${t("createNode")}</button></div></footer></form></div>`;
+  }
+  return `<div class="modal-backdrop"><form class="modal medium panel" id="node-form"><header class="modal-head"><div><h2>${editing ? t("editNode") : t("addNode")}</h2><p>${editing ? t("nodes") : t("nextStep")}</p></div><button class="btn icon modal-close" type="button">×</button></header>
+    <div class="modal-body form-stack"><div class="field"><label>${t("nodeName")}</label><input class="input" name="name" value="${escapeHTML(draft.name || "")}" placeholder="Tokyo Server 01" required maxlength="64" autocomplete="off"><span class="hint">${t("nodeHint")}</span></div>
+    <div class="field"><label>${t("role")}</label><div class="segmented node-role-toggle"><button type="button" class="segment ${draft.role === "proxy" ? "active" : ""}" data-node-role="proxy">${t("proxy")}</button><button type="button" class="segment ${draft.role === "dns" ? "active" : ""}" data-node-role="dns">${t("dns")}</button></div><input type="hidden" name="role" value="${escapeHTML(draft.role || "proxy")}"></div>
+    <div class="field"><label>${t("address")}</label><input class="input" name="public_ip" value="${escapeHTML(draft.public_ip || "")}" placeholder="203.0.113.10 或 2001:db8::10" autocomplete="off"></div>
+    <div class="form-columns"><div class="field"><label>${t("country")}</label><input class="input" name="country" value="${escapeHTML(draft.country || "")}" placeholder="SG / JP / US"></div><div class="field"><label>${t("priority")}</label><input class="input" type="number" name="priority" min="1" max="100" value="${escapeHTML(draft.priority || 1)}"></div></div>
+    <div class="field"><label>${t("group")}</label><input class="input" name="group" value="${escapeHTML(draft.group || "")}" maxlength="64"><span class="hint">${t("groupHint")}</span></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div>
+    <footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit">${editing ? t("save") : t("nextStep")}</button></div></footer></form></div>`;
+}
+
+function installCommandHTML() {
+  const modal = state.modal;
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("installCommand")}</h2><p>${escapeHTML(modal.node?.name || "")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p class="hint">${state.lang === "zh" ? "请在目标节点服务器执行以下命令，Agent 连接后节点会自动变为在线。" : "Run this command on the target node. The node becomes online after the Agent connects."}</p><pre class="code" id="install-command">${escapeHTML(modal.command)}</pre></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn" id="copy-install-command" type="button">${t("copy")}</button><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
+}
+
+function nodeDeleteHTML() {
+  const node = state.modal.node;
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("deleteNode")}</h2><p>${escapeHTML(node.name)}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p>${t("deleteNodeConfirm")}</p></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn danger" id="confirm-delete-node" type="button">${t("deleteNode")}</button></div></footer></section></div>`;
+}
+
+function ipFormHTML() {
+  const modal = state.modal; const draft = modal.draft; const editing = !!modal.config; const proxies = proxyNodes();
+  if (modal.step === 1) {
+    return `<div class="modal-backdrop"><form class="modal medium panel" id="ip-form"><header class="modal-head"><div><h2>${editing ? t("editIP") : t("addIP")}</h2><p>${t("targetIP")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("targetIP")}</label><input class="input" name="ip" value="${escapeHTML(draft.ip)}" placeholder="203.0.113.10" ${editing ? "disabled" : ""} required></div><div class="field"><label>${t("note")}</label><input class="input" name="note" value="${escapeHTML(draft.note)}" maxlength="80"></div><div class="field"><label>${t("defaultProxy")}</label><select class="select" name="default_proxy" required><option value="">${t("noProxy")}</option>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)} · ${escapeHTML(node.country || node.public_ip || node.address || "-")}</option>`).join("")}</select></div><label class="toggle-row"><input type="checkbox" name="smart" ${draft.smart ? "checked" : ""}><span><strong>${t("smartMode")}</strong><small>DNS Client Agent</small></span></label><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${!proxies.length ? "disabled" : ""}>${t("nextStep")}</button></div></footer></form></div>`;
+  }
+  const query = modal.serviceSearch.trim().toLowerCase();
+  const services = state.catalog.filter(service => !query || `${service.name} ${service.category} ${service.domains.join(" ")}`.toLowerCase().includes(query));
+  const selectedCount = Object.keys(modal.routes).length;
+  return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} ${selectedCount}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}"><div class="ip-service-picker">${services.map(service => {
+    const selectedProxy = modal.routes[service.id] || ""; const checked = !!selectedProxy;
+    return `<article class="ip-service-option ${checked ? "selected" : ""}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}><span class="service-icon">${iconFor(service)}</span><span class="ip-service-name"><strong>${escapeHTML(state.lang === "zh" ? commonNames[service.name] || service.name : service.name)}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select></article>`;
+  }).join("")}</div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${!selectedCount ? "disabled" : ""}>${t("saveConfig")}</button></div></footer></form></div>`;
+}
+
+function ipScriptHTML() {
+  const modal = state.modal;
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("scriptCommand")}</h2><p>${escapeHTML(modal.config.ip)}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p class="hint">${t("runScriptHint")}</p><pre class="code" id="install-command">${escapeHTML(modal.command)}</pre></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn" id="copy-install-command" type="button">${t("copy")}</button><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
+}
+
+function ipDeleteHTML() {
+  const config = state.modal.config;
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("deleteNode")}</h2><p>${escapeHTML(config.ip)}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p>${t("ipDeleteConfirm")}</p></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn danger" id="confirm-delete-ip" type="button">${t("deleteNode")}</button></div></footer></section></div>`;
 }
 
 function bindModal() {
@@ -351,7 +487,24 @@ function bindModal() {
   document.getElementById("edit-custom")?.addEventListener("click", () => openServiceForm(state.modal.service));
   document.getElementById("delete-custom")?.addEventListener("click", deleteCustomService);
   document.getElementById("service-form")?.addEventListener("submit", saveCustomService);
-  document.getElementById("node-form")?.addEventListener("submit", createNode);
+  document.querySelectorAll("[data-node-role]").forEach(button => button.addEventListener("click", () => {
+    const form = document.getElementById("node-form"); form.querySelector('input[name="role"]').value = button.dataset.nodeRole;
+    document.querySelectorAll("[data-node-role]").forEach(item => item.classList.toggle("active", item === button));
+  }));
+  document.getElementById("node-back")?.addEventListener("click", () => { state.modal.step = 1; state.modal.error = ""; renderModal(); });
+  document.getElementById("node-form")?.addEventListener("submit", submitNodeForm);
+  document.getElementById("copy-install-command")?.addEventListener("click", copyInstallCommand);
+  document.getElementById("confirm-delete-node")?.addEventListener("click", deleteNode);
+  document.getElementById("ip-form")?.addEventListener("submit", submitIPForm);
+  document.getElementById("ip-back")?.addEventListener("click", () => { state.modal.step = 1; state.modal.error = ""; renderModal(); });
+  document.getElementById("ip-service-search")?.addEventListener("input", event => { state.modal.serviceSearch = event.target.value; renderModal(); document.getElementById("ip-service-search")?.focus(); });
+  document.querySelectorAll(".ip-service-check").forEach(input => input.addEventListener("change", () => {
+    if (input.checked) state.modal.routes[input.dataset.serviceId] = state.modal.defaultProxy;
+    else delete state.modal.routes[input.dataset.serviceId];
+    renderModal();
+  }));
+  document.querySelectorAll(".ip-service-proxy").forEach(select => select.addEventListener("change", () => { state.modal.routes[select.dataset.serviceId] = select.value; }));
+  document.getElementById("confirm-delete-ip")?.addEventListener("click", deleteIPConfig);
 }
 
 async function ensureRule(service, proxyId) {
@@ -422,17 +575,146 @@ async function deleteCustomService() {
   catch (error) { toast(error.message, "error"); }
 }
 
-async function createNode(event) {
-  event.preventDefault(); const form = new FormData(event.currentTarget);
-  const payload = {name:form.get("name"), role:form.get("role"), public_ip:form.get("public_ip"), country:form.get("country"), group:form.get("group"), priority:Number(form.get("priority")) || 50, secret:""};
+function submitIPForm(event) {
+  event.preventDefault();
+  if (state.modal.step === 2) { saveIPConfig(); return; }
+  const form = new FormData(event.currentTarget);
+  const ip = state.modal.config?.ip || String(form.get("ip") || "").trim();
+  const defaultProxy = String(form.get("default_proxy") || "");
+  if (!ip) { state.modal.error = t("addressInvalid"); renderModal(); return; }
+  if (!defaultProxy) { state.modal.error = t("noProxy"); renderModal(); return; }
+  state.modal.draft = {ip, note:String(form.get("note") || "").trim(), smart:form.get("smart") === "on"};
+  state.modal.defaultProxy = defaultProxy;
+  state.modal.step = 2;
+  state.modal.error = "";
+  renderModal();
+}
+
+async function saveIPConfig() {
+  const modal = state.modal;
+  if (!Object.keys(modal.routes).length) return;
+  const payload = {...modal.draft, routes:modal.routes};
+  try {
+    const path = modal.config ? `/enhancer/api/ip-configs/${encodeURIComponent(modal.config.id)}` : "/enhancer/api/ip-configs";
+    const config = await api(path, {method:modal.config ? "PUT" : "POST", body:JSON.stringify(payload)});
+    state.modal = {type:"ip-script", config, command:ipScriptCommand(config)};
+    await loadAll(true);
+    renderModal();
+    toast(t("saved"), "good");
+  } catch (error) { state.modal.error = error.message; renderModal(); }
+}
+
+async function deleteIPConfig() {
+  const config = state.modal?.config;
+  if (!config) return;
+  try {
+    await api(`/enhancer/api/ip-configs/${encodeURIComponent(config.id)}`, {method:"DELETE"});
+    state.modal = null;
+    await loadAll(true);
+    toast(t("deleted"), "good");
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function clearTraffic(id) {
+  if (!confirm(state.lang === "zh" ? "清零该 IP 的已用流量？" : "Clear traffic for this IP?")) return;
+  try {
+    await api(`/enhancer/api/traffic/${encodeURIComponent(id)}`, {method:"DELETE"});
+    await loadAll(true);
+    toast(t("saved"), "good");
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function clearAllTraffic() {
+  if (!confirm(state.lang === "zh" ? "清零全部 IP 的已用流量？" : "Clear traffic for every IP?")) return;
+  try {
+    await Promise.all(state.ipConfigs.map(config => api(`/enhancer/api/traffic/${encodeURIComponent(config.id)}`, {method:"DELETE"})));
+    await loadAll(true);
+    toast(t("saved"), "good");
+  } catch (error) { toast(error.message, "error"); }
+}
+
+function readNodeDraft(form) {
+  const current = state.modal.draft || emptyNodeDraft();
+  const normalizeLabel = (value, keepComma = false) => String(value || "").trim().replace(keepComma ? /[^a-zA-Z0-9 ,]+/g : /[^a-zA-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  return {...current, name:normalizeLabel(form.get("name")), role:String(form.get("role") || "proxy"), public_ip:String(form.get("public_ip") || "").trim(), country:String(form.get("country") || "").trim(), group:normalizeLabel(form.get("group"), true), priority:Number(form.get("priority")) || 0};
+}
+
+function validAddress(value) {
+  if (!value) return true;
+  const candidate = value.replace(/^\[|\]$/g, "");
+  const ipv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(candidate) && candidate.split(".").every(part => Number(part) <= 255);
+  const ipv6 = candidate.includes(":") && /^[0-9a-fA-F:]+$/.test(candidate);
+  return ipv4 || ipv6;
+}
+
+function validateNodeDraft(draft) {
+  if (!draft.name) return t("nameRequired");
+  if (draft.name.length > 64) return t("nameTooLong");
+  if (!/^[a-zA-Z0-9 ]+$/.test(draft.name)) return t("nameInvalid");
+  if (draft.group.length > 64) return t("groupTooLong");
+  if (!/^[a-zA-Z0-9 ,]*$/.test(draft.group)) return t("groupInvalid");
+  if (!validAddress(draft.public_ip)) return t("addressInvalid");
+  if (draft.role === "proxy" && (!Number.isInteger(draft.priority) || draft.priority < 1 || draft.priority > 100)) return t("priorityInvalid");
+  return "";
+}
+
+function submitNodeForm(event) {
+  event.preventDefault();
+  if (!state.modal.node && state.modal.step === 2) {
+    state.modal.smartMode = event.currentTarget.querySelector('[name="smart_mode"]')?.value || "standard";
+    createNode(state.modal.draft);
+    return;
+  }
+  const draft = readNodeDraft(new FormData(event.currentTarget));
+  const error = validateNodeDraft(draft);
+  if (error) { state.modal.error = error; renderModal(); return; }
+  state.modal.draft = draft; state.modal.error = "";
+  if (state.modal.node) { saveNode(draft); return; }
+  if (state.modal.step === 1) { state.modal.step = 2; renderModal(); return; }
+}
+
+async function saveNode(draft) {
+  const node = state.modal.node;
+  try {
+    await api(`/api/nodes/${encodeURIComponent(node.id)}`, {method:"PUT", body:JSON.stringify({...node, ...draft})});
+    state.modal = null; toast(t("saved"), "good"); await loadAll(true);
+  } catch (error) { state.modal.error = error.message; renderModal(); }
+}
+
+function installCommand(node, smartMode) {
+  const smart = node.role === "dns" && smartMode === "smart" ? " --smart" : "";
+  const ip = node.role === "proxy" && node.public_ip ? ` --ip "${node.public_ip.replace(/"/g, "")}"` : "";
+  return `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master ${location.origin} --secret ${node.secret || "<secret>"}${smart}${ip}`;
+}
+
+async function createNode(draft) {
+  const payload = {...draft, secret:draft.secret || randomSecret()};
   try {
     const node = await api("/api/nodes", {method:"POST", body:JSON.stringify(payload)});
+    const created = node && typeof node === "object" ? {...payload, ...node} : payload;
+    state.modal = {type:"install-command", node:created, command:installCommand(created, state.modal.smartMode)};
     await loadAll(true);
-    const smart = payload.role === "dns" ? " --smart" : "";
-    const ip = payload.role === "proxy" && payload.public_ip ? ` --ip \"${payload.public_ip}\"` : "";
-    const command = `curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master ${location.origin} --secret ${node.secret || "<secret>"}${smart}${ip}`;
-    document.getElementById("modal-root").innerHTML = `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("installCommand")}</h2></div><button class="btn icon modal-close">×</button></header><div class="modal-body"><div class="code">${escapeHTML(command)}</div></div></section></div>`;
-    document.querySelector(".modal-close").onclick = closeModal; toast(t("saved"), "good");
+    renderModal();
+    toast(t("saved"), "good");
+  } catch (error) { state.modal.error = error.message; state.modal.step = 1; renderModal(); }
+}
+
+async function deleteNode() {
+  const node = state.modal?.node;
+  if (!node) return;
+  try {
+    await api(`/api/nodes/${encodeURIComponent(node.id)}`, {method:"DELETE"});
+    if (nodeID(state.dnsNodeId) === nodeID(node.id)) { state.dnsNodeId = ""; localStorage.removeItem("enhancer_dns"); }
+    state.modal = null; toast(t("deleted"), "good"); await loadAll(true);
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function copyInstallCommand() {
+  const command = state.modal?.command || "";
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(command);
+    else { const input = document.createElement("textarea"); input.value = command; document.body.appendChild(input); input.select(); document.execCommand("copy"); input.remove(); }
+    toast(t("copied"), "good");
   } catch (error) { toast(error.message, "error"); }
 }
 
@@ -442,7 +724,9 @@ async function triggerNodeCheck(id) {
 }
 
 function toast(message, type = "") {
-  const root = document.getElementById("toast-root"); const item = document.createElement("div"); item.className = `toast ${type}`; item.textContent = message; root.appendChild(item); setTimeout(() => item.remove(), 4200);
+  const root = document.getElementById("toast-root");
+  root.replaceChildren();
+  const item = document.createElement("div"); item.className = `toast ${type}`; item.textContent = message; root.appendChild(item); setTimeout(() => item.remove(), 3200);
 }
 
 render();

@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, and connectivity tests. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, a client management script, and traffic accounting. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -30,6 +30,9 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Custom Services** - Add, edit, and delete arbitrary service names and domain lists in the UI
 - **Per-Service Routing** - Bind each service on each DNS client to any proxy agent, or restore Smart/Fallback selection
 - **Connectivity Tests** - Combines native Agent unlock checks with generic DNS/TLS tests
+- **IP Configuration Workflow** - Add a target IP, choose services and proxy agents, then create DNS nodes and overrides automatically
+- **Client Management Script** - Installs the DNS Agent, tests local DNS, and takes over, backs up, or restores system DNS
+- **Traffic Accounting** - Aggregates default-interface RX/TX deltas for all IPs and each IP, with per-IP and global reset
 
 ### Routing Modes
 
@@ -145,7 +148,19 @@ Install Agent on node servers:
 curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
 ```
 
-**Parameters**:
+### IP Client Tool
+
+First add the target IP in the Web UI's IP Configs view, select services and proxy agents, and save. The UI generates a dedicated command containing the panel URL and enrollment token. The generic interactive tool is also available:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
+```
+
+The dedicated command enters the one-click workflow directly and asks for confirmation before taking over system DNS. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. It also reports default-interface RX/TX counter deltas every minute; these figures cover all traffic on that interface, not only unlock-service traffic.
+
+IP configurations, node secrets, enrollment tokens, and traffic baselines are stored in `/var/lib/prism-enhancer/ip-configs.json` with mode `0600`. Do not publish a dedicated command or enrollment token.
+
+### Agent Parameters
 
 | Parameter | Description | Applicable Nodes |
 |-----------|-------------|------------------|
