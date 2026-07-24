@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.3.1"
+VERSION="1.3.2"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -149,7 +149,9 @@ AUDIT_INTERVAL=21600
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
 TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
 [[ -n "$MASTER" && -n "$TOKEN" ]] || exit 0
-BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN")
+if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
+  exit 0
+fi
 mapfile -t PEERS < <(jq -r '.traffic_peers[]?' <<<"$BOOTSTRAP" | sort -u)
 mapfile -t PROBES < <(jq -r '.health_probes[]?.domain // empty' <<<"$BOOTSTRAP" | sort -u)
 ((${#PEERS[@]} > 0)) || exit 0
@@ -224,7 +226,7 @@ PAYLOAD=$(jq -nc \
   --argjson dns_ready "$DNS_READY" --argjson system_dns_ready "$SYSTEM_DNS_READY" --argjson routes_ready "$ROUTES_READY" \
   --argjson healthy_routes "$HEALTHY_ROUTES" --argjson expected_routes "$EXPECTED_ROUTES" --arg health_message "$HEALTH_MESSAGE" \
   '{token:$token,scope:"unlock_peers",interface:"nftables-dns-sni",rx_bytes:$rx,tx_bytes:$tx,dns_ready:$dns_ready,system_dns_ready:$system_dns_ready,routes_ready:$routes_ready,healthy_routes:$healthy_routes,expected_routes:$expected_routes,health_message:$health_message}')
-curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d "$PAYLOAD" "$MASTER/enhancer/api/traffic/report" >/dev/null
+curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d "$PAYLOAD" "$MASTER/enhancer/api/traffic/report" >/dev/null || exit 0
 
 run_service_audit() {
   local audit_hash="$1" now="$2" output plain results probe service_id provider domain result matched_peer answer peer
@@ -310,7 +312,9 @@ else
   mkdir "$LOCK_DIR" 2>/dev/null || exit 0
   trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 fi
-BOOTSTRAP=$(curl -fsSL --connect-timeout 5 --max-time 10 "$MASTER/enhancer/api/bootstrap/$TOKEN")
+if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 5 --max-time 10 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
+  exit 0
+fi
 CURRENT_HASH=$(jq -Sc '{
   smart:(.smart // true),
   traffic_peers:((.traffic_peers // []) | sort),

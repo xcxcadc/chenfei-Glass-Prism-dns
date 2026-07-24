@@ -44,7 +44,7 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 
 ## 路由自动应用
 
-`prismdns.sh 1.3.1` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh` 和 `prismdns-route-sync.timer`。守卫每 10 秒使用该机器自己的面板地址和令牌获取配置，对 Smart 模式、所选解锁机和服务探针计算稳定哈希。哈希变化时只重启 `prism-agent`，确认服务运行且 53 端口恢复后才写入新哈希；失败时保留旧哈希并由下一轮重试。
+`prismdns.sh 1.3.2` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh` 和 `prismdns-route-sync.timer`。守卫每 10 秒使用该机器自己的面板地址和令牌获取配置，对 Smart 模式、所选解锁机和服务探针计算稳定哈希。哈希变化时只重启 `prism-agent`，确认服务运行且 53 端口恢复后才写入新哈希；失败时保留旧哈希并由下一轮重试。面板重启或网络瞬时不可达时，上报与守卫任务会正常退出并等待下一轮，不产生 systemd 失败误报。
 
 该逻辑不写死任何现有 IP、域名或节点 ID。以后从面板新增的解锁机和被解锁机，只要执行页面首次生成的客户端命令，就会默认获得相同的自动应用、缓存清理、流量统计和健康上报能力。无 `flock` 的精简系统会自动使用原子目录锁降级。
 
