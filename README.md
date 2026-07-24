@@ -1,5 +1,7 @@
 # Liquid Glass Prism Gateway
 
+> 本 Fork 新增简体中文增强层、自定义服务域名、服务级解锁机切换及连通性测试。详见 [ENHANCED_ZH.md](ENHANCED_ZH.md)。
+
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
 [English](README_EN.md) | 中文
