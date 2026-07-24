@@ -77,10 +77,16 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if bootstrapResponse.Code != http.StatusOK || !strings.Contains(bootstrapResponse.Body.String(), "controller-secret") {
 		t.Fatalf("bootstrap failed: %d %s", bootstrapResponse.Code, bootstrapResponse.Body.String())
 	}
+	if !strings.Contains(bootstrapResponse.Body.String(), `"health_probes"`) || !strings.Contains(bootstrapResponse.Body.String(), `"netflix.com"`) {
+		t.Fatalf("bootstrap did not include route probes: %s", bootstrapResponse.Body.String())
+	}
+	if !strings.Contains(bootstrapResponse.Body.String(), `"unlock_test":"Netflix"`) {
+		t.Fatalf("bootstrap did not include UnlockTests provider: %s", bootstrapResponse.Body.String())
+	}
 
 	for _, report := range []string{
-		`{"token":"` + config.EnrollmentToken + `","scope":"unlock_peers","interface":"nftables","rx_bytes":100,"tx_bytes":200}`,
-		`{"token":"` + config.EnrollmentToken + `","scope":"unlock_peers","interface":"nftables","rx_bytes":160,"tx_bytes":280}`,
+		`{"token":"` + config.EnrollmentToken + `","scope":"unlock_peers","interface":"nftables","rx_bytes":100,"tx_bytes":200,"dns_ready":true,"system_dns_ready":true,"routes_ready":true,"healthy_routes":1,"expected_routes":1}`,
+		`{"token":"` + config.EnrollmentToken + `","scope":"unlock_peers","interface":"nftables","rx_bytes":160,"tx_bytes":280,"dns_ready":true,"system_dns_ready":true,"routes_ready":true,"healthy_routes":1,"expected_routes":1}`,
 	} {
 		trafficRequest := httptest.NewRequest(http.MethodPost, "/enhancer/api/traffic/report", strings.NewReader(report))
 		trafficResponse := httptest.NewRecorder()
@@ -92,5 +98,21 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	stored, _ := ipStore.Get(config.ID)
 	if stored.TrafficRXBytes != 60 || stored.TrafficTXBytes != 80 {
 		t.Fatalf("traffic was not accumulated: %+v", stored)
+	}
+	if !stored.DNSReady || !stored.SystemDNSReady || !stored.RoutesReady || stored.HealthyRoutes != 1 {
+		t.Fatalf("client health was not stored: %+v", stored)
+	}
+
+	auditRequest := httptest.NewRequest(http.MethodPost, "/enhancer/api/audit/report", strings.NewReader(
+		`{"token":"`+config.EnrollmentToken+`","scope":"unlock_services","results":{"`+serviceID+`":"YES (Region: SG) [Via DNS]"}}`,
+	))
+	auditResponse := httptest.NewRecorder()
+	app.Handler().ServeHTTP(auditResponse, auditRequest)
+	if auditResponse.Code != http.StatusOK {
+		t.Fatalf("service audit report failed: %d %s", auditResponse.Code, auditResponse.Body.String())
+	}
+	stored, _ = ipStore.Get(config.ID)
+	if stored.ServiceResults[serviceID] == "" || stored.ServiceAuditedAt == nil {
+		t.Fatalf("service audit was not stored: %+v", stored)
 	}
 }

@@ -29,10 +29,10 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Detailed Service Catalog** - Dynamically parses `stream.smartdns.list` into 170+ service entries
 - **Custom Services** - Add, edit, and delete arbitrary service names and domain lists in the UI
 - **Per-Service Routing** - Bind each service on each DNS client to any proxy agent, or restore Smart/Fallback selection
-- **Unlock Result Panel** - Runs the Agent UnlockTests check used by `dns_unlock.sh` and lists every available and unavailable platform directly
+- **Two-Layer Unlock Audit** - Shows proxy-side Agent UnlockTests and reruns the same detector on each target IP, avoiding false confidence from proxy-only checks
 - **IP Configuration Workflow** - Add a target IP, choose services and proxy agents, then create DNS nodes and overrides automatically
 - **Client Management Script** - Installs the DNS Agent, tests local DNS, and takes over, backs up, or restores system DNS
-- **Traffic Accounting** - Counts only RX/TX between each target server and its selected proxy IPs, with per-IP and global reset
+- **Traffic Accounting** - Per target IP, counts local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs; whole-interface traffic is excluded
 - **Account Security** - Click the username in the top bar to change the administrator username and password after verifying the current credentials
 
 ### Routing Modes
@@ -86,7 +86,7 @@ flowchart LR
 
 Automatically detect unlock status for the following services:
 
-The node result panel uses the Agent's UnlockTests output, which is also the detector installed by the referenced `dns_unlock.sh`. Known service pages now show both the platform-level unlock verdict and per-domain TLS diagnostics through the selected proxy. The platform result describes regional unlock capability, while the domain rows expose SNI forwarding, listener, or subdomain failures without conflating the two.
+Node Management shows the proxy Agent's own UnlockTests output. IP Configs reruns the same detector used by the referenced `dns_unlock.sh` on the actual target server and stores the raw result per selected service. Service pages prefer this target-side verdict and run TLS against one known live representative hostname, instead of incorrectly treating routing-only suffix roots as failed websites. Target audits run after route changes and refresh periodically.
 
 **Streaming Services**
 - Netflix, Disney+, HBO Max, Amazon Prime Video
@@ -159,7 +159,7 @@ First add the target IP in the Web UI's IP Configs view, select services and pro
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-The dedicated command enters the one-click workflow directly and asks for confirmation before taking over system DNS. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. It creates dedicated nftables counters; the systemd timer performs its first report within 15 seconds of activation and then reports only traffic exchanged with selected proxy IPs every minute.
+The dedicated command enters the one-click workflow directly and asks for confirmation before taking over system DNS. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. The installer backs up and disables conflicting legacy `dnsmasq`/`sniproxy` services, but does not modify XrayR or V2bX. Dedicated nftables counters record local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs. The first report runs within 15 seconds and repeats every minute; automated UnlockTests traffic is removed from the counters after the audit.
 
 IP configurations, node secrets, enrollment tokens, and traffic baselines are stored in `/var/lib/prism-enhancer/ip-configs.json` with mode `0600`. Do not publish a dedicated command or enrollment token.
 

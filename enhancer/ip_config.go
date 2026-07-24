@@ -23,11 +23,23 @@ type ipConfigRequest struct {
 }
 
 type trafficReportRequest struct {
-	Token     string `json:"token"`
-	Scope     string `json:"scope"`
-	RXBytes   uint64 `json:"rx_bytes"`
-	TXBytes   uint64 `json:"tx_bytes"`
-	Interface string `json:"interface"`
+	Token          string `json:"token"`
+	Scope          string `json:"scope"`
+	RXBytes        uint64 `json:"rx_bytes"`
+	TXBytes        uint64 `json:"tx_bytes"`
+	Interface      string `json:"interface"`
+	DNSReady       bool   `json:"dns_ready"`
+	SystemDNSReady bool   `json:"system_dns_ready"`
+	RoutesReady    bool   `json:"routes_ready"`
+	HealthyRoutes  int    `json:"healthy_routes"`
+	ExpectedRoutes int    `json:"expected_routes"`
+	HealthMessage  string `json:"health_message"`
+}
+
+type serviceAuditRequest struct {
+	Token   string            `json:"token"`
+	Scope   string            `json:"scope"`
+	Results map[string]string `json:"results"`
 }
 
 func (app *App) handleTrafficReport(writer http.ResponseWriter, request *http.Request) {
@@ -44,7 +56,14 @@ func (app *App) handleTrafficReport(writer http.ResponseWriter, request *http.Re
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "仅接受解锁链路流量上报"})
 		return
 	}
-	config, err := app.ipStore.UpdateTraffic(payload.Token, payload.RXBytes, payload.TXBytes)
+	config, err := app.ipStore.UpdateClientReport(payload.Token, payload.RXBytes, payload.TXBytes, ClientHealth{
+		DNSReady:       payload.DNSReady,
+		SystemDNSReady: payload.SystemDNSReady,
+		RoutesReady:    payload.RoutesReady,
+		HealthyRoutes:  payload.HealthyRoutes,
+		ExpectedRoutes: payload.ExpectedRoutes,
+		Message:        payload.HealthMessage,
+	})
 	if errors.Is(err, os.ErrNotExist) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "无效的配置令牌"})
 		return
@@ -68,6 +87,31 @@ func (app *App) handleTrafficClear(writer http.ResponseWriter, request *http.Req
 	config, err := app.ipStore.ClearTraffic(id)
 	if errors.Is(err, os.ErrNotExist) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "IP 配置不存在"})
+		return
+	} else if err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(writer, http.StatusOK, config)
+}
+
+func (app *App) handleServiceAuditReport(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		methodNotAllowed(writer, http.MethodPost)
+		return
+	}
+	var payload serviceAuditRequest
+	if err := decodeJSON(request, &payload); err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if payload.Token == "" || payload.Scope != "unlock_services" || len(payload.Results) == 0 {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "无效的服务审计上报"})
+		return
+	}
+	config, err := app.ipStore.UpdateServiceAudit(payload.Token, payload.Results)
+	if errors.Is(err, os.ErrNotExist) {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "无效的配置令牌"})
 		return
 	} else if err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -135,8 +179,86 @@ func (app *App) handleBootstrap(writer http.ResponseWriter, request *http.Reques
 		"smart":           record.Smart,
 		"dns":             "127.0.0.1",
 		"traffic_peers":   record.TrafficPeers,
+		"health_probes":   app.healthProbes(request.Context(), record),
 		"agent_installer": "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh",
 	})
+}
+
+func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[string]string {
+	services := make(map[string]Service)
+	for _, service := range app.catalog.Snapshot(ctx, false).Services {
+		services[service.ID] = service
+	}
+	serviceIDs := make([]string, 0, len(record.Routes))
+	for serviceID := range record.Routes {
+		serviceIDs = append(serviceIDs, serviceID)
+	}
+	sort.Strings(serviceIDs)
+	probes := make([]map[string]string, 0, len(serviceIDs))
+	for _, serviceID := range serviceIDs {
+		service, ok := services[serviceID]
+		if !ok || len(service.Domains) == 0 {
+			continue
+		}
+		probes = append(probes, map[string]string{
+			"service_id":  service.ID,
+			"name":        service.Name,
+			"domain":      preferredProbeDomain(service),
+			"unlock_test": unlockTestProvider(service),
+		})
+	}
+	return probes
+}
+
+func unlockTestProvider(service Service) string {
+	providers := map[string]string{
+		"Apple TV+":                       "Apple",
+		"Bilibili":                        "Bilibili Anime",
+		"ChatGPT / OpenAI":                "ChatGPT",
+		"Claude":                          "Claude",
+		"Crunchyroll":                     "Crunchyroll",
+		"DAZN":                            "Dazn",
+		"Disney+":                         "Disney+",
+		"Gemini":                          "Gemini",
+		"HBO / Max":                       "HBO Max",
+		"Microsoft Copilot Image Creator": "Microsoft Copilot",
+		"Netflix":                         "Netflix",
+		"Paramount+":                      "ParamountPlus",
+		"Spotify":                         "Spotify Registration",
+		"TikTok":                          "TikTok",
+		"YouTube":                         "YouTube Region",
+	}
+	return providers[service.Name]
+}
+
+func preferredProbeDomain(service Service) string {
+	preferred := map[string][]string{
+		"Apple TV+":                       {"tv.apple.com"},
+		"Bilibili":                        {"bilibili.com"},
+		"ChatGPT / OpenAI":                {"chatgpt.com", "openai.com"},
+		"Claude":                          {"claude.ai", "anthropic.com"},
+		"Crunchyroll":                     {"crunchyroll.com"},
+		"DAZN":                            {"dazn.com"},
+		"Disney+":                         {"disneyplus.com", "bamgrid.com"},
+		"Gemini":                          {"gemini.google.com", "bard.google.com"},
+		"Google AI Studio":                {"aistudio.google.com"},
+		"HBO / Max":                       {"max.com", "hbomax.com"},
+		"Microsoft Copilot Image Creator": {"copilot.microsoft.com"},
+		"Netflix":                         {"netflix.com"},
+		"Paramount+":                      {"paramountplus.com"},
+		"Spotify":                         {"spotify.com"},
+		"Suno":                            {"suno.com", "suno.ai"},
+		"TikTok":                          {"tiktok.com"},
+		"YouTube":                         {"youtube.com"},
+	}
+	for _, candidate := range preferred[service.Name] {
+		for _, domain := range service.Domains {
+			if domain == candidate || strings.HasSuffix(candidate, "."+domain) {
+				return candidate
+			}
+		}
+	}
+	return service.Domains[0]
 }
 
 func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request) {

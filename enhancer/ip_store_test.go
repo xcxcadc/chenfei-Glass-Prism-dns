@@ -25,15 +25,29 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 		t.Fatal("expected enrollment token")
 	}
 
-	if _, err := store.UpdateTraffic(config.EnrollmentToken, 0, 0); err != nil {
+	if _, err := store.UpdateClientReport(config.EnrollmentToken, 0, 0, ClientHealth{
+		DNSReady: true, SystemDNSReady: true, RoutesReady: true, HealthyRoutes: 1, ExpectedRoutes: 1,
+	}); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := store.UpdateTraffic(config.EnrollmentToken, 50, 60)
+	updated, err := store.UpdateClientReport(config.EnrollmentToken, 50, 60, ClientHealth{
+		DNSReady: true, SystemDNSReady: true, RoutesReady: true, HealthyRoutes: 1, ExpectedRoutes: 1,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.TrafficRXBytes != 50 || updated.TrafficTXBytes != 60 {
 		t.Fatalf("unexpected traffic after second report: %+v", updated)
+	}
+	if !updated.DNSReady || !updated.SystemDNSReady || !updated.RoutesReady || updated.HealthyRoutes != 1 || updated.HealthUpdatedAt == nil {
+		t.Fatalf("client health was not persisted: %+v", updated)
+	}
+	audited, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{"netflix": "YES (Region: SG) [Via DNS]", "other": "YES"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audited.ServiceResults["netflix"] == "" || audited.ServiceResults["other"] != "" || audited.ServiceAuditedAt == nil {
+		t.Fatalf("service audit was not filtered and persisted: %+v", audited)
 	}
 	updated, err = store.UpdateTraffic(config.EnrollmentToken, 10, 20)
 	if err != nil {

@@ -2,10 +2,11 @@
 
 set -Eeuo pipefail
 
-VERSION="1.2.2"
+VERSION="1.3.0"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
+BOOTSTRAP_FILE="$STATE_DIR/bootstrap.json"
 TEST_DOMAIN="www.google.com"
 MASTER=""
 TOKEN=""
@@ -115,10 +116,17 @@ bootstrap() {
   fi
   [[ -n "$configured_master" ]] && MASTER="${configured_master%/}"
   save_config
+  umask 077
+  printf '%s\n' "$response" > "$BOOTSTRAP_FILE"
+  chmod 600 "$BOOTSTRAP_FILE"
   info "安装 Prism DNS Client Agent..."
   local args=(--master "$MASTER" --secret "$secret")
   [[ "$smart" == "true" ]] && args+=(--smart)
-  curl -fsSL "$installer" | bash -s -- "${args[@]}"
+  if [[ -n "${PRISM_AGENT_INSTALLER_FILE:-}" ]]; then
+    bash "$PRISM_AGENT_INSTALLER_FILE" "${args[@]}"
+  else
+    curl -fsSL "$installer" | bash -s -- "${args[@]}"
+  fi
   install_traffic_reporter
   wait_for_local_dns
 }
@@ -131,15 +139,21 @@ install_traffic_reporter() {
 set -euo pipefail
 CONFIG_FILE="/var/lib/prismdns/client.conf"
 PEER_HASH_FILE="/var/lib/prismdns/traffic-peers.sha256"
+AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
+AUDIT_TIME_FILE="/var/lib/prismdns/service-audit.timestamp"
+AUDIT_OUTPUT_FILE="/var/lib/prismdns/service-audit.txt"
 NFT_TABLE="prismdns_traffic"
+COUNTER_VERSION="dns-sni-ports-v4"
+AUDIT_INTERVAL=21600
 [[ -f "$CONFIG_FILE" ]] || exit 0
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
 TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
 [[ -n "$MASTER" && -n "$TOKEN" ]] || exit 0
 BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN")
 mapfile -t PEERS < <(jq -r '.traffic_peers[]?' <<<"$BOOTSTRAP" | sort -u)
+mapfile -t PROBES < <(jq -r '.health_probes[]?.domain // empty' <<<"$BOOTSTRAP" | sort -u)
 ((${#PEERS[@]} > 0)) || exit 0
-PEER_HASH=$(printf '%s\n' "${PEERS[@]}" | sha256sum | awk '{print $1}')
+PEER_HASH=$({ printf '%s\n' "$COUNTER_VERSION"; printf '%s\n' "${PEERS[@]}"; } | sha256sum | awk '{print $1}')
 CURRENT_HASH=$(cat "$PEER_HASH_FILE" 2>/dev/null || true)
 if [[ "$PEER_HASH" != "$CURRENT_HASH" ]] || ! nft list table inet "$NFT_TABLE" >/dev/null 2>&1; then
   PEERS4=()
@@ -158,8 +172,8 @@ if [[ "$PEER_HASH" != "$CURRENT_HASH" ]] || ! nft list table inet "$NFT_TABLE" >
     printf '  set peers6 { type ipv6_addr;'
     ((${#PEERS6[@]} > 0)) && printf ' elements = { %s };' "$(join_csv "${PEERS6[@]}")"
     printf ' }\n'
-    printf '  chain input { type filter hook input priority -10; policy accept; ip saddr @peers4 counter name rx; ip6 saddr @peers6 counter name rx; }\n'
-    printf '  chain output { type filter hook output priority -10; policy accept; ip daddr @peers4 counter name tx; ip6 daddr @peers6 counter name tx; }\n'
+    printf '  chain input { type filter hook input priority -10; policy accept; tcp dport 53 counter name rx; udp dport 53 counter name rx; ip saddr @peers4 tcp sport { 80, 443 } counter name rx; ip6 saddr @peers6 tcp sport { 80, 443 } counter name rx; }\n'
+    printf '  chain output { type filter hook output priority -10; policy accept; tcp sport 53 counter name tx; udp sport 53 counter name tx; ip daddr @peers4 tcp dport { 80, 443 } counter name tx; ip6 daddr @peers6 tcp dport { 80, 443 } counter name tx; }\n'
     printf '}\n'
   } > "$RULE_FILE"
   nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || true
@@ -169,8 +183,113 @@ if [[ "$PEER_HASH" != "$CURRENT_HASH" ]] || ! nft list table inet "$NFT_TABLE" >
 fi
 RX=$(nft -j list counter inet "$NFT_TABLE" rx | jq '[.nftables[].counter? | .bytes] | add // 0')
 TX=$(nft -j list counter inet "$NFT_TABLE" tx | jq '[.nftables[].counter? | .bytes] | add // 0')
-PAYLOAD=$(jq -nc --arg token "$TOKEN" --argjson rx "$RX" --argjson tx "$TX" '{token:$token,scope:"unlock_peers",interface:"nftables",rx_bytes:$rx,tx_bytes:$tx}')
+DNS_READY=false
+SYSTEM_DNS_READY=false
+ROUTES_READY=false
+HEALTHY_ROUTES=0
+EXPECTED_ROUTES=${#PROBES[@]}
+HEALTH_MESSAGE=""
+if systemctl is-active --quiet prism-agent 2>/dev/null && ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}'; then
+  DNS_READY=true
+else
+  HEALTH_MESSAGE="Prism Agent 未接管 53 端口"
+fi
+if awk '$1 == "nameserver" && ($2 == "127.0.0.1" || $2 == "::1") {found=1} END {exit !found}' /etc/resolv.conf 2>/dev/null; then
+  SYSTEM_DNS_READY=true
+else
+  HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE；}系统 DNS 未使用 Prism"
+fi
+for domain in "${PROBES[@]}"; do
+  mapfile -t ANSWERS < <({ dig @127.0.0.1 "$domain" A +short +time=2 +tries=1; dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1; } 2>/dev/null | sed '/^$/d' | sort -u)
+  matched=false
+  for answer in "${ANSWERS[@]}"; do
+    for peer in "${PEERS[@]}"; do
+      if [[ "$answer" == "$peer" ]]; then
+        matched=true
+        break 2
+      fi
+    done
+  done
+  if $matched; then
+    HEALTHY_ROUTES=$((HEALTHY_ROUTES + 1))
+  fi
+done
+if ((EXPECTED_ROUTES == HEALTHY_ROUTES)) && $DNS_READY && $SYSTEM_DNS_READY; then
+  ROUTES_READY=true
+else
+  HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE；}路由探针 ${HEALTHY_ROUTES}/${EXPECTED_ROUTES}"
+fi
+PAYLOAD=$(jq -nc \
+  --arg token "$TOKEN" --argjson rx "$RX" --argjson tx "$TX" \
+  --argjson dns_ready "$DNS_READY" --argjson system_dns_ready "$SYSTEM_DNS_READY" --argjson routes_ready "$ROUTES_READY" \
+  --argjson healthy_routes "$HEALTHY_ROUTES" --argjson expected_routes "$EXPECTED_ROUTES" --arg health_message "$HEALTH_MESSAGE" \
+  '{token:$token,scope:"unlock_peers",interface:"nftables-dns-sni",rx_bytes:$rx,tx_bytes:$tx,dns_ready:$dns_ready,system_dns_ready:$system_dns_ready,routes_ready:$routes_ready,healthy_routes:$healthy_routes,expected_routes:$expected_routes,health_message:$health_message}')
 curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d "$PAYLOAD" "$MASTER/enhancer/api/traffic/report" >/dev/null
+
+run_service_audit() {
+  local audit_hash="$1" now="$2" output plain results probe service_id provider domain result matched_peer answer peer
+  if [[ ! -x /usr/bin/ut ]]; then
+    timeout 180 bash -c 'curl -sL https://raw.githubusercontent.com/oneclickvirt/UnlockTests/main/ut_install.sh -sSf | bash' >/dev/null 2>&1 || return 0
+  fi
+  output=$(timeout 300 /usr/bin/ut -m 4 -f 20 -b=false -s=false 2>&1 || true)
+  [[ -n "$output" ]] || return 0
+  plain=$(sed $'s/\033\\[[0-9;]*[mK]//g' <<<"$output" | tr -d '\r')
+  printf '%s\n' "$plain" > "$AUDIT_OUTPUT_FILE"
+  results='{}'
+  while IFS= read -r probe; do
+    service_id=$(jq -r '.service_id // empty' <<<"$probe")
+    provider=$(jq -r '.unlock_test // empty' <<<"$probe")
+    domain=$(jq -r '.domain // empty' <<<"$probe")
+    [[ -n "$service_id" ]] || continue
+    result=""
+    if [[ -n "$provider" ]]; then
+      result=$(awk -v provider="$provider" '
+        index($0, provider) == 1 && substr($0, length(provider) + 1, 1) ~ /[[:space:]]/ {
+          value = substr($0, length(provider) + 1)
+          sub(/^[[:space:]]+/, "", value)
+          print value
+          exit
+        }
+      ' <<<"$plain")
+    fi
+    if [[ -z "$result" && -n "$domain" ]]; then
+      matched_peer=""
+      while IFS= read -r answer; do
+        for peer in "${PEERS[@]}"; do
+          if [[ "$answer" == "$peer" ]]; then
+            matched_peer="$peer"
+            break 2
+          fi
+        done
+      done < <({ dig @127.0.0.1 "$domain" A +short +time=2 +tries=1; dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1; } 2>/dev/null | sed '/^$/d' | sort -u)
+      if [[ -z "$matched_peer" ]]; then
+        result="FAIL (DNS route mismatch)"
+      elif curl -sS -o /dev/null --resolve "$domain:443:$matched_peer" --connect-timeout 5 --max-time 15 "https://$domain/"; then
+        result="PASS (HTTPS reachable) [Via DNS]"
+      else
+        result="FAIL (HTTPS unavailable)"
+      fi
+    fi
+    [[ -n "$result" ]] || result="N/A (No UnlockTests result)"
+    results=$(jq -c --arg id "$service_id" --arg result "$result" '. + {($id):$result}' <<<"$results")
+  done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
+  if [[ "$(jq 'length' <<<"$results")" -gt 0 ]]; then
+    jq -nc --arg token "$TOKEN" --argjson results "$results" '{token:$token,scope:"unlock_services",results:$results}' |
+      curl -fsSL --connect-timeout 8 --max-time 20 -H 'Content-Type: application/json' -d @- "$MASTER/enhancer/api/audit/report" >/dev/null || return 0
+    printf '%s\n' "$audit_hash" > "$AUDIT_HASH_FILE"
+    printf '%s\n' "$now" > "$AUDIT_TIME_FILE"
+  fi
+  nft reset counter inet "$NFT_TABLE" rx >/dev/null 2>&1 || true
+  nft reset counter inet "$NFT_TABLE" tx >/dev/null 2>&1 || true
+}
+
+AUDIT_HASH=$(jq -Sc '[.health_probes[]? | {service_id,unlock_test,domain}]' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
+LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)
+LAST_AUDIT_TIME=$(cat "$AUDIT_TIME_FILE" 2>/dev/null || echo 0)
+NOW=$(date +%s)
+if [[ "$AUDIT_HASH" != "$LAST_AUDIT_HASH" ]] || ((NOW - LAST_AUDIT_TIME >= AUDIT_INTERVAL)); then
+  run_service_audit "$AUDIT_HASH" "$NOW"
+fi
 EOF
   chmod 700 /usr/local/lib/prismdns/report-traffic.sh
   if command -v systemctl >/dev/null 2>&1; then
@@ -205,20 +324,59 @@ EOF
     warn "系统没有 systemd 或 cron，无法启用定时流量上报。"
   fi
   /usr/local/lib/prismdns/report-traffic.sh || warn "首次流量上报失败，定时任务会稍后重试。"
-  ok "每 IP 解锁链路流量统计已启用（仅目标服务器与已选解锁机之间的 RX/TX，每分钟上报）。"
+  ok "每 IP 解锁链路流量统计已启用（本机 Prism DNS 的 UDP/TCP 53，加上目标服务器与已选解锁机之间 TCP 80/443；每分钟上报）。"
 }
 
 wait_for_local_dns() {
   local attempt
-  info "等待本机 DNS Agent 监听 53 端口..."
-  for attempt in {1..20}; do
-    if dig @127.0.0.1 "$TEST_DOMAIN" +time=1 +tries=1 +short 2>/dev/null | grep -q .; then
-      ok "本机 DNS Agent 已可用。"
+  info "等待 Prism Agent 接管本机 53 端口..."
+  for attempt in {1..30}; do
+    if systemctl is-active --quiet prism-agent 2>/dev/null &&
+       ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}' &&
+       dig @127.0.0.1 "$TEST_DOMAIN" +time=1 +tries=1 +short 2>/dev/null | grep -q .; then
+      ok "Prism Agent 已接管本机 DNS。"
+      verify_route_probes
       return 0
     fi
     sleep 1
   done
-  fail "本机 127.0.0.1:53 尚不可用，请检查 prism-agent 日志。"
+  journalctl -u prism-agent -n 20 --no-pager >&2 2>/dev/null || true
+  fail "Prism Agent 未能接管 53 端口；不能把其他 DNS 服务的响应误判为安装成功。"
+}
+
+verify_route_probes() {
+  local bootstrap domain answer peer matched_peer expected=0 healthy=0
+  local -a peers
+  bootstrap=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN")
+  mapfile -t peers < <(jq -r '.traffic_peers[]?' <<<"$bootstrap" | sort -u)
+  while IFS= read -r domain; do
+    [[ -n "$domain" ]] || continue
+    expected=$((expected + 1))
+    matched=false
+    matched_peer=""
+    while IFS= read -r answer; do
+      for peer in "${peers[@]}"; do
+        if [[ "$answer" == "$peer" ]]; then
+          matched=true
+          matched_peer="$peer"
+          break 2
+        fi
+      done
+    done < <({ dig @127.0.0.1 "$domain" A +short +time=2 +tries=1; dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1; } 2>/dev/null | sed '/^$/d' | sort -u)
+    probe_ok=false
+    for probe_attempt in 1 2; do
+      if $matched && curl -sS -o /dev/null --resolve "$domain:443:$matched_peer" --connect-timeout 5 --max-time 12 "https://$domain/"; then
+        probe_ok=true
+        break
+      fi
+      sleep 1
+    done
+    if $probe_ok; then
+      healthy=$((healthy + 1))
+    fi
+  done < <(jq -r '.health_probes[]?.domain // empty' <<<"$bootstrap" | sort -u)
+  ((expected == healthy)) || fail "所选服务端到端验证失败：$healthy/$expected 同时通过 DNS 映射与 HTTPS。"
+  ok "所选服务端到端验证通过：$healthy/$expected。"
 }
 
 test_dns() {
@@ -266,6 +424,7 @@ write_resolv_conf() {
   temporary=$(mktemp /etc/resolv.conf.prismdns.XXXXXX)
   printf '# Managed by Prism DNS\nnameserver %s\noptions timeout:2 attempts:2\n' "$dns" > "$temporary"
   chmod 644 "$temporary"
+  chattr -i /etc/resolv.conf 2>/dev/null || true
   [[ -L /etc/resolv.conf ]] && rm -f /etc/resolv.conf
   mv -f "$temporary" /etc/resolv.conf
 }

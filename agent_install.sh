@@ -9,6 +9,7 @@ INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"
 SCRIPT_URL="https://raw.githubusercontent.com/${SCRIPT_REPO}/main/agent_install.sh"
 CUSTOM_IP=""
+CONFLICT_BACKUP_DIR="/var/lib/prism-agent/conflict-backups"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -243,6 +244,42 @@ EOF
     systemctl enable "$SERVICE_NAME" >/dev/null 2>&1
 }
 
+backup_and_stop_conflicting_service() {
+    local unit="$1"
+    if ! systemctl is-active --quiet "$unit" && ! systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+        return
+    fi
+
+    local stamp backup
+    stamp=$(date +%Y%m%d-%H%M%S)
+    backup="$CONFLICT_BACKUP_DIR/$stamp-$unit"
+    mkdir -p "$backup"
+    systemctl is-active --quiet "$unit" && echo active > "$backup/was-active" || true
+    systemctl is-enabled --quiet "$unit" 2>/dev/null && echo enabled > "$backup/was-enabled" || true
+    systemctl cat "$unit" > "$backup/unit.txt" 2>/dev/null || true
+    case "$unit" in
+        dnsmasq)
+            cp -a /etc/dnsmasq.conf /etc/dnsmasq.d "$backup/" 2>/dev/null || true
+            ;;
+        sniproxy)
+            cp -a /etc/sniproxy.conf /etc/sniproxy "$backup/" 2>/dev/null || true
+            ;;
+    esac
+    warn "Stopping legacy $unit because it conflicts with Prism Agent. Backup: $backup"
+    systemctl disable --now "$unit" >/dev/null 2>&1 || true
+}
+
+prepare_legacy_conflicts() {
+    step "Checking DNS/proxy port conflicts..."
+    backup_and_stop_conflicting_service dnsmasq
+    backup_and_stop_conflicting_service sniproxy
+}
+
+listener_owned_by_agent() {
+    local port="$1"
+    ss -lntup 2>/dev/null | awk -v port=":$port" '$5 ~ port"$" && /prism-agent/ {found=1} END {exit !found}'
+}
+
 start_service() {
     step "Starting service..."
     AGENT_STARTED_AT=$(date '+%Y-%m-%d %H:%M:%S')
@@ -254,12 +291,22 @@ start_service() {
             error "Failed to start! Check logs: journalctl -u $SERVICE_NAME -n 20"
         fi
         LOGS=$(journalctl -u "$SERVICE_NAME" --since "$AGENT_STARTED_AT" --no-pager 2>/dev/null || true)
-        if echo "$LOGS" | grep -Eq "DNS Server Started|Proxy Server Started"; then
-            return
+        if echo "$LOGS" | grep -q "DNS Server Started" && listener_owned_by_agent 53; then
+            AGENT_MODE="dns"
+            return 0
+        fi
+        if echo "$LOGS" | grep -q "Proxy Server Started" && listener_owned_by_agent 80 && listener_owned_by_agent 443; then
+            AGENT_MODE="proxy"
+            return 0
+        fi
+        if echo "$LOGS" | grep -Eq "port (53|80|443) busy"; then
+            echo "$LOGS" | tail -20 >&2
+            error "A required port is still occupied. Prism Agent did not enter the data path."
         fi
         sleep 1
     done
-    warn "Agent is running but node configuration is still syncing. Check the panel and journal shortly."
+    journalctl -u "$SERVICE_NAME" --since "$AGENT_STARTED_AT" -n 30 --no-pager >&2 2>/dev/null || true
+    error "Prism Agent is online but its DNS/proxy listener was not ready within 30 seconds."
 }
 
 show_result() {
@@ -278,12 +325,12 @@ show_result() {
         echo -e "  Feature: ${CYAN}Smart Mode Enabled${NC}"
     fi
 
-    if echo "$LOGS" | grep -q "DNS Server Started"; then
+    if [ "${AGENT_MODE:-}" = "dns" ]; then
         echo -e "  Mode:    ${CYAN}DNS Client${NC} (Set DNS to 127.0.0.1)"
-    elif echo "$LOGS" | grep -q "Proxy Server Started"; then
+    elif [ "${AGENT_MODE:-}" = "proxy" ]; then
         echo -e "  Mode:    ${CYAN}Proxy Agent${NC} (Open ports 80/443)"
     else
-        warn "  Syncing config, check logs shortly."
+        error "Agent data listener verification failed."
     fi
     
     echo ""
@@ -313,6 +360,7 @@ main() {
     detect_system
     download_binary
     configure_service
+    prepare_legacy_conflicts
     start_service
     show_result
 }

@@ -191,6 +191,10 @@ a { color: inherit; }
 .ip-service-name strong { font-size: 12px; }
 .ip-service-name small { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .ip-service-option .select { min-height: 34px; margin-top: 10px; padding: 6px 8px; font-size: 11px; }
+.service-audit { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 10px; }
+.service-audit .badge { max-width: 72%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ip-selection { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.ip-selection small { color: var(--muted); font-size: 10px; }
 .toggle-row { display: flex; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); cursor: pointer; }
 .toggle-row input { width: 18px; height: 18px; accent-color: var(--accent); }
 .toggle-row strong, .toggle-row small { display: block; }

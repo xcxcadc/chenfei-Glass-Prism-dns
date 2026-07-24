@@ -79,6 +79,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/ip-configs/", app.handleIPConfig)
 	mux.HandleFunc("/enhancer/api/bootstrap/", app.handleBootstrap)
 	mux.HandleFunc("/enhancer/api/traffic/report", app.handleTrafficReport)
+	mux.HandleFunc("/enhancer/api/audit/report", app.handleServiceAuditReport)
 	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)
 	mux.HandleFunc("/enhancer/rules/", app.handleRuleSet)
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(app.web))))

@@ -12,7 +12,7 @@
 - 每个 DNS 节点可把每项服务手动绑定到任意 Proxy Agent，并可恢复 Smart/Fallback 自动选择。
 - 前端新增、编辑和删除自定义服务，支持任意名称、分类和域名列表。
 - 自定义服务自动生成兼容 Prism 的 `DOMAIN-SUFFIX` 规则集。
-- 节点检测完成后直接列出 UnlockTests 的全部可用和不可用服务；已映射服务页显示同一平台级结论。
+- 节点检测完成后列出解锁机自身的 UnlockTests；目标服务器再运行同源 UnlockTests，IP 配置页显示最终实测结论。
 - 新增 IP 配置闭环：保存时自动创建 DNS Client、服务规则和逐服务解锁机覆盖。
 - 提供 `prismdns.sh` 客户端工具，支持 Agent 安装、DNS 测试、系统 DNS 接管、备份和恢复。
 - 客户端使用 nftables 专用计数器，每分钟只上报与所选 Proxy IP 之间的 RX/TX。
@@ -25,7 +25,7 @@
 2. 打开“IP 配置”，填写需要使用 DNS 解锁的目标服务器公网 IPv4 或 IPv6。
 3. 选择需要解锁的服务，并为每项服务指定任意在线 Proxy Agent。
 4. 保存后，系统会自动创建专属 DNS Client 节点、规则和服务覆盖，并生成专属配置命令。
-5. 在目标服务器以 `root` 身份执行该命令。脚本会安装 DNS Agent、检查本机 `127.0.0.1:53`、备份原 DNS，并在确认后接管系统 DNS。
+5. 在目标服务器以 `root` 身份执行该命令。脚本会安装 DNS Agent、确认 `prism-agent` 实际占用 `127.0.0.1:53`、备份原 DNS，并在确认后接管系统 DNS；发现旧 `dnsmasq`/`sniproxy` 占用端口时先备份再停用，不修改 XrayR/V2bX。
 
 需要重新打开命令时，可在该 IP 行点击“客户端脚本”。通用交互入口如下：
 
@@ -35,13 +35,13 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 
 ## 流量统计口径
 
-`prismdns.sh` 会根据 IP 配置下发的 `traffic_peers` 创建 nftables 专用统计链，只累计目标服务器与这些 Proxy IPv4/IPv6 地址之间的入站和出站字节数。systemd timer 启用后 15 秒内执行首次上报，之后每分钟上报一次；普通公网访问、系统更新和其他非解锁机流量不会计入。首次上报或清零后的首次上报只建立新基线，不会把清零前的计数重新加回来。
+`prismdns.sh` 会为每台目标服务器创建独立 nftables 统计链：本机 Prism Agent 的 UDP/TCP 53 请求与响应计入 DNS 用量，只有与当前所选 Proxy IPv4/IPv6 之间的 TCP 80/443 才计入 SNI 解锁用量。普通公网 80/443、系统更新和其他非解锁机流量不会计入。systemd timer 启用后 15 秒内首次上报，之后每分钟上报一次；首次上报或清零后的首次上报只建立新基线。自动 UnlockTests 审计结束后会重置本地计数器，避免把检测流量计入用户用量。
 
 “清零流量”只重置面板累计值和上报基线，不会影响 nftables 规则、DNS 节点和服务配置。IP 配置及令牌保存在 `/var/lib/prism-enhancer/ip-configs.json`，文件权限为 `0600`；请勿公开页面生成的专属命令或配置令牌。
 
 ## 解锁检测与账户安全
 
-“节点管理”中的“运行解锁检测”调用 Agent 的检测任务，结果来源与 `dns_unlock.sh` 使用的 UnlockTests 一致。完成后弹窗按项目展示原始结论，并汇总可用与不可用数量。对 Claude、Disney+、Netflix 等已映射平台，服务配置页会同时显示平台结论和当前 Proxy 的逐域名 TLS 诊断；平台结论用于判断区域解锁，域名诊断用于定位 SNI 转发、监听端口和子域故障。自定义服务同样执行域名级诊断。
+“节点管理”中的“运行解锁检测”调用解锁机 Agent 的检测任务，完成后直接汇总可用与不可用项目，但这只代表解锁机自身。目标 IP 安装 `prismdns.sh` 后，会在路由变化及定期周期内运行与 `dns_unlock.sh` 相同的 `/usr/bin/ut -m 4 -f 20 -b=false -s=false`，把每个已选服务的原始结果上报到“IP 配置”。服务配置页优先展示目标机结论，并只对一个已知可访问的代表域名做 TLS 诊断；列表中的其他根域可能仅是路由后缀，不提供 HTTPS，不能据此判定平台不可用。
 
 点击页面右上角当前用户名可打开“账户安全”。系统先通过 Controller 验证旧用户名和旧密码，再原子更新 SQLite 用户记录并清理旧会话；更新成功后必须使用新账户重新登录。
 

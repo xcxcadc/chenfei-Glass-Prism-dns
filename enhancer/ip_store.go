@@ -30,8 +30,26 @@ type IPConfig struct {
 	TrafficRXBytes   uint64            `json:"traffic_rx_bytes"`
 	TrafficTXBytes   uint64            `json:"traffic_tx_bytes"`
 	TrafficUpdatedAt *time.Time        `json:"traffic_updated_at,omitempty"`
+	DNSReady         bool              `json:"dns_ready"`
+	SystemDNSReady   bool              `json:"system_dns_ready"`
+	RoutesReady      bool              `json:"routes_ready"`
+	HealthyRoutes    int               `json:"healthy_routes"`
+	ExpectedRoutes   int               `json:"expected_routes"`
+	HealthMessage    string            `json:"health_message,omitempty"`
+	HealthUpdatedAt  *time.Time        `json:"health_updated_at,omitempty"`
+	ServiceResults   map[string]string `json:"service_results,omitempty"`
+	ServiceAuditedAt *time.Time        `json:"service_audited_at,omitempty"`
 	CreatedAt        time.Time         `json:"created_at"`
 	UpdatedAt        time.Time         `json:"updated_at"`
+}
+
+type ClientHealth struct {
+	DNSReady       bool
+	SystemDNSReady bool
+	RoutesReady    bool
+	HealthyRoutes  int
+	ExpectedRoutes int
+	Message        string
 }
 
 type ipConfigRecord struct {
@@ -130,6 +148,13 @@ func (store *IPConfigStore) Save(config IPConfig, secret string) (IPConfig, erro
 		config.CreatedAt = existing.CreatedAt
 		record.LastRXBytes = existing.LastRXBytes
 		record.LastTXBytes = existing.LastTXBytes
+		if stringMapEqual(existing.Routes, config.Routes) {
+			config.ServiceResults = existing.ServiceResults
+			config.ServiceAuditedAt = existing.ServiceAuditedAt
+		} else {
+			config.ServiceResults = nil
+			config.ServiceAuditedAt = nil
+		}
 	} else {
 		config.CreatedAt = now
 	}
@@ -142,7 +167,7 @@ func (store *IPConfigStore) Save(config IPConfig, secret string) (IPConfig, erro
 	return config, nil
 }
 
-func (store *IPConfigStore) UpdateTraffic(token string, rxBytes, txBytes uint64) (IPConfig, error) {
+func (store *IPConfigStore) UpdateClientReport(token string, rxBytes, txBytes uint64, health ClientHealth) (IPConfig, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	for id, record := range store.configs {
@@ -168,6 +193,50 @@ func (store *IPConfigStore) UpdateTraffic(token string, rxBytes, txBytes uint64)
 		record.LastTXBytes = txBytes
 		now := time.Now().UTC()
 		record.TrafficUpdatedAt = &now
+		record.DNSReady = health.DNSReady
+		record.SystemDNSReady = health.SystemDNSReady
+		record.RoutesReady = health.RoutesReady
+		record.HealthyRoutes = health.HealthyRoutes
+		record.ExpectedRoutes = health.ExpectedRoutes
+		record.HealthMessage = strings.TrimSpace(health.Message)
+		record.HealthUpdatedAt = &now
+		store.configs[id] = record
+		if err := store.saveLocked(); err != nil {
+			return IPConfig{}, err
+		}
+		return record.public(), nil
+	}
+	return IPConfig{}, os.ErrNotExist
+}
+
+func (store *IPConfigStore) UpdateTraffic(token string, rxBytes, txBytes uint64) (IPConfig, error) {
+	return store.UpdateClientReport(token, rxBytes, txBytes, ClientHealth{})
+}
+
+func (store *IPConfigStore) UpdateServiceAudit(token string, results map[string]string) (IPConfig, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for id, record := range store.configs {
+		if record.EnrollmentToken != token {
+			continue
+		}
+		filtered := make(map[string]string)
+		for serviceID, result := range results {
+			if _, selected := record.Routes[serviceID]; !selected {
+				continue
+			}
+			result = strings.TrimSpace(result)
+			resultRunes := []rune(result)
+			if len(resultRunes) > 160 {
+				result = string(resultRunes[:160])
+			}
+			if result != "" {
+				filtered[serviceID] = result
+			}
+		}
+		record.ServiceResults = filtered
+		now := time.Now().UTC()
+		record.ServiceAuditedAt = &now
 		store.configs[id] = record
 		if err := store.saveLocked(); err != nil {
 			return IPConfig{}, err
@@ -259,4 +328,16 @@ func randomToken() (string, error) {
 		return "", fmt.Errorf("generate enrollment token: %w", err)
 	}
 	return hex.EncodeToString(buffer), nil
+}
+
+func stringMapEqual(left, right map[string]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		if right[key] != value {
+			return false
+		}
+	}
+	return true
 }

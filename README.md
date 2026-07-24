@@ -29,10 +29,10 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **细化服务域名库** - 动态解析 `stream.smartdns.list`，当前可拆分 170+ 服务条目
 - **自定义服务** - 可在前端新增、编辑、删除任意服务名称与域名
 - **服务级切换** - 每个 DNS 节点可将每项服务绑定到任意解锁机，并恢复 Smart/Fallback 自动选择
-- **解锁结果面板** - 使用与 `dns_unlock.sh` 一致的 Agent UnlockTests 结果，直接列出全部可用和不可用服务
+- **双层解锁检测** - 解锁机显示 Agent UnlockTests，目标 IP 再运行同源 UnlockTests，避免把“节点自检可用”误当成“客户端实际可用”
 - **IP 配置闭环** - 添加目标 IP，批量选择服务及对应解锁机，自动创建 DNS 节点和服务覆盖
 - **客户端管理脚本** - 安装 DNS Agent、测试本机 DNS、接管/备份/恢复系统 DNS
-- **流量统计** - 只统计目标服务器与所选解锁机 IP 之间的 RX/TX，支持单项或全部清零
+- **流量统计** - 每个目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到所选解锁机的 TCP 80/443；不统计整机网卡流量
 - **账户安全** - 点击右上角用户名，验证旧账号后修改管理员用户名和密码
 
 ### 路由模式
@@ -86,7 +86,7 @@ flowchart LR
 
 自动检测以下服务的解锁状态：
 
-节点检测结果来自 Agent 的 UnlockTests，与用户提供的 `dns_unlock.sh` 中“运行解锁检测”使用同一检测来源。已映射的平台服务页会同时显示平台级 DNS 解锁结论和当前 Proxy 的逐域名 TLS 诊断：平台结论用于判断区域解锁，域名结果用于定位 SNI 转发、端口或子域故障，两者不再互相混淆；自定义服务同样保留域名级诊断。
+“节点管理”显示解锁机自身的 Agent UnlockTests；“IP 配置”会在目标服务器上运行与用户提供的 `dns_unlock.sh` 相同的 UnlockTests，并把原始结论回传到每个已选服务。服务配置页优先显示目标机实测结果，同时只对已知可访问的代表域名做 TLS 诊断，避免把仅用于路由的域名后缀根域误报为故障。目标机审计在路由变化后自动执行，并定期刷新。
 
 **流媒体服务**
 - Netflix, Disney+, HBO Max, Amazon Prime Video
@@ -161,7 +161,7 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-页面生成的专属命令会直接进入一键安装流程，并在接管系统 DNS 前要求确认。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装完成后会创建专用 nftables 计数器；systemd timer 在启用后 15 秒内执行首次上报，之后每分钟只上报目标服务器与当前配置中所选解锁机 IP 之间的 RX/TX。
+页面生成的专属命令会直接进入一键安装流程，并在接管系统 DNS 前要求确认。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装器会备份并停用占用 53/80/443 的旧 `dnsmasq`/`sniproxy`，但不会修改 XrayR 或 V2bX。安装完成后会创建专用 nftables 计数器；systemd timer 在启用后 15 秒内首次上报，之后每分钟按目标 IP 统计本机 Prism DNS 的 UDP/TCP 53 与所选解锁机 TCP 80/443。UnlockTests 审计产生的探测流量会在上报后从计数器中清除。
 
 IP 配置、节点密钥、专属令牌和流量基线保存在 `/var/lib/prism-enhancer/ip-configs.json`（`0600`）。不要公开页面生成的专属命令或令牌。完整操作步骤和统计口径见 [中文增强说明](ENHANCED_ZH.md)。
 
