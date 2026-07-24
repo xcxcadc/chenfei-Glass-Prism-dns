@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, and a client management script. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, and client tool `1.3.1`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -31,6 +31,8 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Per-Service Routing** - Bind each service on each DNS client to any proxy agent, or restore Smart/Fallback selection
 - **Two-Layer Unlock Audit** - Shows proxy-side Agent UnlockTests and reruns the same detector on each target IP, avoiding false confidence from proxy-only checks
 - **IP Configuration Workflow** - Add a target IP, choose services and proxy agents, then create DNS nodes and overrides automatically
+- **Automatic Route Application** - Saving service additions, removals, or switches on an installed target no longer requires rerunning the installer; a generic 10-second hash guard safely restarts the Agent and clears stale DNS cache
+- **Service Brand Icons** - Service cards and the IP picker load matching site icons, with deterministic local fallbacks
 - **Client Management Script** - Installs the DNS Agent, tests local DNS, and takes over, backs up, or restores system DNS
 - **Traffic Accounting** - Per target IP, counts local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs; whole-interface traffic is excluded
 - **Account Security** - Click the username in the top bar to change the administrator username and password after verifying the current credentials
@@ -159,7 +161,9 @@ First add the target IP in the Web UI's IP Configs view, select services and pro
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-The dedicated command enters the one-click workflow directly and asks for confirmation before taking over system DNS. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. The installer backs up and disables conflicting legacy `dnsmasq`/`sniproxy` services, but does not modify XrayR or V2bX. Dedicated nftables counters record local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs. The first report runs within 15 seconds and repeats every minute; automated UnlockTests traffic is removed from the counters after the audit.
+The dedicated command is only needed for the target's first installation. Later service additions, removals, and proxy switches apply automatically when saved in the panel. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. The installer backs up and disables conflicting legacy `dnsmasq`/`sniproxy` services, but does not modify XrayR or V2bX. Every new target receives a generic 10-second configuration hash guard that reads that machine's own panel URL and token. When routes change, it restarts only `prism-agent`, waits for port 53, and then commits the new hash so upstream hot-reload cannot leave stale DNS entries. Dedicated nftables counters record local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs. The first report runs within 15 seconds and repeats every minute; automated UnlockTests traffic is removed from the counters after the audit.
+
+The guard, traffic accounting, and automatic-apply logic are generated from each target's own configuration and contain no fixed host addresses, so future proxy and target machines inherit the same behavior by default.
 
 IP configurations, node secrets, enrollment tokens, and traffic baselines are stored in `/var/lib/prism-enhancer/ip-configs.json` with mode `0600`. Do not publish a dedicated command or enrollment token.
 

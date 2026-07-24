@@ -62,7 +62,6 @@ const categoryNames = {
   "Others": "其他服务", "South America Media": "南美媒体", "Southeast Asia Media": "东南亚媒体", "Sports Media": "体育服务", "Taiwan Media": "台湾媒体"
 };
 
-const serviceIcons = ["◈", "◆", "●", "▲", "■", "✦", "◎", "◇"];
 const state = {
   token: localStorage.getItem("prism_token") || "",
   user: JSON.parse(localStorage.getItem("prism_user") || "{}"),
@@ -138,8 +137,10 @@ function serviceStatus(service, node) {
   if (value) return {kind:"bad", label:t("unavailable"), raw:value};
   return {kind:"", label:t("unknown"), raw:""};
 }
-function iconFor(service) { return service.custom ? "✚" : serviceIcons[Math.abs(hashCode(service.id)) % serviceIcons.length]; }
-function hashCode(value) { return Array.from(value).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 0); }
+function serviceIconHTML(service) {
+  const name = displayServiceName(service);
+  return `<span class="service-icon"><img src="/enhancer/icons/${encodeURIComponent(service.id)}.png" alt="" title="${escapeHTML(name)}" loading="lazy" decoding="async"></span>`;
+}
 function formatDate(value) { if (!value) return "-"; try { return new Date(value).toLocaleString(state.lang === "zh" ? "zh-CN" : "en-US"); } catch { return value; } }
 function formatBytes(value) { const bytes = Number(value) || 0; if (bytes < 1024) return `${bytes} B`; const units = ["KB", "MB", "GB", "TB"]; let size = bytes; let unit = -1; do { size /= 1024; unit++; } while (size >= 1024 && unit < units.length - 1); return `${size >= 100 ? size.toFixed(0) : size.toFixed(2)} ${units[unit]}`; }
 function displayCategory(value) { return state.lang === "zh" ? categoryNames[value] || value : value; }
@@ -340,7 +341,7 @@ function serviceCardHTML(service) {
   const rule = serviceRule(service); const node = activeNodeFor(rule); const status = serviceStatus(service, node); const manual = !!overrideFor(rule);
   const displayName = displayServiceName(service);
   return `<article class="panel service-card ${rule ? "configured" : ""} ${service.custom ? "custom" : ""}" data-service-id="${escapeHTML(service.id)}">
-    <div class="service-head"><div class="service-icon">${iconFor(service)}</div><span class="badge ${status.kind}">${status.label}</span></div>
+    <div class="service-head">${serviceIconHTML(service)}<span class="badge ${status.kind}">${status.label}</span></div>
     <div class="service-name" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div><div class="service-category">${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</div>
     <div class="service-route"><span>${manual ? "●" : "○"}</span><strong>${escapeHTML(node?.name || (rule ? t("auto") : t("notConfigured")))}</strong></div>
     <div class="service-actions"><span class="badge ${manual ? "warn" : ""}">${manual ? t("manual") : t("auto")}</span><button class="btn small primary service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button></div></article>`;
@@ -431,7 +432,15 @@ async function refreshCatalog() {
   try { await api("/enhancer/api/catalog?refresh=1"); toast(t("saved"), "good"); await loadAll(); } catch (error) { toast(error.message, "error"); }
 }
 
-function openService(id) { const service = state.catalog.find(item => item.id === id); if (!service) return; state.modal = {type:"service", service, proxyId:nodeID(activeNodeFor(serviceRule(service))?.id)}; state.testResults = null; renderModal(); }
+function openService(id) {
+  const service = state.catalog.find(item => item.id === id);
+  if (!service) return;
+  const current = activeNodeFor(serviceRule(service));
+  const fallback = proxyNodes().find(isOnline) || proxyNodes()[0];
+  state.modal = {type:"service", service, proxyId:nodeID(current?.id || fallback?.id)};
+  state.testResults = null;
+  renderModal();
+}
 function openServiceForm(service = null) { state.modal = {type:"service-form", service}; renderModal(); }
 function openAccountSettings() { state.modal = {type:"account", error:"", busy:false}; renderModal(); }
 function randomSecret() { return Math.random().toString(36).slice(-8); }
@@ -562,10 +571,10 @@ function ipFormHTML() {
   }
   const services = state.catalog;
   const selectedCount = Object.keys(modal.routes).length;
-  return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} ${selectedCount}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
+  return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
     const selectedProxy = modal.routes[service.id] || ""; const checked = !!selectedProxy; const audit = auditResultState(modal.config?.service_results?.[service.id]);
-    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}><span class="service-icon">${iconFor(service)}</span><span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select>${checked ? `<div class="service-audit"><span>${t("actualAudit")}</span><span class="badge ${audit.kind}" title="${escapeHTML(audit.label)}">${escapeHTML(audit.label)}</span></div>` : ""}</article>`;
-  }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${!selectedCount ? "disabled" : ""}>${t("saveConfig")}</button></div></footer></form></div>`;
+    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><span>${t("actualAudit")}</span><span class="badge ${audit.kind}" title="${escapeHTML(audit.label)}">${escapeHTML(audit.label)}</span></div></article>`;
+  }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${t("saveConfig")}</button></div></footer></form></div>`;
 }
 
 function ipScriptHTML() {
@@ -601,11 +610,26 @@ function bindModal() {
   document.getElementById("ip-back")?.addEventListener("click", () => { state.modal.step = 1; state.modal.error = ""; renderModal(); });
   document.getElementById("ip-service-search")?.addEventListener("input", event => { state.modal.serviceSearch = event.target.value; filterIPServiceOptions(); });
   document.querySelectorAll(".ip-service-check").forEach(input => input.addEventListener("change", () => {
-    if (input.checked) state.modal.routes[input.dataset.serviceId] = state.modal.defaultProxy;
-    else delete state.modal.routes[input.dataset.serviceId];
-    renderModal();
+    const option = input.closest(".ip-service-option");
+    const select = option?.querySelector(".ip-service-proxy");
+    const audit = option?.querySelector(".service-audit");
+    if (input.checked) {
+      state.modal.routes[input.dataset.serviceId] = select?.value || state.modal.defaultProxy;
+    } else {
+      delete state.modal.routes[input.dataset.serviceId];
+    }
+    option?.classList.toggle("selected", input.checked);
+    if (select) select.disabled = !input.checked;
+    if (audit) audit.hidden = !input.checked;
+    const selectedCount = Object.keys(state.modal.routes).length;
+    const count = document.getElementById("ip-selected-count");
+    const save = document.getElementById("ip-save-config");
+    if (count) count.textContent = String(selectedCount);
+    if (save) save.disabled = selectedCount === 0;
   }));
-  document.querySelectorAll(".ip-service-proxy").forEach(select => select.addEventListener("change", () => { state.modal.routes[select.dataset.serviceId] = select.value; }));
+  document.querySelectorAll(".ip-service-proxy").forEach(select => select.addEventListener("change", () => {
+    if (select.closest(".ip-service-option")?.querySelector(".ip-service-check")?.checked) state.modal.routes[select.dataset.serviceId] = select.value;
+  }));
   document.getElementById("confirm-delete-ip")?.addEventListener("click", deleteIPConfig);
   document.getElementById("account-form")?.addEventListener("submit", updateAccount);
   filterIPServiceOptions();
@@ -753,9 +777,10 @@ async function saveIPConfig() {
   if (!Object.keys(modal.routes).length) return;
   const payload = {...modal.draft, routes:modal.routes};
   try {
-    const path = modal.config ? `/enhancer/api/ip-configs/${encodeURIComponent(modal.config.id)}` : "/enhancer/api/ip-configs";
-    const config = await api(path, {method:modal.config ? "PUT" : "POST", body:JSON.stringify(payload)});
-    state.modal = {type:"ip-script", config, command:ipScriptCommand(config)};
+    const editing = !!modal.config;
+    const path = editing ? `/enhancer/api/ip-configs/${encodeURIComponent(modal.config.id)}` : "/enhancer/api/ip-configs";
+    const config = await api(path, {method:editing ? "PUT" : "POST", body:JSON.stringify(payload)});
+    state.modal = editing ? null : {type:"ip-script", config, command:ipScriptCommand(config)};
     await loadAll(true);
     renderModal();
     toast(t("saved"), "good");

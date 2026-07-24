@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，当前增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前客户端工具版本为 `1.3.1`，完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
@@ -31,6 +31,8 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **服务级切换** - 每个 DNS 节点可将每项服务绑定到任意解锁机，并恢复 Smart/Fallback 自动选择
 - **双层解锁检测** - 解锁机显示 Agent UnlockTests，目标 IP 再运行同源 UnlockTests，避免把“节点自检可用”误当成“客户端实际可用”
 - **IP 配置闭环** - 添加目标 IP，批量选择服务及对应解锁机，自动创建 DNS 节点和服务覆盖
+- **配置自动生效** - 已安装目标机保存增删服务后无需重复执行命令；通用 10 秒配置哈希守卫会安全重启 Agent 并清除旧 DNS 缓存
+- **服务品牌图标** - 服务卡片和 IP 选择器加载对应站点图标，网络不可用时自动使用本地图标
 - **客户端管理脚本** - 安装 DNS Agent、测试本机 DNS、接管/备份/恢复系统 DNS
 - **流量统计** - 每个目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到所选解锁机的 TCP 80/443；不统计整机网卡流量
 - **账户安全** - 点击右上角用户名，验证旧账号后修改管理员用户名和密码
@@ -161,7 +163,9 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-页面生成的专属命令会直接进入一键安装流程，并在接管系统 DNS 前要求确认。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装器会备份并停用占用 53/80/443 的旧 `dnsmasq`/`sniproxy`，但不会修改 XrayR 或 V2bX。安装完成后会创建专用 nftables 计数器；systemd timer 在启用后 15 秒内首次上报，之后每分钟按目标 IP 统计本机 Prism DNS 的 UDP/TCP 53 与所选解锁机 TCP 80/443。UnlockTests 审计产生的探测流量会在上报后从计数器中清除。
+页面生成的专属命令只用于目标机首次安装；后续在面板保存新增、取消或切换服务会自动生效，不再弹出安装命令。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装器会备份并停用占用 53/80/443 的旧 `dnsmasq`/`sniproxy`，但不会修改 XrayR 或 V2bX。每台新目标机默认安装通用配置哈希守卫，每 10 秒读取该机器自己的面板地址和令牌；路由变化时仅安全重启 `prism-agent`，等待 53 端口恢复后再提交新哈希，避免上游热更新残留旧 DNS 缓存。安装完成后还会创建专用 nftables 计数器；systemd timer 在启用后 15 秒内首次上报，之后每分钟按目标 IP 统计本机 Prism DNS 的 UDP/TCP 53 与所选解锁机 TCP 80/443。UnlockTests 审计产生的探测流量会在上报后从计数器中清除。
+
+以上守卫、流量统计和自动应用逻辑均从每台目标机自己的配置动态生成，不包含固定 IP，可直接用于后续新增的任意解锁机和被解锁机。
 
 IP 配置、节点密钥、专属令牌和流量基线保存在 `/var/lib/prism-enhancer/ip-configs.json`（`0600`）。不要公开页面生成的专属命令或令牌。完整操作步骤和统计口径见 [中文增强说明](ENHANCED_ZH.md)。
 

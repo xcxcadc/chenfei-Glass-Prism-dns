@@ -12,6 +12,7 @@ import (
 
 func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	var override map[string]string
+	var createdRule map[string]any
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/catalog" {
 			_, _ = writer.Write([]byte("# ---------- > Global Platform\n# > Netflix\nnameserver /netflix.com/group\n"))
@@ -31,6 +32,7 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 		case request.URL.Path == "/api/rules" && request.Method == http.MethodPost:
 			var rule map[string]any
 			_ = json.NewDecoder(request.Body).Decode(&rule)
+			createdRule = rule
 			rule["id"] = 11
 			writeJSON(writer, http.StatusCreated, rule)
 		case request.URL.Path == "/api/rules/11/override" && request.Method == http.MethodPost:
@@ -69,6 +71,9 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	}
 	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || override["proxy_node_id"] != "2" || len(config.TrafficPeers) != 1 || config.TrafficPeers[0] != "198.51.100.20" {
 		t.Fatalf("configuration was not orchestrated: config=%+v override=%+v", config, override)
+	}
+	if createdRule["target_type"] != "group" || createdRule["target_val"] != "__prism_enhancer_direct__" {
+		t.Fatalf("IP rule must use the direct baseline group: %+v", createdRule)
 	}
 
 	bootstrap := httptest.NewRequest(http.MethodGet, "/enhancer/api/bootstrap/"+config.EnrollmentToken, nil)
@@ -114,5 +119,50 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	stored, _ = ipStore.Get(config.ID)
 	if stored.ServiceResults[serviceID] == "" || stored.ServiceAuditedAt == nil {
 		t.Fatalf("service audit was not stored: %+v", stored)
+	}
+}
+
+func TestApplyIPRoutesMigratesLegacyRuleBeforeClearingOverride(t *testing.T) {
+	var migrated map[string]any
+	var override map[string]string
+	var serviceID string
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.URL.Path == "/catalog":
+			_, _ = writer.Write([]byte("# ---------- > Global Platform\n# > Netflix\nnameserver /netflix.com/group\n"))
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{map[string]any{
+				"id": "11", "name": "Stream · Netflix", "type": "RULE-SET",
+				"source_type": "all", "source_val": "", "target_type": "node", "target_val": "2",
+				"value": "https://panel.example/enhancer/rules/" + serviceID + ".list", "enabled": true,
+			}})
+		case request.URL.Path == "/api/nodes" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": "2", "role": "proxy", "public_ip": "198.51.100.20"}})
+		case request.URL.Path == "/api/rules/11" && request.Method == http.MethodPut:
+			_ = json.NewDecoder(request.Body).Decode(&migrated)
+			writer.WriteHeader(http.StatusNoContent)
+		case request.URL.Path == "/api/rules/11/override" && request.Method == http.MethodPost:
+			_ = json.NewDecoder(request.Body).Decode(&override)
+			writeJSON(writer, http.StatusOK, map[string]bool{"ok": true})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore)
+	serviceID = catalog.Snapshot(context.Background(), true).Services[0].ID
+	app, _ := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+
+	if _, err := app.applyIPRoutes(context.Background(), "Bearer valid", "7", map[string]string{serviceID: "2"}, map[string]string{}, "https://panel.example"); err != nil {
+		t.Fatal(err)
+	}
+	if migrated["target_type"] != "group" || migrated["target_val"] != "__prism_enhancer_direct__" {
+		t.Fatalf("legacy rule was not migrated to the direct baseline: %+v", migrated)
+	}
+	if override["dns_node_id"] != "7" || override["proxy_node_id"] != "" {
+		t.Fatalf("override was not cleared: %+v", override)
 	}
 }

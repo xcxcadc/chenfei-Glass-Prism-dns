@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,12 @@ import (
 	"strings"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
+}
 
 func TestRuleSetHandler(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -76,5 +83,53 @@ func TestCustomServiceWriteRequiresAuthentication(t *testing.T) {
 	app.Handler().ServeHTTP(authorizedResponse, authorized)
 	if authorizedResponse.Code != http.StatusCreated {
 		t.Fatalf("expected created, got %d: %s", authorizedResponse.Code, authorizedResponse.Body.String())
+	}
+}
+
+func TestServiceIconHandlerCachesFetchedIcon(t *testing.T) {
+	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	service, _ := store.Upsert(Service{Name: "Example", Domains: []string{"example.com"}})
+	requests := 0
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"image/png"}},
+			Body:       io.NopCloser(strings.NewReader("png")),
+			Request:    request,
+		}, nil
+	})}
+	catalog := NewCatalogManager("https://catalog.invalid/list", client, store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, _ := NewApp("http://127.0.0.1:1", catalog, store, ipStore, client)
+
+	for range 2 {
+		request := httptest.NewRequest(http.MethodGet, "/enhancer/icons/"+service.ID+".png", nil)
+		response := httptest.NewRecorder()
+		app.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/png" || response.Body.String() != "png" {
+			t.Fatalf("unexpected icon response: %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+		}
+	}
+	if requests != 1 {
+		t.Fatalf("icon should be fetched once, got %d requests", requests)
+	}
+}
+
+func TestServiceIconHandlerFallsBackToSVG(t *testing.T) {
+	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	service, _ := store.Upsert(Service{Name: "Fallback", Domains: []string{"fallback.example"}})
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("offline")
+	})}
+	catalog := NewCatalogManager("https://catalog.invalid/list", client, store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, _ := NewApp("http://127.0.0.1:1", catalog, store, ipStore, client)
+
+	request := httptest.NewRequest(http.MethodGet, "/enhancer/icons/"+service.ID+".png", nil)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "image/svg+xml") || !strings.Contains(response.Body.String(), "<svg") {
+		t.Fatalf("unexpected fallback icon: %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 	}
 }

@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.3.0"
+VERSION="1.3.1"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -292,6 +292,51 @@ if [[ "$AUDIT_HASH" != "$LAST_AUDIT_HASH" ]] || ((NOW - LAST_AUDIT_TIME >= AUDIT
 fi
 EOF
   chmod 700 /usr/local/lib/prismdns/report-traffic.sh
+  cat > /usr/local/lib/prismdns/sync-routes.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_FILE="/var/lib/prismdns/client.conf"
+HASH_FILE="/var/lib/prismdns/route-config.sha256"
+LOCK_FILE="/run/prismdns-route-sync.lock"
+[[ -f "$CONFIG_FILE" ]] || exit 0
+MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
+TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
+[[ -n "$MASTER" && -n "$TOKEN" ]] || exit 0
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK_FILE"
+  flock -n 9 || exit 0
+else
+  LOCK_DIR="${LOCK_FILE}.d"
+  mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+  trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+fi
+BOOTSTRAP=$(curl -fsSL --connect-timeout 5 --max-time 10 "$MASTER/enhancer/api/bootstrap/$TOKEN")
+CURRENT_HASH=$(jq -Sc '{
+  smart:(.smart // true),
+  traffic_peers:((.traffic_peers // []) | sort),
+  health_probes:([.health_probes[]? | {service_id,domain,unlock_test}] | sort_by(.service_id))
+}' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
+LAST_HASH=$(cat "$HASH_FILE" 2>/dev/null || true)
+if [[ -z "$LAST_HASH" ]]; then
+  printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
+  exit 0
+fi
+[[ "$CURRENT_HASH" != "$LAST_HASH" ]] || exit 0
+if systemctl is-active --quiet prism-agent 2>/dev/null; then
+  systemctl restart prism-agent
+  for _ in {1..20}; do
+    if systemctl is-active --quiet prism-agent 2>/dev/null &&
+       ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}'; then
+      printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
+      exit 0
+    fi
+    sleep 1
+  done
+  exit 1
+fi
+printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
+EOF
+  chmod 700 /usr/local/lib/prismdns/sync-routes.sh
   if command -v systemctl >/dev/null 2>&1; then
     cat > /etc/systemd/system/prismdns-traffic.service <<'EOF'
 [Unit]
@@ -315,14 +360,38 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+    cat > /etc/systemd/system/prismdns-route-sync.service <<'EOF'
+[Unit]
+Description=Apply Prism DNS route changes and flush Agent DNS cache
+After=network-online.target prism-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/prismdns/sync-routes.sh
+EOF
+    cat > /etc/systemd/system/prismdns-route-sync.timer <<'EOF'
+[Unit]
+Description=Check Prism DNS route changes every 10 seconds
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
     systemctl daemon-reload
     systemctl enable --now prismdns-traffic.timer >/dev/null
+    systemctl enable --now prismdns-route-sync.timer >/dev/null
   elif [[ -d /etc/cron.d ]]; then
-    printf '* * * * * root /usr/local/lib/prismdns/report-traffic.sh\n' > /etc/cron.d/prismdns-traffic
+    printf '* * * * * root /usr/local/lib/prismdns/report-traffic.sh\n* * * * * root /usr/local/lib/prismdns/sync-routes.sh\n' > /etc/cron.d/prismdns-traffic
     chmod 644 /etc/cron.d/prismdns-traffic
   else
     warn "系统没有 systemd 或 cron，无法启用定时流量上报。"
   fi
+  /usr/local/lib/prismdns/sync-routes.sh || warn "首次路由同步守卫初始化失败，定时任务会稍后重试。"
   /usr/local/lib/prismdns/report-traffic.sh || warn "首次流量上报失败，定时任务会稍后重试。"
   ok "每 IP 解锁链路流量统计已启用（本机 Prism DNS 的 UDP/TCP 53，加上目标服务器与已选解锁机之间 TCP 80/443；每分钟上报）。"
 }
@@ -510,6 +579,8 @@ show_status() {
   printf '  备份数量         : %s\n' "$backup_count"
   printf '  解锁链路流量上报 : '
   if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet prismdns-traffic.timer 2>/dev/null; then echo "每分钟"; elif [[ -f /etc/cron.d/prismdns-traffic ]]; then echo "每分钟 (cron)"; else echo "未启用"; fi
+  printf '  路由热更新守卫     : '
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet prismdns-route-sync.timer 2>/dev/null; then echo "每 10 秒"; elif [[ -f /etc/cron.d/prismdns-traffic ]]; then echo "每分钟 (cron)"; else echo "未启用"; fi
   echo ""
 }
 

@@ -26,6 +26,7 @@ type App struct {
 	upstream     *url.URL
 	proxy        *httputil.ReverseProxy
 	client       *http.Client
+	icons        *serviceIconCache
 	web          fs.FS
 	indexHTML    []byte
 	controllerDB string
@@ -61,6 +62,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		upstream:     upstream,
 		proxy:        proxy,
 		client:       client,
+		icons:        newServiceIconCache(),
 		web:          web,
 		indexHTML:    indexHTML,
 		controllerDB: databasePath,
@@ -82,6 +84,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/audit/report", app.handleServiceAuditReport)
 	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)
 	mux.HandleFunc("/enhancer/rules/", app.handleRuleSet)
+	mux.HandleFunc("/enhancer/icons/", app.handleServiceIcon)
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(app.web))))
 	mux.HandleFunc("/", app.handleRoot)
 	return securityHeaders(requestLogger(mux))

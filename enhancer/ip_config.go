@@ -357,6 +357,8 @@ func (app *App) deleteIPConfig(writer http.ResponseWriter, request *http.Request
 }
 
 func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID string, previous, current map[string]string, baseURL string) ([]string, error) {
+	const directGroup = "__prism_enhancer_direct__"
+
 	var rules []map[string]any
 	if err := app.upstreamJSON(ctx, authorization, http.MethodGet, "/api/rules", nil, &rules); err != nil {
 		return nil, err
@@ -378,11 +380,47 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 	findRule := func(serviceID string) map[string]any {
 		suffix := "/enhancer/rules/" + serviceID + ".list"
 		for _, rule := range rules {
-			if strings.HasSuffix(valueString(rule["value"]), suffix) {
+			if valueString(rule["source_type"]) == "all" && strings.HasSuffix(valueString(rule["value"]), suffix) {
 				return rule
 			}
 		}
 		return nil
+	}
+	prepareRule := func(service Service) (map[string]any, error) {
+		rule := findRule(service.ID)
+		if rule == nil {
+			payload := map[string]any{
+				"name": "Prism IP · " + service.Name, "type": "RULE-SET", "source_type": "all", "source_val": "",
+				"target_type": "group", "target_val": directGroup,
+				"value": strings.TrimRight(baseURL, "/") + "/enhancer/rules/" + service.ID + ".list", "enabled": true,
+			}
+			if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules", payload, &rule); err != nil {
+				return nil, err
+			}
+			rules = append(rules, rule)
+			return rule, nil
+		}
+		if valueString(rule["target_type"]) == "group" && valueString(rule["target_val"]) == directGroup {
+			return rule, nil
+		}
+		ruleID := valueString(rule["id"])
+		if ruleID == "" {
+			return nil, errors.New("Controller 未返回规则 ID")
+		}
+		payload := make(map[string]any, len(rule))
+		for key, value := range rule {
+			payload[key] = value
+		}
+		payload["name"] = "Prism IP · " + service.Name
+		payload["source_type"] = "all"
+		payload["source_val"] = ""
+		payload["target_type"] = "group"
+		payload["target_val"] = directGroup
+		payload["enabled"] = true
+		if err := app.upstreamJSON(ctx, authorization, http.MethodPut, "/api/rules/"+url.PathEscape(ruleID), payload, nil); err != nil {
+			return nil, err
+		}
+		return payload, nil
 	}
 	trafficPeerSet := make(map[string]struct{})
 	for serviceID, proxyID := range current {
@@ -397,16 +435,9 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		if !ok {
 			return nil, fmt.Errorf("服务不存在: %s", serviceID)
 		}
-		rule := findRule(serviceID)
-		if rule == nil {
-			payload := map[string]any{
-				"name": "Stream · " + service.Name, "type": "RULE-SET", "source_type": "all", "source_val": "", "target_type": "node", "target_val": proxyID,
-				"value": strings.TrimRight(baseURL, "/") + "/enhancer/rules/" + service.ID + ".list", "enabled": true,
-			}
-			if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules", payload, &rule); err != nil {
-				return nil, err
-			}
-			rules = append(rules, rule)
+		rule, err := prepareRule(service)
+		if err != nil {
+			return nil, err
 		}
 		ruleID := valueString(rule["id"])
 		if ruleID == "" {
@@ -424,6 +455,13 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		rule := findRule(serviceID)
 		if rule == nil {
 			continue
+		}
+		if service, ok := services[serviceID]; ok {
+			var err error
+			rule, err = prepareRule(service)
+			if err != nil {
+				return nil, err
+			}
 		}
 		payload := map[string]string{"dns_node_id": dnsNodeID, "proxy_node_id": ""}
 		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules/"+url.PathEscape(valueString(rule["id"]))+"/override", payload, nil); err != nil {
