@@ -35,13 +35,13 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 
 ## 流量统计口径
 
-`prismdns.sh` 会根据 IP 配置下发的 `traffic_peers` 创建 nftables 专用统计链，只累计目标服务器与这些 Proxy IPv4/IPv6 地址之间的入站和出站字节数，每分钟上报一次。普通公网访问、系统更新和其他非解锁机流量不会计入。首次上报或清零后的首次上报只建立新基线，不会把清零前的计数重新加回来。
+`prismdns.sh` 会根据 IP 配置下发的 `traffic_peers` 创建 nftables 专用统计链，只累计目标服务器与这些 Proxy IPv4/IPv6 地址之间的入站和出站字节数。systemd timer 启用后 15 秒内执行首次上报，之后每分钟上报一次；普通公网访问、系统更新和其他非解锁机流量不会计入。首次上报或清零后的首次上报只建立新基线，不会把清零前的计数重新加回来。
 
 “清零流量”只重置面板累计值和上报基线，不会影响 nftables 规则、DNS 节点和服务配置。IP 配置及令牌保存在 `/var/lib/prism-enhancer/ip-configs.json`，文件权限为 `0600`；请勿公开页面生成的专属命令或配置令牌。
 
 ## 解锁检测与账户安全
 
-“节点管理”中的“运行解锁检测”调用 Agent 的检测任务，结果来源与 `dns_unlock.sh` 使用的 UnlockTests 一致。完成后弹窗按项目展示原始结论，并汇总可用与不可用数量。对 Claude、Disney+、Netflix 等已映射平台，服务配置页显示对应平台结论；自定义服务没有对应检测器时才使用域名级 TLS 诊断。
+“节点管理”中的“运行解锁检测”调用 Agent 的检测任务，结果来源与 `dns_unlock.sh` 使用的 UnlockTests 一致。完成后弹窗按项目展示原始结论，并汇总可用与不可用数量。对 Claude、Disney+、Netflix 等已映射平台，服务配置页会同时显示平台结论和当前 Proxy 的逐域名 TLS 诊断；平台结论用于判断区域解锁，域名诊断用于定位 SNI 转发、监听端口和子域故障。自定义服务同样执行域名级诊断。
 
 点击页面右上角当前用户名可打开“账户安全”。系统先通过 Controller 验证旧用户名和旧密码，再原子更新 SQLite 用户记录并清理旧会话；更新成功后必须使用新账户重新登录。
 

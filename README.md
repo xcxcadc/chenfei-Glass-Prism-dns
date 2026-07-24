@@ -86,7 +86,7 @@ flowchart LR
 
 自动检测以下服务的解锁状态：
 
-节点检测结果来自 Agent 的 UnlockTests，与用户提供的 `dns_unlock.sh` 中“运行解锁检测”使用同一检测来源。已映射的平台服务页直接显示平台级 DNS 解锁结论，不再把域名库中每个域名的通用 TLS 握手结果误当作平台可用性；没有检测器映射的自定义服务仍保留域名级连通性诊断。
+节点检测结果来自 Agent 的 UnlockTests，与用户提供的 `dns_unlock.sh` 中“运行解锁检测”使用同一检测来源。已映射的平台服务页会同时显示平台级 DNS 解锁结论和当前 Proxy 的逐域名 TLS 诊断：平台结论用于判断区域解锁，域名结果用于定位 SNI 转发、端口或子域故障，两者不再互相混淆；自定义服务同样保留域名级诊断。
 
 **流媒体服务**
 - Netflix, Disney+, HBO Max, Amazon Prime Video
@@ -161,7 +161,7 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-页面生成的专属命令会直接进入一键安装流程，并在接管系统 DNS 前要求确认。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装完成后会创建专用 nftables 计数器，每分钟只上报目标服务器与当前配置中所选解锁机 IP 之间的 RX/TX。
+页面生成的专属命令会直接进入一键安装流程，并在接管系统 DNS 前要求确认。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装完成后会创建专用 nftables 计数器；systemd timer 在启用后 15 秒内执行首次上报，之后每分钟只上报目标服务器与当前配置中所选解锁机 IP 之间的 RX/TX。
 
 IP 配置、节点密钥、专属令牌和流量基线保存在 `/var/lib/prism-enhancer/ip-configs.json`（`0600`）。不要公开页面生成的专属命令或令牌。完整操作步骤和统计口径见 [中文增强说明](ENHANCED_ZH.md)。
 

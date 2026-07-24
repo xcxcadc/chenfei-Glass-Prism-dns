@@ -86,7 +86,7 @@ flowchart LR
 
 Automatically detect unlock status for the following services:
 
-The node result panel uses the Agent's UnlockTests output, which is also the detector installed by the referenced `dns_unlock.sh`. Known service pages show that platform-level DNS unlock result instead of treating a generic TLS handshake against every catalog domain as the platform verdict. Custom services without a detector mapping retain the domain-level connectivity diagnostic.
+The node result panel uses the Agent's UnlockTests output, which is also the detector installed by the referenced `dns_unlock.sh`. Known service pages now show both the platform-level unlock verdict and per-domain TLS diagnostics through the selected proxy. The platform result describes regional unlock capability, while the domain rows expose SNI forwarding, listener, or subdomain failures without conflating the two.
 
 **Streaming Services**
 - Netflix, Disney+, HBO Max, Amazon Prime Video
@@ -159,7 +159,7 @@ First add the target IP in the Web UI's IP Configs view, select services and pro
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-The dedicated command enters the one-click workflow directly and asks for confirmation before taking over system DNS. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. It creates dedicated nftables counters and reports only traffic exchanged with the selected proxy IPs every minute.
+The dedicated command enters the one-click workflow directly and asks for confirmation before taking over system DNS. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. It creates dedicated nftables counters; the systemd timer performs its first report within 15 seconds of activation and then reports only traffic exchanged with selected proxy IPs every minute.
 
 IP configurations, node secrets, enrollment tokens, and traffic baselines are stored in `/var/lib/prism-enhancer/ip-configs.json` with mode `0600`. Do not publish a dedicated command or enrollment token.
 

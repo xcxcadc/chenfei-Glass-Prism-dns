@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.2.0"
+VERSION="1.2.2"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -188,9 +188,9 @@ EOF
 Description=Report Prism DNS unlock-link traffic every minute
 
 [Timer]
-OnBootSec=1min
+OnActiveSec=15s
 OnUnitActiveSec=1min
-AccuracySec=10s
+AccuracySec=5s
 Persistent=true
 
 [Install]

@@ -245,18 +245,25 @@ EOF
 
 start_service() {
     step "Starting service..."
+    AGENT_STARTED_AT=$(date '+%Y-%m-%d %H:%M:%S')
     systemctl restart "$SERVICE_NAME"
     
     info "Waiting for initialization..."
-    sleep 3
-
-    if ! systemctl is-active --quiet "$SERVICE_NAME"; then
-        error "Failed to start! Check logs: journalctl -u $SERVICE_NAME -n 20"
-    fi
+    for _ in {1..30}; do
+        if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+            error "Failed to start! Check logs: journalctl -u $SERVICE_NAME -n 20"
+        fi
+        LOGS=$(journalctl -u "$SERVICE_NAME" --since "$AGENT_STARTED_AT" --no-pager 2>/dev/null || true)
+        if echo "$LOGS" | grep -Eq "DNS Server Started|Proxy Server Started"; then
+            return
+        fi
+        sleep 1
+    done
+    warn "Agent is running but node configuration is still syncing. Check the panel and journal shortly."
 }
 
 show_result() {
-    LOGS=$(journalctl -u "$SERVICE_NAME" -n 50 --no-pager)
+    LOGS=$(journalctl -u "$SERVICE_NAME" --since "${AGENT_STARTED_AT:-5 minutes ago}" --no-pager 2>/dev/null || true)
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════${NC}"
     echo -e "${GREEN}   Liquid Glass Prism Agent Installed!         ${NC}"
@@ -271,9 +278,9 @@ show_result() {
         echo -e "  Feature: ${CYAN}Smart Mode Enabled${NC}"
     fi
 
-    if echo "$LOGS" | grep -q "DNS Mode Started"; then
+    if echo "$LOGS" | grep -q "DNS Server Started"; then
         echo -e "  Mode:    ${CYAN}DNS Client${NC} (Set DNS to 127.0.0.1)"
-    elif echo "$LOGS" | grep -q "Proxy Mode Started"; then
+    elif echo "$LOGS" | grep -q "Proxy Server Started"; then
         echo -e "  Mode:    ${CYAN}Proxy Agent${NC} (Open ports 80/443)"
     else
         warn "  Syncing config, check logs shortly."

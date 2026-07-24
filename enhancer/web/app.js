@@ -641,15 +641,20 @@ async function testService() {
   const service = state.modal.service; const node = state.nodes.find(item => nodeID(item.id) === nodeID(state.modal.proxyId)); if (!node) return;
   const button = document.getElementById("test-service"); button.disabled = true; button.textContent = t("testing");
   try {
+    const results = [];
     const detector = serviceDetectorKey(service);
     if (detector) {
-      const latest = await refreshNodeUnlock(node.id, true);
-      const value = parseUnlock(latest)[detector] || "No result";
-      state.testResults = [{domain:detector, detail:value, success:unlockPassed(value)}];
-    } else {
-      const data = await api("/enhancer/api/connectivity", {method:"POST", body:JSON.stringify({proxy_server:serverHost(node), domains:service.domains.slice(0, 5), timeout_ms:6000})});
-      state.testResults = data.results || [];
+      try {
+        const latest = await refreshNodeUnlock(node.id, true);
+        const value = parseUnlock(latest)[detector] || "No result";
+        results.push({domain:`UnlockTests · ${detector}`, detail:value, success:unlockPassed(value)});
+      } catch (error) {
+        results.push({domain:`UnlockTests · ${detector}`, detail:error.message, success:false});
+      }
     }
+    const data = await api("/enhancer/api/connectivity", {method:"POST", body:JSON.stringify({proxy_server:serverHost(node), domains:service.domains.slice(0, 10), timeout_ms:12000})});
+    results.push(...(data.results || []));
+    state.testResults = results;
     toast(t("testDone"), "good"); renderModal();
   } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = t("connectivity"); }
 }
