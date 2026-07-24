@@ -169,7 +169,7 @@ async function login(event) {
     const response = await fetch("/api/login", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({username:form.get("username"), password:form.get("password")})});
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || t("failed"));
-    state.token = data.token; state.user = data.user || {};
+    state.token = data.token; state.user = data.user || {username:data.username || ""};
     localStorage.setItem("prism_token", state.token); localStorage.setItem("prism_user", JSON.stringify(state.user));
     await loadAll();
   } catch (loginError) { error.textContent = loginError.message; }
