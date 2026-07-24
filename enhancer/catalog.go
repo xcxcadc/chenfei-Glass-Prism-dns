@@ -62,8 +62,8 @@ func ParseSmartDNS(reader io.Reader) ([]Service, error) {
 		if !ok {
 			service = &Service{
 				ID:       stableServiceID(category, serviceName),
-				Name:     serviceName,
-				Category: category,
+				Name:     canonicalServiceName(serviceName, category),
+				Category: canonicalCategory(category, serviceName),
 				Domains:  make([]string, 0),
 			}
 			services[key] = service
@@ -84,6 +84,52 @@ func ParseSmartDNS(reader io.Reader) ([]Service, error) {
 		result = append(result, *service)
 	}
 	return result, nil
+}
+
+func canonicalServiceName(name, category string) string {
+	aliases := map[string]string{
+		"claude 2":                              "Claude",
+		"google aistudio":                       "Google AI Studio",
+		"google gemini":                         "Gemini",
+		"microsoft copilot for image generates": "Microsoft Copilot Image Creator",
+		"openai":                                "ChatGPT / OpenAI",
+		"bilibili":                              "Bilibili",
+		"netease cloud music":                   "NetEase Cloud Music",
+		"youtube":                               "YouTube",
+		"tiktok":                                "TikTok",
+		"iqiyi":                                 "iQIYI",
+		"eu:skyshowtime":                        "EU:SkyShowtime",
+		"eurosport":                             "Eurosport",
+		"viaplay":                               "Viaplay",
+		"gb:sky go /<replace with groupname>skygonz/<replace with groupname>": "GB:Sky Go",
+		"it rai play":       "IT:RaiPlay",
+		"nl:videoland":      "NL:Videoland",
+		"tr:digiturkplay":   "TR:Digiturk Play",
+		"huluusa":           "Hulu (US)",
+		"exhantai/e-hentai": "ExHentai / E-Hentai",
+	}
+	if canonical, ok := aliases[strings.ToLower(strings.TrimSpace(name))]; ok {
+		return canonical
+	}
+	if name == "未分类" && strings.EqualFold(category, "Indian Media") {
+		return "Indian Media Bundle"
+	}
+	return name
+}
+
+func canonicalCategory(category, serviceName string) string {
+	value := strings.TrimSpace(category)
+	switch strings.ToLower(value) {
+	case "global plaform":
+		return "Global Platform"
+	case "southeastasia media":
+		return "Southeast Asia Media"
+	case "? media":
+		if strings.EqualFold(strings.TrimSpace(serviceName), "Setanta Sports") {
+			return "Sports Media"
+		}
+	}
+	return value
 }
 
 func normalizeDomain(value string) string {

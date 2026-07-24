@@ -53,8 +53,15 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.TrafficRXBytes != 10 || updated.TrafficTXBytes != 10 {
-		t.Fatalf("traffic after clear used the wrong baseline: %+v", updated)
+	if updated.TrafficRXBytes != 0 || updated.TrafficTXBytes != 0 {
+		t.Fatalf("first traffic report after clear should only establish a baseline: %+v", updated)
+	}
+	updated, err = store.UpdateTraffic(config.EnrollmentToken, 30, 45)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.TrafficRXBytes != 10 || updated.TrafficTXBytes != 15 {
+		t.Fatalf("traffic after the new baseline was not accumulated: %+v", updated)
 	}
 
 	reloaded, err := NewIPConfigStore(path)

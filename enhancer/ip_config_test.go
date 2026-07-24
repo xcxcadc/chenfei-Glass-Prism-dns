@@ -23,7 +23,7 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 		}
 		switch {
 		case request.URL.Path == "/api/nodes" && request.Method == http.MethodGet:
-			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": 2, "role": "proxy"}})
+			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": 2, "role": "proxy", "public_ip": "198.51.100.20"}})
 		case request.URL.Path == "/api/nodes" && request.Method == http.MethodPost:
 			writeJSON(writer, http.StatusCreated, map[string]any{"id": 7, "secret": "controller-secret"})
 		case request.URL.Path == "/api/rules" && request.Method == http.MethodGet:
@@ -67,7 +67,7 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &config); err != nil {
 		t.Fatal(err)
 	}
-	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || override["proxy_node_id"] != "2" {
+	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || override["proxy_node_id"] != "2" || len(config.TrafficPeers) != 1 || config.TrafficPeers[0] != "198.51.100.20" {
 		t.Fatalf("configuration was not orchestrated: config=%+v override=%+v", config, override)
 	}
 
@@ -79,8 +79,8 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	}
 
 	for _, report := range []string{
-		`{"token":"` + config.EnrollmentToken + `","interface":"eth0","rx_bytes":100,"tx_bytes":200}`,
-		`{"token":"` + config.EnrollmentToken + `","interface":"eth0","rx_bytes":160,"tx_bytes":280}`,
+		`{"token":"` + config.EnrollmentToken + `","scope":"unlock_peers","interface":"nftables","rx_bytes":100,"tx_bytes":200}`,
+		`{"token":"` + config.EnrollmentToken + `","scope":"unlock_peers","interface":"nftables","rx_bytes":160,"tx_bytes":280}`,
 	} {
 		trafficRequest := httptest.NewRequest(http.MethodPost, "/enhancer/api/traffic/report", strings.NewReader(report))
 		trafficResponse := httptest.NewRecorder()

@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, a client management script, and traffic accounting. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, and a client management script. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -29,10 +29,11 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Detailed Service Catalog** - Dynamically parses `stream.smartdns.list` into 170+ service entries
 - **Custom Services** - Add, edit, and delete arbitrary service names and domain lists in the UI
 - **Per-Service Routing** - Bind each service on each DNS client to any proxy agent, or restore Smart/Fallback selection
-- **Connectivity Tests** - Combines native Agent unlock checks with generic DNS/TLS tests
+- **Unlock Result Panel** - Runs the Agent UnlockTests check used by `dns_unlock.sh` and lists every available and unavailable platform directly
 - **IP Configuration Workflow** - Add a target IP, choose services and proxy agents, then create DNS nodes and overrides automatically
 - **Client Management Script** - Installs the DNS Agent, tests local DNS, and takes over, backs up, or restores system DNS
-- **Traffic Accounting** - Aggregates default-interface RX/TX deltas for all IPs and each IP, with per-IP and global reset
+- **Traffic Accounting** - Counts only RX/TX between each target server and its selected proxy IPs, with per-IP and global reset
+- **Account Security** - Click the username in the top bar to change the administrator username and password after verifying the current credentials
 
 ### Routing Modes
 
@@ -84,6 +85,8 @@ flowchart LR
 ### Unlock Detection
 
 Automatically detect unlock status for the following services:
+
+The node result panel uses the Agent's UnlockTests output, which is also the detector installed by the referenced `dns_unlock.sh`. Known service pages show that platform-level DNS unlock result instead of treating a generic TLS handshake against every catalog domain as the platform verdict. Custom services without a detector mapping retain the domain-level connectivity diagnostic.
 
 **Streaming Services**
 - Netflix, Disney+, HBO Max, Amazon Prime Video
@@ -156,7 +159,7 @@ First add the target IP in the Web UI's IP Configs view, select services and pro
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-The dedicated command enters the one-click workflow directly and asks for confirmation before taking over system DNS. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. It also reports default-interface RX/TX counter deltas every minute; these figures cover all traffic on that interface, not only unlock-service traffic.
+The dedicated command enters the one-click workflow directly and asks for confirmation before taking over system DNS. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. It creates dedicated nftables counters and reports only traffic exchanged with the selected proxy IPs every minute.
 
 IP configurations, node secrets, enrollment tokens, and traffic baselines are stored in `/var/lib/prism-enhancer/ip-configs.json` with mode `0600`. Do not publish a dedicated command or enrollment token.
 

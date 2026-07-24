@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -58,17 +58,18 @@ ensure_dependencies() {
   command -v curl >/dev/null 2>&1 || missing+=(curl)
   command -v jq >/dev/null 2>&1 || missing+=(jq)
   command -v dig >/dev/null 2>&1 || missing+=(dig)
+  command -v nft >/dev/null 2>&1 || missing+=(nftables)
   ((${#missing[@]} == 0)) && return 0
   require_root
   local manager
   manager=$(detect_package_manager)
   info "安装依赖: ${missing[*]}"
   case "$manager" in
-    apt) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq dnsutils ;;
-    dnf) dnf install -y curl jq bind-utils ;;
-    yum) yum install -y curl jq bind-utils ;;
-    apk) apk add --no-cache curl jq bind-tools ;;
-    *) fail "无法识别包管理器，请手动安装 curl、jq 和 dig。" ;;
+    apt) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq dnsutils nftables ;;
+    dnf) dnf install -y curl jq bind-utils nftables ;;
+    yum) yum install -y curl jq bind-utils nftables ;;
+    apk) apk add --no-cache curl jq bind-tools nftables ;;
+    *) fail "无法识别包管理器，请手动安装 curl、jq、dig 和 nftables。" ;;
   esac
 }
 
@@ -76,6 +77,7 @@ load_config() {
   [[ -f "$CONFIG_FILE" ]] || return 0
   [[ -z "$MASTER" ]] && MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
   [[ -z "$TOKEN" ]] && TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
+  return 0
 }
 
 save_config() {
@@ -128,22 +130,53 @@ install_traffic_reporter() {
 #!/usr/bin/env bash
 set -euo pipefail
 CONFIG_FILE="/var/lib/prismdns/client.conf"
+PEER_HASH_FILE="/var/lib/prismdns/traffic-peers.sha256"
+NFT_TABLE="prismdns_traffic"
 [[ -f "$CONFIG_FILE" ]] || exit 0
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
 TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
-IFACE=$(ip route show default 2>/dev/null | awk 'NR==1 {print $5}')
-[[ -n "$MASTER" && -n "$TOKEN" && -n "$IFACE" ]] || exit 0
-RX_FILE="/sys/class/net/$IFACE/statistics/rx_bytes"
-TX_FILE="/sys/class/net/$IFACE/statistics/tx_bytes"
-[[ -r "$RX_FILE" && -r "$TX_FILE" ]] || exit 0
-PAYLOAD=$(jq -nc --arg token "$TOKEN" --arg iface "$IFACE" --argjson rx "$(cat "$RX_FILE")" --argjson tx "$(cat "$TX_FILE")" '{token:$token,interface:$iface,rx_bytes:$rx,tx_bytes:$tx}')
+[[ -n "$MASTER" && -n "$TOKEN" ]] || exit 0
+BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN")
+mapfile -t PEERS < <(jq -r '.traffic_peers[]?' <<<"$BOOTSTRAP" | sort -u)
+((${#PEERS[@]} > 0)) || exit 0
+PEER_HASH=$(printf '%s\n' "${PEERS[@]}" | sha256sum | awk '{print $1}')
+CURRENT_HASH=$(cat "$PEER_HASH_FILE" 2>/dev/null || true)
+if [[ "$PEER_HASH" != "$CURRENT_HASH" ]] || ! nft list table inet "$NFT_TABLE" >/dev/null 2>&1; then
+  PEERS4=()
+  PEERS6=()
+  for peer in "${PEERS[@]}"; do
+    if [[ "$peer" == *:* ]]; then PEERS6+=("$peer"); else PEERS4+=("$peer"); fi
+  done
+  join_csv() { local IFS=,; printf '%s' "$*"; }
+  RULE_FILE=$(mktemp /var/lib/prismdns/traffic-rules.XXXXXX)
+  {
+    printf 'table inet %s {\n' "$NFT_TABLE"
+    printf '  counter rx {}\n  counter tx {}\n'
+    printf '  set peers4 { type ipv4_addr;'
+    ((${#PEERS4[@]} > 0)) && printf ' elements = { %s };' "$(join_csv "${PEERS4[@]}")"
+    printf ' }\n'
+    printf '  set peers6 { type ipv6_addr;'
+    ((${#PEERS6[@]} > 0)) && printf ' elements = { %s };' "$(join_csv "${PEERS6[@]}")"
+    printf ' }\n'
+    printf '  chain input { type filter hook input priority -10; policy accept; ip saddr @peers4 counter name rx; ip6 saddr @peers6 counter name rx; }\n'
+    printf '  chain output { type filter hook output priority -10; policy accept; ip daddr @peers4 counter name tx; ip6 daddr @peers6 counter name tx; }\n'
+    printf '}\n'
+  } > "$RULE_FILE"
+  nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || true
+  nft -f "$RULE_FILE"
+  rm -f "$RULE_FILE"
+  printf '%s\n' "$PEER_HASH" > "$PEER_HASH_FILE"
+fi
+RX=$(nft -j list counter inet "$NFT_TABLE" rx | jq '[.nftables[].counter? | .bytes] | add // 0')
+TX=$(nft -j list counter inet "$NFT_TABLE" tx | jq '[.nftables[].counter? | .bytes] | add // 0')
+PAYLOAD=$(jq -nc --arg token "$TOKEN" --argjson rx "$RX" --argjson tx "$TX" '{token:$token,scope:"unlock_peers",interface:"nftables",rx_bytes:$rx,tx_bytes:$tx}')
 curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d "$PAYLOAD" "$MASTER/enhancer/api/traffic/report" >/dev/null
 EOF
   chmod 700 /usr/local/lib/prismdns/report-traffic.sh
   if command -v systemctl >/dev/null 2>&1; then
     cat > /etc/systemd/system/prismdns-traffic.service <<'EOF'
 [Unit]
-Description=Prism DNS client traffic report
+Description=Prism DNS unlock-link traffic report
 After=network-online.target
 
 [Service]
@@ -152,7 +185,7 @@ ExecStart=/usr/local/lib/prismdns/report-traffic.sh
 EOF
     cat > /etc/systemd/system/prismdns-traffic.timer <<'EOF'
 [Unit]
-Description=Report Prism DNS client traffic every minute
+Description=Report Prism DNS unlock-link traffic every minute
 
 [Timer]
 OnBootSec=1min
@@ -172,7 +205,7 @@ EOF
     warn "系统没有 systemd 或 cron，无法启用定时流量上报。"
   fi
   /usr/local/lib/prismdns/report-traffic.sh || warn "首次流量上报失败，定时任务会稍后重试。"
-  ok "每 IP 流量统计已启用（默认网卡 RX/TX，每分钟上报）。"
+  ok "每 IP 解锁链路流量统计已启用（仅目标服务器与已选解锁机之间的 RX/TX，每分钟上报）。"
 }
 
 wait_for_local_dns() {
@@ -254,6 +287,8 @@ EOF
   fi
   write_resolv_conf 127.0.0.1
   test_dns
+  grep -Eq '^nameserver[[:space:]]+127\.0\.0\.1([[:space:]]|$)' /etc/resolv.conf || fail "系统 DNS 未成功切换到 127.0.0.1。"
+  getent ahosts "$TEST_DOMAIN" >/dev/null || fail "系统解析器未能通过 Prism DNS 完成查询。"
   ok "系统 DNS 已永久设置为 Prism DNS。"
 }
 
@@ -314,7 +349,7 @@ show_status() {
   printf '  本机 53 端口     : '
   if command -v ss >/dev/null 2>&1 && ss -lntu 2>/dev/null | grep -qE '[:.]53[[:space:]]'; then echo "监听中"; else echo "未监听"; fi
   printf '  备份数量         : %s\n' "$backup_count"
-  printf '  流量上报         : '
+  printf '  解锁链路流量上报 : '
   if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet prismdns-traffic.timer 2>/dev/null; then echo "每分钟"; elif [[ -f /etc/cron.d/prismdns-traffic ]]; then echo "每分钟 (cron)"; else echo "未启用"; fi
   echo ""
 }

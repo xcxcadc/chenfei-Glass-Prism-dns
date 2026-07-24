@@ -26,6 +26,7 @@ type IPConfig struct {
 	EnrollmentToken  string            `json:"enrollment_token"`
 	Smart            bool              `json:"smart"`
 	Routes           map[string]string `json:"routes"`
+	TrafficPeers     []string          `json:"traffic_peers,omitempty"`
 	TrafficRXBytes   uint64            `json:"traffic_rx_bytes"`
 	TrafficTXBytes   uint64            `json:"traffic_tx_bytes"`
 	TrafficUpdatedAt *time.Time        `json:"traffic_updated_at,omitempty"`
@@ -185,8 +186,9 @@ func (store *IPConfigStore) ClearTraffic(id string) (IPConfig, error) {
 	}
 	record.TrafficRXBytes = 0
 	record.TrafficTXBytes = 0
-	now := time.Now().UTC()
-	record.TrafficUpdatedAt = &now
+	record.LastRXBytes = 0
+	record.LastTXBytes = 0
+	record.TrafficUpdatedAt = nil
 	store.configs[id] = record
 	if err := store.saveLocked(); err != nil {
 		return IPConfig{}, err

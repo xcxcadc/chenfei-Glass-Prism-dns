@@ -15,6 +15,7 @@ func main() {
 	listen := flag.String("listen", "0.0.0.0:8080", "enhancer listen address")
 	upstream := flag.String("upstream", "http://127.0.0.1:18080", "Prism Controller URL")
 	dataDir := flag.String("data-dir", "/var/lib/prism-enhancer", "persistent data directory")
+	controllerDB := flag.String("controller-db", "/opt/prism/data.db", "Prism Controller SQLite database")
 	catalogURL := flag.String("catalog-url", defaultCatalogURL, "SmartDNS catalog URL")
 	flag.Parse()
 
@@ -28,7 +29,7 @@ func main() {
 		log.Fatalf("initialize IP config store: %v", err)
 	}
 	catalog := NewCatalogManager(*catalogURL, client, store)
-	app, err := NewApp(*upstream, catalog, store, ipStore, client)
+	app, err := NewApp(*upstream, catalog, store, ipStore, client, *controllerDB)
 	if err != nil {
 		log.Fatalf("initialize server: %v", err)
 	}

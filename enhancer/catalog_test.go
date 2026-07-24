@@ -67,3 +67,25 @@ func TestNormalizeDomainsRejectsInvalidValues(t *testing.T) {
 		t.Fatalf("unexpected domains: %#v", domains)
 	}
 }
+
+func TestParseSmartDNSCanonicalizesLabelsWithoutChangingIDs(t *testing.T) {
+	input := `# ---------- > Global Plaform
+# > Claude 2
+nameserver /claude.ai/group
+# > Openai
+nameserver /openai.com/group
+`
+	services, err := ParseSmartDNS(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if services[0].Name != "Claude" || services[0].Category != "Global Platform" {
+		t.Fatalf("Claude label was not normalized: %+v", services[0])
+	}
+	if services[0].ID != stableServiceID("Global Plaform", "Claude 2") {
+		t.Fatalf("existing service ID changed: %s", services[0].ID)
+	}
+	if services[1].Name != "ChatGPT / OpenAI" {
+		t.Fatalf("OpenAI label was not normalized: %+v", services[1])
+	}
+}

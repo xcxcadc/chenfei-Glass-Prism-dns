@@ -10,9 +10,10 @@ import (
 )
 
 type ConnectivityRequest struct {
-	DNSServer string   `json:"dns_server"`
-	Domains   []string `json:"domains"`
-	TimeoutMS int      `json:"timeout_ms"`
+	DNSServer   string   `json:"dns_server"`
+	ProxyServer string   `json:"proxy_server"`
+	Domains     []string `json:"domains"`
+	TimeoutMS   int      `json:"timeout_ms"`
 }
 
 type DomainTestResult struct {
@@ -37,8 +38,22 @@ func TestConnectivity(ctx context.Context, request ConnectivityRequest) ([]Domai
 		timeout = 6 * time.Second
 	}
 	dnsServer := strings.TrimSpace(request.DNSServer)
+	proxyServer := strings.TrimSpace(request.ProxyServer)
+	if dnsServer == "" && proxyServer == "" {
+		return nil, fmt.Errorf("dns server or proxy server is required")
+	}
+	if dnsServer != "" {
+		if _, _, err := net.SplitHostPort(dnsServer); err != nil {
+			dnsServer = net.JoinHostPort(strings.Trim(dnsServer, "[]"), "53")
+		}
+	}
+	if proxyServer != "" {
+		if _, _, err := net.SplitHostPort(proxyServer); err != nil {
+			proxyServer = net.JoinHostPort(strings.Trim(proxyServer, "[]"), "443")
+		}
+	}
 	if dnsServer == "" {
-		return nil, fmt.Errorf("dns server is required")
+		dnsServer = "127.0.0.1:53"
 	}
 	if _, _, err := net.SplitHostPort(dnsServer); err != nil {
 		dnsServer = net.JoinHostPort(strings.Trim(dnsServer, "[]"), "53")
@@ -53,28 +68,35 @@ func TestConnectivity(ctx context.Context, request ConnectivityRequest) ([]Domai
 	results := make([]DomainTestResult, 0, len(domains))
 	for _, domain := range domains {
 		result := DomainTestResult{Domain: domain}
-		started := time.Now()
-		addresses, err := resolver.LookupIPAddr(ctx, domain)
-		result.DNSMS = time.Since(started).Milliseconds()
-		if err != nil {
-			result.Error = "DNS: " + err.Error()
-			results = append(results, result)
-			continue
-		}
-		for _, address := range addresses {
-			result.Addresses = append(result.Addresses, address.IP.String())
-		}
-		if len(addresses) == 0 {
-			result.Error = "DNS: no address returned"
-			results = append(results, result)
-			continue
+		target := proxyServer
+		if target != "" {
+			host, _, _ := net.SplitHostPort(target)
+			result.Addresses = []string{strings.Trim(host, "[]")}
+		} else {
+			started := time.Now()
+			addresses, err := resolver.LookupIPAddr(ctx, domain)
+			result.DNSMS = time.Since(started).Milliseconds()
+			if err != nil {
+				result.Error = "DNS: " + err.Error()
+				results = append(results, result)
+				continue
+			}
+			for _, address := range addresses {
+				result.Addresses = append(result.Addresses, address.IP.String())
+			}
+			if len(addresses) == 0 {
+				result.Error = "DNS: no address returned"
+				results = append(results, result)
+				continue
+			}
+			target = net.JoinHostPort(addresses[0].IP.String(), "443")
 		}
 
 		tlsStarted := time.Now()
 		connection, err := tls.DialWithDialer(
 			&net.Dialer{Timeout: timeout},
 			"tcp",
-			net.JoinHostPort(addresses[0].IP.String(), "443"),
+			target,
 			&tls.Config{MinVersion: tls.VersionTLS12, ServerName: domain},
 		)
 		result.TLSMS = time.Since(tlsStarted).Milliseconds()

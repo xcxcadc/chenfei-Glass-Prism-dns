@@ -20,17 +20,18 @@ import (
 var embeddedWeb embed.FS
 
 type App struct {
-	catalog   *CatalogManager
-	store     *CustomServiceStore
-	ipStore   *IPConfigStore
-	upstream  *url.URL
-	proxy     *httputil.ReverseProxy
-	client    *http.Client
-	web       fs.FS
-	indexHTML []byte
+	catalog      *CatalogManager
+	store        *CustomServiceStore
+	ipStore      *IPConfigStore
+	upstream     *url.URL
+	proxy        *httputil.ReverseProxy
+	client       *http.Client
+	web          fs.FS
+	indexHTML    []byte
+	controllerDB string
 }
 
-func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceStore, ipStore *IPConfigStore, client *http.Client) (*App, error) {
+func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceStore, ipStore *IPConfigStore, client *http.Client, controllerDB ...string) (*App, error) {
 	upstream, err := url.Parse(upstreamURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse upstream URL: %w", err)
@@ -49,15 +50,20 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		log.Printf("upstream request failed: %s %s: %v", request.Method, request.URL.Path, proxyErr)
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": "Controller 暂时不可用"})
 	}
+	databasePath := "/opt/prism/data.db"
+	if len(controllerDB) > 0 && strings.TrimSpace(controllerDB[0]) != "" {
+		databasePath = controllerDB[0]
+	}
 	return &App{
-		catalog:   catalog,
-		store:     store,
-		ipStore:   ipStore,
-		upstream:  upstream,
-		proxy:     proxy,
-		client:    client,
-		web:       web,
-		indexHTML: indexHTML,
+		catalog:      catalog,
+		store:        store,
+		ipStore:      ipStore,
+		upstream:     upstream,
+		proxy:        proxy,
+		client:       client,
+		web:          web,
+		indexHTML:    indexHTML,
+		controllerDB: databasePath,
 	}, nil
 }
 
@@ -68,6 +74,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/custom-services", app.handleCustomServices)
 	mux.HandleFunc("/enhancer/api/custom-services/", app.handleCustomService)
 	mux.HandleFunc("/enhancer/api/connectivity", app.handleConnectivity)
+	mux.HandleFunc("/enhancer/api/account", app.handleAccountUpdate)
 	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
 	mux.HandleFunc("/enhancer/api/ip-configs/", app.handleIPConfig)
 	mux.HandleFunc("/enhancer/api/bootstrap/", app.handleBootstrap)

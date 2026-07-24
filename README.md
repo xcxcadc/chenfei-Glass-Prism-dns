@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、客户端脚本和流量统计。完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，当前增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，当前增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
@@ -29,10 +29,11 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **细化服务域名库** - 动态解析 `stream.smartdns.list`，当前可拆分 170+ 服务条目
 - **自定义服务** - 可在前端新增、编辑、删除任意服务名称与域名
 - **服务级切换** - 每个 DNS 节点可将每项服务绑定到任意解锁机，并恢复 Smart/Fallback 自动选择
-- **通用连通性测试** - 同时提供 Agent 原生解锁检测和 DNS/TLS 测试
+- **解锁结果面板** - 使用与 `dns_unlock.sh` 一致的 Agent UnlockTests 结果，直接列出全部可用和不可用服务
 - **IP 配置闭环** - 添加目标 IP，批量选择服务及对应解锁机，自动创建 DNS 节点和服务覆盖
 - **客户端管理脚本** - 安装 DNS Agent、测试本机 DNS、接管/备份/恢复系统 DNS
-- **流量统计** - 汇总全部 IP 和每个 IP 默认网卡的 RX/TX 增量，支持单项或全部清零
+- **流量统计** - 只统计目标服务器与所选解锁机 IP 之间的 RX/TX，支持单项或全部清零
+- **账户安全** - 点击右上角用户名，验证旧账号后修改管理员用户名和密码
 
 ### 路由模式
 
@@ -85,6 +86,8 @@ flowchart LR
 
 自动检测以下服务的解锁状态：
 
+节点检测结果来自 Agent 的 UnlockTests，与用户提供的 `dns_unlock.sh` 中“运行解锁检测”使用同一检测来源。已映射的平台服务页直接显示平台级 DNS 解锁结论，不再把域名库中每个域名的通用 TLS 握手结果误当作平台可用性；没有检测器映射的自定义服务仍保留域名级连通性诊断。
+
 **流媒体服务**
 - Netflix, Disney+, HBO Max, Amazon Prime Video
 - Hulu, Paramount+, Peacock, Discovery+
@@ -122,6 +125,8 @@ curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/mai
 - 密码：安装完成时显示
 - 自定义服务数据：`/var/lib/prism-enhancer/custom-services.json`
 
+登录后可点击右上角用户名打开“账户安全”，验证当前用户名和密码后修改管理员账户。
+
 ### 手动安装
 
 Controller/Agent 二进制由[上游 Releases](https://github.com/mslxi/Liquid-Glass-Prism-dns/releases) 提供；中文增强层由[本 Fork Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases) 提供。通常建议直接使用上面的一键安装命令。
@@ -156,7 +161,7 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-页面生成的专属命令会直接进入一键安装流程，并在接管系统 DNS 前要求确认。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装完成后每分钟上报目标服务器默认网卡的 RX/TX 计数差值，用于 IP 配置页的流量统计；该数字是服务器默认网卡总流量，并非仅解锁服务流量。
+页面生成的专属命令会直接进入一键安装流程，并在接管系统 DNS 前要求确认。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装完成后会创建专用 nftables 计数器，每分钟只上报目标服务器与当前配置中所选解锁机 IP 之间的 RX/TX。
 
 IP 配置、节点密钥、专属令牌和流量基线保存在 `/var/lib/prism-enhancer/ip-configs.json`（`0600`）。不要公开页面生成的专属命令或令牌。完整操作步骤和统计口径见 [中文增强说明](ENHANCED_ZH.md)。
 

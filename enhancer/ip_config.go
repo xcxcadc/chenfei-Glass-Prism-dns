@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -23,6 +24,7 @@ type ipConfigRequest struct {
 
 type trafficReportRequest struct {
 	Token     string `json:"token"`
+	Scope     string `json:"scope"`
 	RXBytes   uint64 `json:"rx_bytes"`
 	TXBytes   uint64 `json:"tx_bytes"`
 	Interface string `json:"interface"`
@@ -38,8 +40,8 @@ func (app *App) handleTrafficReport(writer http.ResponseWriter, request *http.Re
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if payload.Token == "" || payload.Interface == "" {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "流量上报缺少令牌或网卡"})
+	if payload.Token == "" || payload.Scope != "unlock_peers" {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "仅接受解锁链路流量上报"})
 		return
 	}
 	config, err := app.ipStore.UpdateTraffic(payload.Token, payload.RXBytes, payload.TXBytes)
@@ -132,6 +134,7 @@ func (app *App) handleBootstrap(writer http.ResponseWriter, request *http.Reques
 		"secret":          record.NodeSecret,
 		"smart":           record.Smart,
 		"dns":             "127.0.0.1",
+		"traffic_peers":   record.TrafficPeers,
 		"agent_installer": "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh",
 	})
 }
@@ -175,12 +178,13 @@ func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": "Controller 未返回 DNS 节点 ID"})
 		return
 	}
-	if err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), dnsNodeID, nil, payload.Routes, publicBaseURL(request)); err != nil {
+	trafficPeers, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), dnsNodeID, nil, payload.Routes, publicBaseURL(request))
+	if err != nil {
 		_ = app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodDelete, "/api/nodes/"+url.PathEscape(dnsNodeID), nil, nil)
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, Smart: payload.Smart, Routes: payload.Routes}, secret)
+	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, Smart: payload.Smart, Routes: payload.Routes, TrafficPeers: trafficPeers}, secret)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -194,13 +198,15 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), record.DNSNodeID, record.Routes, payload.Routes, publicBaseURL(request)); err != nil {
+	trafficPeers, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), record.DNSNodeID, record.Routes, payload.Routes, publicBaseURL(request))
+	if err != nil {
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
 	record.Note = payload.Note
 	record.Smart = payload.Smart
 	record.Routes = payload.Routes
+	record.TrafficPeers = trafficPeers
 	saved, err := app.ipStore.Save(record.IPConfig, record.NodeSecret)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -210,7 +216,7 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 }
 
 func (app *App) deleteIPConfig(writer http.ResponseWriter, request *http.Request, record ipConfigRecord) {
-	if err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), record.DNSNodeID, record.Routes, nil, publicBaseURL(request)); err != nil {
+	if _, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), record.DNSNodeID, record.Routes, nil, publicBaseURL(request)); err != nil {
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
@@ -228,19 +234,19 @@ func (app *App) deleteIPConfig(writer http.ResponseWriter, request *http.Request
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID string, previous, current map[string]string, baseURL string) error {
+func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID string, previous, current map[string]string, baseURL string) ([]string, error) {
 	var rules []map[string]any
 	if err := app.upstreamJSON(ctx, authorization, http.MethodGet, "/api/rules", nil, &rules); err != nil {
-		return err
+		return nil, err
 	}
 	var nodes []map[string]any
 	if err := app.upstreamJSON(ctx, authorization, http.MethodGet, "/api/nodes", nil, &nodes); err != nil {
-		return err
+		return nil, err
 	}
-	proxyNodes := make(map[string]bool)
+	proxyNodes := make(map[string]map[string]any)
 	for _, node := range nodes {
 		if valueString(node["role"]) == "proxy" {
-			proxyNodes[valueString(node["id"])] = true
+			proxyNodes[valueString(node["id"])] = node
 		}
 	}
 	services := make(map[string]Service)
@@ -256,13 +262,18 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		}
 		return nil
 	}
+	trafficPeerSet := make(map[string]struct{})
 	for serviceID, proxyID := range current {
-		if !proxyNodes[proxyID] {
-			return fmt.Errorf("解锁机不存在: %s", proxyID)
+		proxyNode, exists := proxyNodes[proxyID]
+		if !exists {
+			return nil, fmt.Errorf("解锁机不存在: %s", proxyID)
+		}
+		for _, peer := range nodePublicIPs(proxyNode) {
+			trafficPeerSet[peer] = struct{}{}
 		}
 		service, ok := services[serviceID]
 		if !ok {
-			return fmt.Errorf("服务不存在: %s", serviceID)
+			return nil, fmt.Errorf("服务不存在: %s", serviceID)
 		}
 		rule := findRule(serviceID)
 		if rule == nil {
@@ -271,17 +282,17 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 				"value": strings.TrimRight(baseURL, "/") + "/enhancer/rules/" + service.ID + ".list", "enabled": true,
 			}
 			if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules", payload, &rule); err != nil {
-				return err
+				return nil, err
 			}
 			rules = append(rules, rule)
 		}
 		ruleID := valueString(rule["id"])
 		if ruleID == "" {
-			return errors.New("Controller 未返回规则 ID")
+			return nil, errors.New("Controller 未返回规则 ID")
 		}
 		payload := map[string]string{"dns_node_id": dnsNodeID, "proxy_node_id": proxyID}
 		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules/"+url.PathEscape(ruleID)+"/override", payload, nil); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	for serviceID := range previous {
@@ -294,10 +305,38 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		}
 		payload := map[string]string{"dns_node_id": dnsNodeID, "proxy_node_id": ""}
 		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules/"+url.PathEscape(valueString(rule["id"]))+"/override", payload, nil); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	trafficPeers := make([]string, 0, len(trafficPeerSet))
+	for peer := range trafficPeerSet {
+		trafficPeers = append(trafficPeers, peer)
+	}
+	sort.Strings(trafficPeers)
+	return trafficPeers, nil
+}
+
+func nodePublicIPs(node map[string]any) []string {
+	seen := make(map[string]struct{})
+	for _, field := range []string{"public_ip", "address"} {
+		for _, value := range strings.FieldsFunc(valueString(node[field]), func(character rune) bool {
+			return character == ',' || character == ';' || character == ' ' || character == '\t'
+		}) {
+			candidate := strings.Trim(value, "[]")
+			if host, _, err := net.SplitHostPort(value); err == nil {
+				candidate = strings.Trim(host, "[]")
+			}
+			if parsed := net.ParseIP(candidate); parsed != nil {
+				seen[parsed.String()] = struct{}{}
+			}
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for value := range seen {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (app *App) upstreamJSON(ctx context.Context, authorization, method, path string, payload, target any) error {
