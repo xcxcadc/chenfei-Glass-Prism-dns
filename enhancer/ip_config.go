@@ -42,6 +42,11 @@ type serviceAuditRequest struct {
 	Results map[string]string `json:"results"`
 }
 
+type routeApplication struct {
+	TrafficPeers []string
+	ProxyPeers   map[string][]string
+}
+
 func (app *App) handleTrafficReport(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		methodNotAllowed(writer, http.MethodPost)
@@ -300,13 +305,13 @@ func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": "Controller 未返回 DNS 节点 ID"})
 		return
 	}
-	trafficPeers, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), dnsNodeID, nil, payload.Routes, publicBaseURL(request))
+	application, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), dnsNodeID, nil, payload.Routes, publicBaseURL(request))
 	if err != nil {
 		_ = app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodDelete, "/api/nodes/"+url.PathEscape(dnsNodeID), nil, nil)
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, Smart: payload.Smart, Routes: payload.Routes, TrafficPeers: trafficPeers}, secret)
+	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, Smart: payload.Smart, Routes: payload.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -320,7 +325,7 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	trafficPeers, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), record.DNSNodeID, record.Routes, payload.Routes, publicBaseURL(request))
+	application, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), record.DNSNodeID, record.Routes, payload.Routes, publicBaseURL(request))
 	if err != nil {
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -328,8 +333,8 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 	record.Note = payload.Note
 	record.Smart = payload.Smart
 	record.Routes = payload.Routes
-	record.TrafficPeers = trafficPeers
-	saved, err := app.ipStore.Save(record.IPConfig, record.NodeSecret)
+	record.TrafficPeers = application.TrafficPeers
+	saved, err := app.ipStore.Save(record.IPConfig, record.NodeSecret, application.ProxyPeers)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -356,16 +361,16 @@ func (app *App) deleteIPConfig(writer http.ResponseWriter, request *http.Request
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID string, previous, current map[string]string, baseURL string) ([]string, error) {
+func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID string, previous, current map[string]string, baseURL string) (routeApplication, error) {
 	const directGroup = "__prism_enhancer_direct__"
 
 	var rules []map[string]any
 	if err := app.upstreamJSON(ctx, authorization, http.MethodGet, "/api/rules", nil, &rules); err != nil {
-		return nil, err
+		return routeApplication{}, err
 	}
 	var nodes []map[string]any
 	if err := app.upstreamJSON(ctx, authorization, http.MethodGet, "/api/nodes", nil, &nodes); err != nil {
-		return nil, err
+		return routeApplication{}, err
 	}
 	proxyNodes := make(map[string]map[string]any)
 	for _, node := range nodes {
@@ -423,29 +428,35 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		return payload, nil
 	}
 	trafficPeerSet := make(map[string]struct{})
+	proxyPeers := make(map[string][]string)
 	for serviceID, proxyID := range current {
 		proxyNode, exists := proxyNodes[proxyID]
 		if !exists {
-			return nil, fmt.Errorf("解锁机不存在: %s", proxyID)
+			return routeApplication{}, fmt.Errorf("解锁机不存在: %s", proxyID)
 		}
-		for _, peer := range nodePublicIPs(proxyNode) {
+		peers := nodePublicIPs(proxyNode)
+		if len(peers) == 0 {
+			return routeApplication{}, fmt.Errorf("解锁机没有可用公网 IP: %s", proxyID)
+		}
+		proxyPeers[proxyID] = append([]string(nil), peers...)
+		for _, peer := range peers {
 			trafficPeerSet[peer] = struct{}{}
 		}
 		service, ok := services[serviceID]
 		if !ok {
-			return nil, fmt.Errorf("服务不存在: %s", serviceID)
+			return routeApplication{}, fmt.Errorf("服务不存在: %s", serviceID)
 		}
 		rule, err := prepareRule(service)
 		if err != nil {
-			return nil, err
+			return routeApplication{}, err
 		}
 		ruleID := valueString(rule["id"])
 		if ruleID == "" {
-			return nil, errors.New("Controller 未返回规则 ID")
+			return routeApplication{}, errors.New("Controller 未返回规则 ID")
 		}
 		payload := map[string]string{"dns_node_id": dnsNodeID, "proxy_node_id": proxyID}
 		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules/"+url.PathEscape(ruleID)+"/override", payload, nil); err != nil {
-			return nil, err
+			return routeApplication{}, err
 		}
 	}
 	for serviceID := range previous {
@@ -460,12 +471,12 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 			var err error
 			rule, err = prepareRule(service)
 			if err != nil {
-				return nil, err
+				return routeApplication{}, err
 			}
 		}
 		payload := map[string]string{"dns_node_id": dnsNodeID, "proxy_node_id": ""}
 		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules/"+url.PathEscape(valueString(rule["id"]))+"/override", payload, nil); err != nil {
-			return nil, err
+			return routeApplication{}, err
 		}
 	}
 	trafficPeers := make([]string, 0, len(trafficPeerSet))
@@ -473,12 +484,12 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		trafficPeers = append(trafficPeers, peer)
 	}
 	sort.Strings(trafficPeers)
-	return trafficPeers, nil
+	return routeApplication{TrafficPeers: trafficPeers, ProxyPeers: proxyPeers}, nil
 }
 
 func nodePublicIPs(node map[string]any) []string {
 	seen := make(map[string]struct{})
-	for _, field := range []string{"public_ip", "address"} {
+	for _, field := range []string{"public_ip", "address", "ip", "ipv4", "ipv6"} {
 		for _, value := range strings.FieldsFunc(valueString(node[field]), func(character rune) bool {
 			return character == ',' || character == ';' || character == ' ' || character == '\t'
 		}) {

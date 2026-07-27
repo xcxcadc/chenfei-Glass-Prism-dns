@@ -17,7 +17,7 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 		NodeName:  "IP 203 0 113 10",
 		Smart:     true,
 		Routes:    map[string]string{"netflix": "2"},
-	}, "node-secret")
+	}, "node-secret", map[string][]string{"2": {"198.51.100.20"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,11 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, ok := reloaded.Record(config.ID)
-	if !ok || record.NodeSecret != "node-secret" || record.TrafficRXBytes != 10 {
+	if !ok || record.NodeSecret != "node-secret" || record.TrafficRXBytes != 10 || record.ProxyPeers["2"][0] != "198.51.100.20" {
 		t.Fatalf("persisted record mismatch: %+v", record)
+	}
+	bySecret, ok := reloaded.GetByNodeSecret("node-secret")
+	if !ok || bySecret.ID != config.ID {
+		t.Fatalf("node secret lookup failed: %+v", bySecret)
 	}
 }

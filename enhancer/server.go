@@ -47,6 +47,13 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 	}
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 	proxy.FlushInterval = -1
+	originalDirector := proxy.Director
+	proxy.Director = func(request *http.Request) {
+		originalDirector(request)
+		if request.URL.Path == "/api/sync" {
+			request.Header.Del("Accept-Encoding")
+		}
+	}
 	proxy.ErrorHandler = func(writer http.ResponseWriter, request *http.Request, proxyErr error) {
 		log.Printf("upstream request failed: %s %s: %v", request.Method, request.URL.Path, proxyErr)
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": "Controller 暂时不可用"})
@@ -55,7 +62,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 	if len(controllerDB) > 0 && strings.TrimSpace(controllerDB[0]) != "" {
 		databasePath = controllerDB[0]
 	}
-	return &App{
+	app := &App{
 		catalog:      catalog,
 		store:        store,
 		ipStore:      ipStore,
@@ -66,7 +73,9 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		web:          web,
 		indexHTML:    indexHTML,
 		controllerDB: databasePath,
-	}, nil
+	}
+	proxy.ModifyResponse = app.modifyUpstreamResponse
+	return app, nil
 }
 
 func (app *App) Handler() http.Handler {

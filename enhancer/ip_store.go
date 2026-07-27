@@ -54,9 +54,10 @@ type ClientHealth struct {
 
 type ipConfigRecord struct {
 	IPConfig
-	NodeSecret  string `json:"node_secret"`
-	LastRXBytes uint64 `json:"last_rx_bytes"`
-	LastTXBytes uint64 `json:"last_tx_bytes"`
+	NodeSecret  string              `json:"node_secret"`
+	ProxyPeers  map[string][]string `json:"proxy_peers,omitempty"`
+	LastRXBytes uint64              `json:"last_rx_bytes"`
+	LastTXBytes uint64              `json:"last_tx_bytes"`
 }
 
 type IPConfigStore struct {
@@ -109,7 +110,18 @@ func (store *IPConfigStore) GetByToken(token string) (ipConfigRecord, bool) {
 	return ipConfigRecord{}, false
 }
 
-func (store *IPConfigStore) Save(config IPConfig, secret string) (IPConfig, error) {
+func (store *IPConfigStore) GetByNodeSecret(secret string) (ipConfigRecord, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	for _, record := range store.configs {
+		if secret != "" && record.NodeSecret == secret {
+			return record, true
+		}
+	}
+	return ipConfigRecord{}, false
+}
+
+func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...map[string][]string) (IPConfig, error) {
 	config.IP = strings.TrimSpace(config.IP)
 	config.Note = strings.TrimSpace(config.Note)
 	if net.ParseIP(config.IP) == nil {
@@ -155,8 +167,12 @@ func (store *IPConfigStore) Save(config IPConfig, secret string) (IPConfig, erro
 			config.ServiceResults = nil
 			config.ServiceAuditedAt = nil
 		}
+		record.ProxyPeers = cloneProxyPeers(existing.ProxyPeers)
 	} else {
 		config.CreatedAt = now
+	}
+	if len(proxyPeers) > 0 {
+		record.ProxyPeers = cloneProxyPeers(proxyPeers[0])
 	}
 	config.UpdatedAt = now
 	record.IPConfig = config
@@ -165,6 +181,17 @@ func (store *IPConfigStore) Save(config IPConfig, secret string) (IPConfig, erro
 		return IPConfig{}, err
 	}
 	return config, nil
+}
+
+func cloneProxyPeers(source map[string][]string) map[string][]string {
+	if len(source) == 0 {
+		return nil
+	}
+	result := make(map[string][]string, len(source))
+	for proxyID, peers := range source {
+		result[proxyID] = append([]string(nil), peers...)
+	}
+	return result
 }
 
 func (store *IPConfigStore) UpdateClientReport(token string, rxBytes, txBytes uint64, health ClientHealth) (IPConfig, error) {

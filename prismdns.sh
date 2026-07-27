@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.3.2"
+VERSION="1.3.3"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -299,6 +299,7 @@ EOF
 set -euo pipefail
 CONFIG_FILE="/var/lib/prismdns/client.conf"
 HASH_FILE="/var/lib/prismdns/route-config.sha256"
+RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 LOCK_FILE="/run/prismdns-route-sync.lock"
 [[ -f "$CONFIG_FILE" ]] || exit 0
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
@@ -321,24 +322,44 @@ CURRENT_HASH=$(jq -Sc '{
   health_probes:([.health_probes[]? | {service_id,domain,unlock_test}] | sort_by(.service_id))
 }' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 LAST_HASH=$(cat "$HASH_FILE" 2>/dev/null || true)
-if [[ -z "$LAST_HASH" ]]; then
-  printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
+mapfile -t PEERS < <(jq -r '.traffic_peers[]?' <<<"$BOOTSTRAP" | sort -u)
+mapfile -t PROBES < <(jq -r '.health_probes[]?.domain // empty' <<<"$BOOTSTRAP" | sort -u)
+route_health_ok() {
+  systemctl is-active --quiet prism-agent 2>/dev/null || return 1
+  ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}' || return 1
+  ((${#PROBES[@]} > 0)) || return 0
+  local domain answer peer matched
+  for domain in "${PROBES[@]}"; do
+    matched=false
+    while IFS= read -r answer; do
+      for peer in "${PEERS[@]}"; do
+        if [[ "$answer" == "$peer" ]]; then
+          matched=true
+          break 2
+        fi
+      done
+    done < <({ dig @127.0.0.1 "$domain" A +short +time=2 +tries=1; dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1; } 2>/dev/null | sed '/^$/d' | sort -u)
+    $matched || return 1
+  done
+}
+if [[ -n "$LAST_HASH" && "$CURRENT_HASH" == "$LAST_HASH" ]] && route_health_ok; then
   exit 0
 fi
-[[ "$CURRENT_HASH" != "$LAST_HASH" ]] || exit 0
-if systemctl is-active --quiet prism-agent 2>/dev/null; then
-  systemctl restart prism-agent
-  for _ in {1..20}; do
-    if systemctl is-active --quiet prism-agent 2>/dev/null &&
-       ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}'; then
-      printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
-      exit 0
-    fi
-    sleep 1
-  done
-  exit 1
+NOW=$(date +%s)
+LAST_RESTART=$(cat "$RESTART_FILE" 2>/dev/null || echo 0)
+if ((NOW - LAST_RESTART < 60)); then
+  exit 0
 fi
-printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
+printf '%s\n' "$NOW" > "$RESTART_FILE"
+systemctl restart prism-agent
+for _ in {1..30}; do
+  if route_health_ok; then
+    printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
+    exit 0
+  fi
+  sleep 1
+done
+exit 1
 EOF
   chmod 700 /usr/local/lib/prismdns/sync-routes.sh
   if command -v systemctl >/dev/null 2>&1; then
