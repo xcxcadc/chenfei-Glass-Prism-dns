@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.3.3"
+VERSION="1.3.4"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -145,6 +145,7 @@ AUDIT_OUTPUT_FILE="/var/lib/prismdns/service-audit.txt"
 NFT_TABLE="prismdns_traffic"
 COUNTER_VERSION="dns-sni-ports-v4"
 AUDIT_INTERVAL=21600
+AUDIT_VERSION="selected-providers-3x-v2"
 [[ -f "$CONFIG_FILE" ]] || exit 0
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
 TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
@@ -229,11 +230,25 @@ PAYLOAD=$(jq -nc \
 curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d "$PAYLOAD" "$MASTER/enhancer/api/traffic/report" >/dev/null || exit 0
 
 run_service_audit() {
-  local audit_hash="$1" now="$2" output plain results probe service_id provider domain result matched_peer answer peer
+  local audit_hash="$1" now="$2" output="" attempt_output plain results probe service_id provider domain result matched_peer answer peer
+  local providers_csv candidate failure
+  local attempt attempt_count pass_count
+  local -a provider_results
   if [[ ! -x /usr/bin/ut ]]; then
     timeout 180 bash -c 'curl -sL https://raw.githubusercontent.com/oneclickvirt/UnlockTests/main/ut_install.sh -sSf | bash' >/dev/null 2>&1 || return 0
   fi
-  output=$(timeout 300 /usr/bin/ut -m 4 -f 20 -b=false -s=false 2>&1 || true)
+  providers_csv=$(jq -r '[.health_probes[]?.unlock_test | select(length > 0)] | unique | join(",")' <<<"$BOOTSTRAP")
+  for attempt in 1 2 3; do
+    if [[ -n "$providers_csv" ]] && /usr/bin/ut -h 2>&1 | grep -q -- '-test string'; then
+      attempt_output=$(timeout 180 /usr/bin/ut -m 4 -test "$providers_csv" -b=false -s=false 2>&1 || true)
+    else
+      attempt_output=$(timeout 300 /usr/bin/ut -m 4 -f 20 -b=false -s=false 2>&1 || true)
+    fi
+    output+=$(printf '[attempt %d]\n%s\n' "$attempt" "$attempt_output")
+    if ((attempt < 3)); then
+      sleep 2
+    fi
+  done
   [[ -n "$output" ]] || return 0
   plain=$(sed $'s/\033\\[[0-9;]*[mK]//g' <<<"$output" | tr -d '\r')
   printf '%s\n' "$plain" > "$AUDIT_OUTPUT_FILE"
@@ -245,14 +260,30 @@ run_service_audit() {
     [[ -n "$service_id" ]] || continue
     result=""
     if [[ -n "$provider" ]]; then
-      result=$(awk -v provider="$provider" '
-        index($0, provider) == 1 && substr($0, length(provider) + 1, 1) ~ /[[:space:]]/ {
+      mapfile -t provider_results < <(awk -v provider="$provider" '
+        index($0, provider) == 1 && substr($0, length(provider) + 1, 2) ~ /^[[:space:]][[:space:]]$/ {
           value = substr($0, length(provider) + 1)
           sub(/^[[:space:]]+/, "", value)
           print value
-          exit
         }
       ' <<<"$plain")
+      attempt_count=${#provider_results[@]}
+      pass_count=0
+      failure=""
+      for candidate in "${provider_results[@]}"; do
+        if [[ "$candidate" =~ ^YES([[:space:]]|$) ]]; then
+          pass_count=$((pass_count + 1))
+        else
+          failure="$candidate"
+        fi
+      done
+      if ((attempt_count > 0 && pass_count == attempt_count)); then
+        result="${provider_results[attempt_count - 1]}"
+      elif ((pass_count > 0)); then
+        result="UNSTABLE (${pass_count}/${attempt_count} YES; ${failure:-intermittent failure})"
+      elif ((attempt_count > 0)); then
+        result="${provider_results[attempt_count - 1]}"
+      fi
     fi
     if [[ -z "$result" && -n "$domain" ]]; then
       matched_peer=""
@@ -285,7 +316,7 @@ run_service_audit() {
   nft reset counter inet "$NFT_TABLE" tx >/dev/null 2>&1 || true
 }
 
-AUDIT_HASH=$(jq -Sc '[.health_probes[]? | {service_id,unlock_test,domain}]' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
+AUDIT_HASH=$({ printf '%s\n' "$AUDIT_VERSION"; jq -Sc '[.health_probes[]? | {service_id,unlock_test,domain}]' <<<"$BOOTSTRAP"; } | sha256sum | awk '{print $1}')
 LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)
 LAST_AUDIT_TIME=$(cat "$AUDIT_TIME_FILE" 2>/dev/null || echo 0)
 NOW=$(date +%s)

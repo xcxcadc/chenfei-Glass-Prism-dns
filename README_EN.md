@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, and client tool `1.3.3`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, and client tool `1.3.4`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -30,6 +30,7 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Custom Services** - Add, edit, and delete arbitrary service names and domain lists in the UI
 - **Per-Service Routing** - Bind each service on each DNS client to any proxy agent, or restore Smart/Fallback selection
 - **Two-Layer Unlock Audit** - Shows proxy-side Agent UnlockTests and reruns the same detector on each target IP, avoiding false confidence from proxy-only checks
+- **Target Compatibility First** - Node cards, service badges, and test dialogs prioritize per-target audits; Agent self-checks are reference-only and inconsistent three-run results are marked `UNSTABLE`
 - **IP Configuration Workflow** - Add a target IP, choose services and proxy agents, then create DNS nodes and overrides automatically
 - **Automatic Route Application** - The enhancer restores persistent per-node routes on every Agent sync; a generic 10-second guard also verifies real DNS routes and safely restarts a stalled or stale Agent with rate limiting
 - **Service Brand Icons** - Service cards and the IP picker load matching site icons, with deterministic local fallbacks

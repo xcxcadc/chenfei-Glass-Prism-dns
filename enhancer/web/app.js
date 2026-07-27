@@ -19,9 +19,10 @@ const translations = {
     addIP: "添加 IP", editIP: "配置服务", targetIP: "目标 IP", note: "备注", defaultProxy: "默认解锁机", chooseServices: "选择服务", selectedServices: "已选服务", clientScript: "客户端脚本", runScriptHint: "在目标服务器以 root 身份执行，脚本会安装 DNS Agent、测试本机 DNS，并可接管或恢复系统 DNS。", noIPConfigs: "尚未添加 IP 配置", ipDeleteConfirm: "删除该 IP 配置及其 DNS 节点？", saveConfig: "保存配置", scriptCommand: "一键配置命令",
     totalTraffic: "全体解锁流量", clientTraffic: "解锁链路流量", clearTraffic: "清零流量", clearAllTraffic: "全部清零", trafficHint: "按目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到已选解锁机 TCP 80/443 的 RX/TX；不统计整机网卡流量。", trafficUpdated: "流量更新时间",
     clientState: "数据面状态", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "路由探针",
-    actualAudit: "目标机实测", auditPending: "待实测",
+    actualAudit: "目标机实测", auditPending: "待实测", targetAvailable: "目标机可用", targetProblem: "目标机异常", targetCompatibility: "目标机兼容性",
+    actualAvailable: "实测可用", actualProblem: "异常或波动", referenceOnly: "仅节点自检", agentReference: "节点自检（仅参考）", noTargetAudit: "尚无目标机实测",
     accountSettings: "账户安全", accountHint: "验证旧账号后修改管理员用户名和密码。", oldUsername: "旧用户名", oldPassword: "旧密码", newUsername: "新用户名", newPassword: "新密码", confirmPassword: "确认新密码", updateAccount: "更新账户", credentialsInvalid: "旧用户名或旧密码不正确", passwordMismatch: "两次输入的新密码不一致", accountUpdated: "账户已更新，请使用新账号重新登录",
-    unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "这里显示解锁机自身的 UnlockTests；最终可用性请以 IP 配置页的“目标机实测”为准。", checkAgain: "重新检测", waitingResults: "正在等待节点返回检测结果...",
+    unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点自检仅供参考；已配置服务会在同一行列出每台目标 IP 的三次聚合实测。", checkAgain: "重新检测", waitingResults: "正在等待节点返回检测结果...",
   },
   en: {
     title: "Prism DNS Enhanced", online: "Controller connected", loginTitle: "Sign in to Prism Gateway", loginHint: "Use your Controller administrator account",
@@ -43,9 +44,10 @@ const translations = {
     addIP: "Add IP", editIP: "Configure services", targetIP: "Target IP", note: "Note", defaultProxy: "Default proxy", chooseServices: "Choose services", selectedServices: "Selected services", clientScript: "Client script", runScriptHint: "Run as root on the target server. The script installs the DNS Agent, tests local DNS, and can take over or restore system DNS.", noIPConfigs: "No IP configuration yet", ipDeleteConfirm: "Delete this IP configuration and its DNS node?", saveConfig: "Save configuration", scriptCommand: "One-click command",
     totalTraffic: "Total unlock traffic", clientTraffic: "Unlock link traffic", clearTraffic: "Clear traffic", clearAllTraffic: "Clear all", trafficHint: "Each target IP counts local Prism DNS UDP/TCP 53 plus TCP 80/443 to selected unlock proxies. Whole-interface traffic is excluded.", trafficUpdated: "Traffic updated",
     clientState: "Data-plane status", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "Route probes",
-    actualAudit: "Target audit", auditPending: "Not audited",
+    actualAudit: "Target audit", auditPending: "Not audited", targetAvailable: "Target passed", targetProblem: "Target issue", targetCompatibility: "Target compatibility",
+    actualAvailable: "Verified passed", actualProblem: "Failed or unstable", referenceOnly: "Agent only", agentReference: "Agent self-check (reference only)", noTargetAudit: "No target audit yet",
     accountSettings: "Account security", accountHint: "Verify the current credentials before changing the administrator username and password.", oldUsername: "Current username", oldPassword: "Current password", newUsername: "New username", newPassword: "New password", confirmPassword: "Confirm new password", updateAccount: "Update account", credentialsInvalid: "Current username or password is incorrect", passwordMismatch: "The new passwords do not match", accountUpdated: "Account updated. Sign in with the new credentials.",
-    unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "This is the proxy node's own UnlockTests result. Use the target audit in IP Configs as the final availability result.", checkAgain: "Check again", waitingResults: "Waiting for the node to return results...",
+    unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "Agent self-checks are reference-only. Configured services list each target IP's aggregated three-run audit on the same row.", checkAgain: "Check again", waitingResults: "Waiting for the node to return results...",
   }
 };
 
@@ -131,10 +133,15 @@ function activeNodeFor(rule) {
   return null;
 }
 function serviceStatus(service, node) {
+  const targetConfig = configForNode(selectedDNS());
+  const targetResult = targetConfig?.service_results?.[service.id];
+  if (targetResult && nodeID(targetConfig?.routes?.[service.id]) === nodeID(node?.id)) {
+    const audit = auditResultState(targetResult);
+    return {kind:audit.kind, label:audit.kind === "good" ? t("targetAvailable") : t("targetProblem"), raw:targetResult};
+  }
   const key = serviceDetectorKey(service);
   const value = key ? parseUnlock(node)[key] || "" : "";
-  if (unlockPassed(value)) return {kind:"good", label:t("supported"), raw:value};
-  if (value) return {kind:"bad", label:t("unavailable"), raw:value};
+  if (value) return {kind:"warn", label:t("referenceOnly"), raw:value};
   return {kind:"", label:t("unknown"), raw:""};
 }
 function serviceIconHTML(service) {
@@ -160,8 +167,34 @@ function auditResultState(result) {
   const value = String(result || "").trim();
   if (!value) return {kind:"", label:t("auditPending")};
   if (/^YES\b|^PASS\b/i.test(value)) return {kind:"good", label:value};
-  if (/Restricted|Partial|Banned|WAF|Error|Failed|N\/A/i.test(value)) return {kind:"warn", label:value};
+  if (/UNSTABLE|Restricted|Partial|Banned|WAF|Error|Failed|N\/A/i.test(value)) return {kind:"warn", label:value};
   return {kind:"bad", label:value};
+}
+
+function targetAuditObservations(proxyId, service) {
+  return state.ipConfigs
+    .filter(config => nodeID(config?.routes?.[service.id]) === nodeID(proxyId))
+    .map(config => ({ip:config.ip, result:String(config?.service_results?.[service.id] || "").trim()}));
+}
+
+function targetCompatibility(proxyId, service) {
+  const observations = targetAuditObservations(proxyId, service);
+  const measured = observations.filter(item => item.result);
+  const passed = measured.filter(item => auditResultState(item.result).kind === "good").length;
+  let kind = "warn";
+  if (measured.length && passed === measured.length && measured.length === observations.length) kind = "good";
+  else if (measured.length && passed === 0) kind = "bad";
+  const label = observations.length ? `${t("actualAudit")} ${passed}/${observations.length}` : t("referenceOnly");
+  return {observations, measured, passed, kind, label};
+}
+
+function proxyCompatibilitySummary(proxyId) {
+  const services = state.catalog.filter(service => targetAuditObservations(proxyId, service).length);
+  const results = services.map(service => targetCompatibility(proxyId, service));
+  const passed = results.filter(result => result.kind === "good").length;
+  const problem = results.filter(result => result.measured.length && result.kind !== "good").length;
+  const pending = results.filter(result => !result.measured.length).length;
+  return {passed, problem, pending, total:services.length};
 }
 
 function preferredServiceTestDomain(service) {
@@ -350,10 +383,11 @@ function serviceCardHTML(service) {
 function nodesHTML() {
   if (!state.nodes.length) return `<div class="panel empty"><strong>${state.lang === "zh" ? "还没有节点" : "No nodes"}</strong><button class="btn primary" id="empty-add-node">＋ ${t("addNode")}</button></div>`;
   return `<section class="node-grid">${state.nodes.map(node => {
-    const online = isOnline(node); const unlock = parseUnlock(node); const values = Object.values(unlock).filter(Boolean); const successes = values.filter(value => String(value).startsWith("Yes")).length;
-    const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:`${successes}/${values.length}`};
+    const online = isOnline(node); const compatibility = proxyCompatibilitySummary(node.id);
+    const proxyDetail = compatibility.total ? `${compatibility.passed}/${compatibility.total}` : t("noTargetAudit");
+    const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail};
     return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${status.kind}" title="${escapeHTML(status.detail)}">${escapeHTML(status.label)}</span></div>
-      <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("originalStatus")}</span><strong title="${escapeHTML(status.detail)}">${node.role === "dns" ? escapeHTML(status.detail) : `${successes}/${values.length}`}</strong></div></div>
+      <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("targetCompatibility")}</span><strong title="${escapeHTML(status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
       <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button><button class="btn small node-test" data-node-id="${nodeID(node.id)}" ${node.role !== "proxy" ? "disabled" : ""}>${t("triggerUnlock")}</button><button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
@@ -361,10 +395,21 @@ function nodesHTML() {
 function nodeCheckHTML() {
   const node = state.nodes.find(item => nodeID(item.id) === nodeID(state.modal.nodeId));
   const entries = unlockEntries(node);
-  const available = entries.filter(([, value]) => unlockPassed(value));
-  const unavailable = entries.filter(([, value]) => !unlockPassed(value));
-  const rows = entries.map(([name, value]) => `<div class="unlock-result-row"><div><strong>${escapeHTML(name)}</strong><span>${escapeHTML(value)}</span></div><span class="badge ${unlockPassed(value) ? "good" : "bad"}">${unlockPassed(value) ? t("supported") : t("unavailable")}</span></div>`).join("");
-  return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("unlockResults")} · ${escapeHTML(node?.name || "-")}</h2><p>${t("unlockSourceHint")}</p></div><button class="btn icon modal-close">×</button></header><div class="modal-body"><div class="unlock-summary"><div><span>${t("availableServices")}</span><strong>${available.length}</strong></div><div><span>${t("unavailableServices")}</span><strong>${unavailable.length}</strong></div></div>${state.modal.running ? `<div class="unlock-wait"><div class="spinner"></div><span>${t("waitingResults")}</span></div>` : ""}<div class="unlock-results">${rows || `<div class="empty"><strong>${t("unknown")}</strong></div>`}</div>${state.modal.error ? `<div class="form-error">${escapeHTML(state.modal.error)}</div>` : ""}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close">${t("close")}</button><button class="btn primary" id="node-check-retry" ${state.modal.running ? "disabled" : ""}>${t("checkAgain")}</button></div></footer></section></div>`;
+  const rowsData = entries.map(([name, value]) => {
+    const candidates = state.catalog.filter(item => serviceDetectorKey(item) === name);
+    const service = candidates.find(item => targetAuditObservations(node?.id, item).length) || candidates[0];
+    const compatibility = service ? targetCompatibility(node?.id, service) : {observations:[], measured:[], passed:0, kind:"warn", label:t("referenceOnly")};
+    return {name, value, compatibility};
+  });
+  const actual = rowsData.filter(item => item.compatibility.observations.length);
+  const available = actual.filter(item => item.compatibility.kind === "good");
+  const problems = actual.filter(item => item.compatibility.kind !== "good");
+  const reference = rowsData.filter(item => !item.compatibility.observations.length);
+  const rows = rowsData.map(({name, value, compatibility}) => {
+    const targetLines = compatibility.observations.map(item => `<span>${escapeHTML(item.ip)} · ${escapeHTML(item.result || t("auditPending"))}</span>`).join("");
+    return `<div class="unlock-result-row"><div><strong>${escapeHTML(name)}</strong><span>${t("agentReference")} · ${escapeHTML(value)}</span>${targetLines}</div><span class="badge ${compatibility.kind}">${escapeHTML(compatibility.label)}</span></div>`;
+  }).join("");
+  return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("unlockResults")} · ${escapeHTML(node?.name || "-")}</h2><p>${t("unlockSourceHint")}</p></div><button class="btn icon modal-close">×</button></header><div class="modal-body"><div class="unlock-summary"><div><span>${t("actualAvailable")}</span><strong>${available.length}</strong></div><div><span>${t("actualProblem")}</span><strong>${problems.length}</strong></div><div><span>${t("referenceOnly")}</span><strong>${reference.length}</strong></div></div>${state.modal.running ? `<div class="unlock-wait"><div class="spinner"></div><span>${t("waitingResults")}</span></div>` : ""}<div class="unlock-results">${rows || `<div class="empty"><strong>${t("unknown")}</strong></div>`}</div>${state.modal.error ? `<div class="form-error">${escapeHTML(state.modal.error)}</div>` : ""}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close">${t("close")}</button><button class="btn primary" id="node-check-retry" ${state.modal.running ? "disabled" : ""}>${t("checkAgain")}</button></div></footer></section></div>`;
 }
 
 function ipConfigNode(config) { return state.nodes.find(node => nodeID(node.id) === nodeID(config.dns_node_id)); }

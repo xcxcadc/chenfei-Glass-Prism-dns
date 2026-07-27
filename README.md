@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前客户端工具版本为 `1.3.3`，完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前客户端工具版本为 `1.3.4`，完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
@@ -30,6 +30,7 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **自定义服务** - 可在前端新增、编辑、删除任意服务名称与域名
 - **服务级切换** - 每个 DNS 节点可将每项服务绑定到任意解锁机，并恢复 Smart/Fallback 自动选择
 - **双层解锁检测** - 解锁机显示 Agent UnlockTests，目标 IP 再运行同源 UnlockTests，避免把“节点自检可用”误当成“客户端实际可用”
+- **真实兼容性优先** - 节点卡片、服务状态和检测弹窗优先显示每台目标 IP 的实测结果；Agent 自检只作为参考，三次检测不一致会标记为 `UNSTABLE`
 - **IP 配置闭环** - 添加目标 IP，批量选择服务及对应解锁机，自动创建 DNS 节点和服务覆盖
 - **配置自动生效** - 增强层持久化逐节点路由并在每次 Agent 同步时恢复；10 秒守卫同时验证真实 DNS 路由，发现 Agent 假活或规则失配后限频安全重启
 - **服务品牌图标** - 服务卡片和 IP 选择器加载对应站点图标，网络不可用时自动使用本地图标

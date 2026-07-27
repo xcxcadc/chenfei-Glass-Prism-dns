@@ -234,7 +234,7 @@ a { color: inherit; }
 .test-results { display: grid; gap: 7px; margin-top: 14px; }
 .test-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 9px 10px; border-radius: 6px; background: var(--surface-soft); font-size: 12px; }
 .test-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.unlock-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.unlock-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
 .unlock-summary div { padding: 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-soft); }
 .unlock-summary span, .unlock-summary strong { display: block; }
 .unlock-summary span { color: var(--muted); font-size: 11px; }
@@ -297,6 +297,7 @@ a { color: inherit; }
   .ip-row-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, 1fr); }
   .ip-service-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .unlock-results { grid-template-columns: 1fr; }
+  .unlock-summary { grid-template-columns: 1fr; }
   #toast-root { top: 88px; right: 10px; bottom: auto; left: 10px; }
   .toast { max-width: 180px; margin-left: auto; }
 }
