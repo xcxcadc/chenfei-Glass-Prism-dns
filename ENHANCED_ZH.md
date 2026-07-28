@@ -1,6 +1,6 @@
 # Prism DNS 中文增强版
 
-本 Fork 在原 Controller 前增加一个独立、可审计的增强层。原 Controller 和 Agent 仍使用上游发布的二进制，增强层负责简体中文界面、服务级路由、自定义域名、动态规则集、UnlockTests 结果展示、账户安全和解锁链路统计。
+本 Fork 在原 Controller 前增加一个独立、可审计的增强层。原 Controller 和 Agent 仍使用上游发布的二进制，增强层负责简体中文界面、服务级路由、自定义域名与分类、动态规则集、UnlockTests 结果展示、账户安全和解锁链路统计。
 
 - 仓库：[xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns)
 - 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)
@@ -11,6 +11,7 @@
 - 动态读取 `stream.smartdns.list`，按分类和服务拆分为独立规则集。
 - 每个 DNS 节点可把每项服务手动绑定到任意 Proxy Agent，并可恢复 Smart/Fallback 自动选择。
 - 前端新增、编辑和删除自定义服务，支持任意名称、分类和域名列表。
+- 服务库可新建自定义分类，并把任意内置或自定义服务移动到任意分类；移动只覆盖显示分类，不改变稳定服务 ID、域名规则、IP 路由或客户端配置，可一键恢复原分类。
 - 自定义服务自动生成兼容 Prism 的 `DOMAIN-SUFFIX` 规则集。
 - 节点检测完成后列出解锁机自身的 UnlockTests；目标服务器再运行同源 UnlockTests，IP 配置页显示最终实测结论。
 - 新增 IP 配置闭环：保存时自动创建 DNS Client、服务规则和逐服务解锁机覆盖。
@@ -23,7 +24,7 @@
 - 提供 `prismdns.sh` 客户端工具，支持 Agent 安装、DNS 测试、系统 DNS 接管、备份和恢复。
 - 客户端使用 nftables 专用计数器，每分钟只上报本机 Prism DNS UDP/TCP 53 与所选 Proxy IP TCP 80/443 的 RX/TX。
 - 点击右上角用户名可验证旧账号并修改 Controller 管理员用户名和密码，修改后旧会话全部失效。
-- 自定义数据保存在 `/var/lib/prism-enhancer/custom-services.json`。
+- 自定义服务保存在 `/var/lib/prism-enhancer/custom-services.json`，自定义分类和服务分类覆盖保存在 `/var/lib/prism-enhancer/catalog-preferences.json`。
 
 ## IP 配置使用流程
 

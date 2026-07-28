@@ -23,6 +23,7 @@ const translations = {
     actualAvailable: "实测可用", actualProblem: "异常或波动", referenceOnly: "仅节点自检", agentReference: "节点自检（仅参考）", noTargetAudit: "尚无目标机实测",
     accountSettings: "账户安全", accountHint: "验证旧账号后修改管理员用户名和密码。", oldUsername: "旧用户名", oldPassword: "旧密码", newUsername: "新用户名", newPassword: "新密码", confirmPassword: "确认新密码", updateAccount: "更新账户", credentialsInvalid: "旧用户名或旧密码不正确", passwordMismatch: "两次输入的新密码不一致", accountUpdated: "账户已更新，请使用新账号重新登录",
     siteSettings: "站点设置", siteSettingsHint: "自定义左上角产品名称、说明文字和浏览器标签标题。", siteName: "网页名称", browserTitle: "页面标签名称", siteTagline: "网页说明", saveBranding: "保存站点设置", brandingUpdated: "站点名称已更新",
+    manageCategories: "分类管理", categoryHint: "服务分类只影响整理和筛选，不会修改域名、路由或客户端配置。", newCategory: "新建分类", categoryName: "分类名称", categoryCreated: "分类已创建", categoryDeleted: "分类已删除", editCategory: "分类", serviceCategory: "调整服务分类", restoreCategory: "恢复原分类", originalCategory: "原始分类", useCategory: "使用", builtInCategory: "内置", customCategory: "自定义", categoryInUse: "该分类仍有服务，请先移动这些服务", categoryDeleteConfirm: "删除这个空分类？",
     unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点自检仅供参考；已配置服务会在同一行列出每台目标 IP 的三次聚合实测。", checkAgain: "重新检测", waitingResults: "正在等待节点返回检测结果...",
   },
   en: {
@@ -49,6 +50,7 @@ const translations = {
     actualAvailable: "Verified passed", actualProblem: "Failed or unstable", referenceOnly: "Agent only", agentReference: "Agent self-check (reference only)", noTargetAudit: "No target audit yet",
     accountSettings: "Account security", accountHint: "Verify the current credentials before changing the administrator username and password.", oldUsername: "Current username", oldPassword: "Current password", newUsername: "New username", newPassword: "New password", confirmPassword: "Confirm new password", updateAccount: "Update account", credentialsInvalid: "Current username or password is incorrect", passwordMismatch: "The new passwords do not match", accountUpdated: "Account updated. Sign in with the new credentials.",
     siteSettings: "Site settings", siteSettingsHint: "Customize the product name, supporting text, and browser tab title.", siteName: "Website name", browserTitle: "Browser tab title", siteTagline: "Website description", saveBranding: "Save site settings", brandingUpdated: "Site branding updated",
+    manageCategories: "Manage categories", categoryHint: "Categories only organize and filter services. Domains, routes, and client configuration remain unchanged.", newCategory: "New category", categoryName: "Category name", categoryCreated: "Category created", categoryDeleted: "Category deleted", editCategory: "Category", serviceCategory: "Change service category", restoreCategory: "Restore original", originalCategory: "Original category", useCategory: "Use", builtInCategory: "Built-in", customCategory: "Custom", categoryInUse: "This category still contains services. Move them first.", categoryDeleteConfirm: "Delete this empty category?",
     unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "Agent self-checks are reference-only. Configured services list each target IP's aggregated three-run audit on the same row.", checkAgain: "Check again", waitingResults: "Waiting for the node to return results...",
   }
 };
@@ -71,7 +73,7 @@ const state = {
   user: JSON.parse(localStorage.getItem("prism_user") || "{}"),
   lang: localStorage.getItem("enhancer_lang") || "zh",
   theme: localStorage.getItem("prism_theme_v2") || "light",
-  tab: "services", nodes: [], rules: [], catalog: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
+  tab: "services", nodes: [], rules: [], catalog: [], categories: [], customCategories: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
   overrides: {}, activeSelections: {}, search: "", category: "", loading: false, modal: null, testResults: null, scrollPositions: {},
   branding: {site_name:"", browser_title:"", site_tagline:""}
 };
@@ -183,7 +185,11 @@ function formatDate(value) { if (!value) return "-"; try { return new Date(value
 function formatBytes(value) { const bytes = Number(value) || 0; if (bytes < 1024) return `${bytes} B`; const units = ["KB", "MB", "GB", "TB"]; let size = bytes; let unit = -1; do { size /= 1024; unit++; } while (size >= 1024 && unit < units.length - 1); return `${size >= 100 ? size.toFixed(0) : size.toFixed(2)} ${units[unit]}`; }
 function displayCategory(value) { return state.lang === "zh" ? categoryNames[value] || value : value; }
 function displayServiceName(service) { return state.lang === "zh" ? commonNames[service.name] || service.name : service.name; }
-function serviceMatches(service, query) { return !query || `${service.name} ${displayServiceName(service)} ${service.category} ${service.domains.join(" ")}`.toLowerCase().includes(query); }
+function serviceMatches(service, query) { return !query || `${service.name} ${displayServiceName(service)} ${service.category} ${displayCategory(service.category)} ${service.domains.join(" ")}`.toLowerCase().includes(query); }
+function catalogCategories() {
+  return [...new Set([...(state.categories || []), ...state.catalog.map(service => service.category)].filter(Boolean))]
+    .sort((left, right) => displayCategory(left).localeCompare(displayCategory(right), state.lang === "zh" ? "zh-CN" : "en"));
+}
 function isOnline(node) { if (!node.last_heartbeat) return false; return Date.now() - new Date(node.last_heartbeat).getTime() < 90000; }
 function configForNode(node) { return state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(node?.id)); }
 function clientState(config, node) {
@@ -310,10 +316,12 @@ async function loadAll(silent = false) {
   state.loading = !silent;
   if (!silent) render();
   try {
-    const [nodes, rules, catalog, ipConfigs] = await Promise.all([api("/enhancer/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs")]);
+    const [nodes, rules, catalog, ipConfigs, categoryData] = await Promise.all([api("/enhancer/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs"), api("/enhancer/api/categories")]);
     state.nodes = Array.isArray(nodes) ? nodes : [];
     state.rules = Array.isArray(rules) ? rules : [];
     state.catalog = catalog.services || [];
+    state.categories = Array.isArray(categoryData?.categories) ? categoryData.categories : (catalog.categories || []);
+    state.customCategories = Array.isArray(categoryData?.custom_categories) ? categoryData.custom_categories : [];
     state.catalogMeta = catalog;
     state.ipConfigs = Array.isArray(ipConfigs) ? ipConfigs : [];
     if (!dnsNodes().some(node => nodeID(node.id) === nodeID(state.dnsNodeId))) state.dnsNodeId = dnsNodes()[0]?.id || "";
@@ -323,7 +331,7 @@ async function loadAll(silent = false) {
   } catch (error) { toast(error.message, "error"); }
   finally {
     state.loading = false;
-    const preserveDraft = silent && ["service-form", "node-form", "ip-form"].includes(state.modal?.type);
+    const preserveDraft = silent && ["service-form", "service-category", "category-manager", "node-form", "ip-form"].includes(state.modal?.type);
     if (!preserveDraft) render();
   }
 }
@@ -403,7 +411,7 @@ function shellHTML() {
 
 function servicesHTML() {
   const dns = dnsNodes(); const proxies = proxyNodes();
-  const categories = [...new Set(state.catalog.map(service => service.category))].sort((a,b) => a.localeCompare(b));
+  const categories = catalogCategories();
   const filtered = state.catalog.filter(service => !state.category || service.category === state.category);
   const configuredServices = state.catalog.filter(service => {
     const rule = serviceRule(service);
@@ -420,7 +428,7 @@ function servicesHTML() {
     <div class="summary-metric"><span>${t("selectedServices")}</span><strong>${configured} <small>/ ${state.catalog.length}</small></strong></div>
     <div class="summary-metric"><span>${state.lang === "zh" ? "可用节点" : "Available nodes"}</span><strong>${proxies.filter(isOnline).length} <small>/ ${proxies.length}</small></strong></div>
     <div class="summary-metric"><span>${t("customServices")}</span><strong>${state.catalog.filter(item => item.custom).length}</strong></div></section>
-    <section class="orchestration-grid"><div class="panel orchestration-column service-library"><header class="section-head"><div><h2>${state.lang === "zh" ? "服务库" : "Service library"}</h2><p>${state.catalog.length} ${t("totalServices")}</p></div><button class="btn small" id="clear-filter">${state.lang === "zh" ? "重置" : "Reset"}</button></header>
+    <section class="orchestration-grid"><div class="panel orchestration-column service-library"><header class="section-head"><div><h2>${state.lang === "zh" ? "服务库" : "Service library"}</h2><p>${state.catalog.length} ${t("totalServices")}</p></div><div class="section-head-actions"><button class="btn small" id="manage-categories">${t("manageCategories")}</button><button class="btn small" id="clear-filter">${state.lang === "zh" ? "重置" : "Reset"}</button></div></header>
     <div class="library-filters"><input class="input" id="service-search" value="${escapeHTML(state.search)}" placeholder="${t("search")}"><select class="select" id="category-filter"><option value="">${t("allCategories")}</option>${categories.map(category => `<option value="${escapeHTML(category)}" ${state.category === category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select></div>
     ${filtered.length ? `<div class="service-grid">${filtered.map(serviceCardHTML).join("")}</div><div class="empty" id="service-filter-empty" hidden><strong>${t("noServices")}</strong></div>` : `<div class="empty"><strong>${t("noServices")}</strong></div>`}</div>
     <div class="panel orchestration-column selected-services"><header class="section-head"><div><h2>${t("selectedServices")}</h2><p>${configured} ${state.lang === "zh" ? "项已路由" : "routed"}</p></div></header><div class="selected-service-list">${configuredServices.length ? configuredServices.map(selectedServiceRowHTML).join("") : `<div class="empty compact"><strong>${t("notConfigured")}</strong><span>${state.lang === "zh" ? "从左侧选择服务开始配置" : "Choose a service from the library"}</span></div>`}</div></div>
@@ -431,7 +439,7 @@ function serviceCardHTML(service) {
   const rule = serviceRule(service); const node = activeNodeFor(rule); const status = serviceStatus(service, node); const manual = !!overrideFor(rule);
   const displayName = displayServiceName(service);
   return `<article class="service-card ${rule ? "configured" : ""} ${service.custom ? "custom" : ""}" data-service-id="${escapeHTML(service.id)}"><div class="service-row-main">${serviceIconHTML(service)}<div><div class="service-name" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div><div class="service-category">${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</div></div></div>
-    <div class="service-row-state"><span class="badge ${status.kind}" title="${escapeHTML(status.raw || status.label)}">${escapeHTML(status.kind ? status.label : (rule ? t("configured") : t("notConfigured")))}</span><button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button></div></article>`;
+    <div class="service-row-state"><span class="badge ${status.kind}" title="${escapeHTML(status.raw || status.label)}">${escapeHTML(status.kind ? status.label : (rule ? t("configured") : t("notConfigured")))}</span><button class="btn small service-category-open" data-service-id="${escapeHTML(service.id)}">${t("editCategory")}</button><button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button></div></article>`;
 }
 
 function selectedServiceRowHTML(service) {
@@ -505,11 +513,13 @@ function bindShell() {
   document.getElementById("empty-add-ip")?.addEventListener("click", () => openIPForm());
   document.getElementById("empty-add-node")?.addEventListener("click", () => openNodeForm());
   document.getElementById("refresh-catalog")?.addEventListener("click", refreshCatalog);
+  document.getElementById("manage-categories")?.addEventListener("click", () => openCategoryManager());
   document.getElementById("service-search")?.addEventListener("input", event => { state.search = event.target.value; filterServiceCards(); });
   document.getElementById("category-filter")?.addEventListener("change", event => { state.category = event.target.value; render(); });
   document.getElementById("dns-select")?.addEventListener("change", async event => { state.dnsNodeId = event.target.value; localStorage.setItem("enhancer_dns", state.dnsNodeId); await loadRoutingState(); render(); });
   document.getElementById("clear-filter")?.addEventListener("click", () => { state.search = ""; state.category = ""; render(); });
   document.querySelectorAll(".service-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openService(button.dataset.serviceId); }));
+  document.querySelectorAll(".service-category-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openServiceCategory(button.dataset.serviceId); }));
   document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openService(card.dataset.serviceId)));
   document.querySelectorAll(".selected-service-row").forEach(row => row.addEventListener("click", () => openService(row.dataset.serviceId)));
   document.querySelectorAll(".node-test").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); triggerNodeCheck(button.dataset.nodeId); }));
@@ -557,6 +567,13 @@ function openService(id) {
   renderModal();
 }
 function openServiceForm(service = null) { state.modal = {type:"service-form", service}; renderModal(); }
+function openServiceCategory(id) {
+  const service = state.catalog.find(item => item.id === id);
+  if (!service) return;
+  state.modal = {type:"service-category", service, error:"", busy:false};
+  renderModal();
+}
+function openCategoryManager(serviceId = "") { state.modal = {type:"category-manager", serviceId, error:"", busy:false}; renderModal(); }
 function openAccountSettings() { state.modal = {type:"account", error:"", busy:false}; renderModal(); }
 function openBrandingSettings() { state.modal = {type:"branding", error:"", busy:false}; renderModal(); }
 function randomSecret() { return Math.random().toString(36).slice(-8); }
@@ -607,6 +624,8 @@ function renderModal() {
   if (!state.modal) { root.innerHTML = ""; return; }
   if (state.modal.type === "service") root.innerHTML = serviceModalHTML(state.modal.service);
   if (state.modal.type === "service-form") root.innerHTML = serviceFormHTML(state.modal.service);
+  if (state.modal.type === "service-category") root.innerHTML = serviceCategoryHTML();
+  if (state.modal.type === "category-manager") root.innerHTML = categoryManagerHTML();
   if (state.modal.type === "node-form") root.innerHTML = nodeFormHTML();
   if (state.modal.type === "install-command") root.innerHTML = installCommandHTML();
   if (state.modal.type === "node-delete") root.innerHTML = nodeDeleteHTML();
@@ -639,7 +658,7 @@ function serviceModalHTML(service) {
     }).join("") : `<div class="empty"><strong>${t("noProxy")}</strong></div>`}</div></div>
     <div class="inline" style="margin-top:15px"><span class="badge ${manual ? "warn" : ""}">${manual ? t("manual") : t("auto")}</span><span class="hint">${t("currentRoute")}: ${escapeHTML(current?.name || "-")}</span></div>
     ${state.testResults ? testResultsHTML(state.testResults) : ""}</div>
-    <footer class="modal-foot"><div class="inline">${service.custom ? `<button class="btn small" id="edit-custom">${t("customEdit")}</button><button class="btn small danger" id="delete-custom">${t("customDelete")}</button>` : ""}</div><div class="modal-foot-right"><button class="btn" id="test-service" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
+    <footer class="modal-foot"><div class="inline"><button class="btn small" id="edit-service-category">${t("serviceCategory")}</button>${service.custom ? `<button class="btn small" id="edit-custom">${t("customEdit")}</button><button class="btn small danger" id="delete-custom">${t("customDelete")}</button>` : ""}</div><div class="modal-foot-right"><button class="btn" id="test-service" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
 }
 
 function testResultsHTML(results) {
@@ -651,11 +670,29 @@ function testResultsHTML(results) {
 }
 
 function serviceFormHTML(service) {
+  const categoryOptions = catalogCategories().map(category => `<option value="${escapeHTML(category)}">${escapeHTML(displayCategory(category))}</option>`).join("");
   return `<div class="modal-backdrop"><form class="modal medium panel" id="service-form"><header class="modal-head"><div><h2>${service ? t("customEdit") : t("addService")}</h2></div><button class="btn icon modal-close" type="button">×</button></header>
     <div class="modal-body form-stack"><div class="field"><label>${t("serviceName")}</label><input class="input" name="name" value="${escapeHTML(service?.name || "")}" required maxlength="80"></div>
-    <div class="field"><label>${t("category")}</label><input class="input" name="category" value="${escapeHTML(service?.category || (state.lang === "zh" ? "自定义服务" : "Custom services"))}" maxlength="80"></div>
+    <div class="field"><label>${t("category")}</label><input class="input" name="category" list="service-category-options" value="${escapeHTML(service?.category || (state.lang === "zh" ? "自定义服务" : "Custom services"))}" maxlength="64"><datalist id="service-category-options">${categoryOptions}</datalist></div>
     <div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" placeholder="example.com&#10;cdn.example.com" required>${escapeHTML((service?.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名，也支持逗号或分号分隔。" : "One domain per line; commas and semicolons are also accepted."}</span></div></div>
     <footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit">${t("save")}</button></div></footer></form></div>`;
+}
+
+function serviceCategoryHTML() {
+  const service = state.modal.service;
+  const categories = catalogCategories();
+  return `<div class="modal-backdrop"><form class="modal medium panel" id="service-category-form"><header class="modal-head"><div><h2>${t("serviceCategory")}</h2><p>${escapeHTML(displayServiceName(service))}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="category-service-summary">${serviceIconHTML(service)}<div><strong>${escapeHTML(displayServiceName(service))}</strong><span>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</span></div></div><div class="field"><label>${t("category")}</label><select class="select" name="category">${categories.map(category => `<option value="${escapeHTML(category)}" ${category === service.category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select></div>${service.original_category ? `<div class="hint">${t("originalCategory")}: ${escapeHTML(displayCategory(service.original_category))}</div>` : ""}<div class="category-note">${t("categoryHint")}</div><button class="btn" id="open-category-manager" type="button">＋ ${t("newCategory")}</button><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div>${service.original_category ? `<button class="btn" id="restore-service-category" type="button" ${state.modal.busy ? "disabled" : ""}>${t("restoreCategory")}</button>` : ""}</div><div class="modal-foot-right"><button class="btn modal-close" type="button" ${state.modal.busy ? "disabled" : ""}>${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy || !categories.length ? "disabled" : ""}>${t("save")}</button></div></footer></form></div>`;
+}
+
+function categoryManagerHTML() {
+  const categories = catalogCategories();
+  const custom = new Set(state.customCategories || []);
+  const serviceId = state.modal.serviceId || "";
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("manageCategories")}</h2><p>${t("categoryHint")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><form class="category-create" id="category-create-form"><input class="input" name="name" placeholder="${t("categoryName")}" maxlength="64" required autocomplete="off"><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>＋ ${t("newCategory")}</button></form><div class="category-list">${categories.map(category => {
+    const count = state.catalog.filter(service => service.category === category).length;
+    const customCategory = custom.has(category);
+    return `<div class="category-row"><button class="category-row-main category-filter-select" type="button" data-category="${escapeHTML(category)}"><strong>${escapeHTML(displayCategory(category))}</strong><span>${count} ${state.lang === "zh" ? "项服务" : "services"} · ${customCategory ? t("customCategory") : t("builtInCategory")}</span></button><div class="category-row-actions">${serviceId ? `<button class="btn small category-apply" type="button" data-category="${escapeHTML(category)}">${t("useCategory")}</button>` : ""}${customCategory ? `<button class="btn small danger category-delete" type="button" data-category="${escapeHTML(category)}" ${count ? "disabled" : ""} title="${count ? escapeHTML(t("categoryInUse")) : ""}">${state.lang === "zh" ? "删除" : "Delete"}</button>` : ""}</div></div>`;
+  }).join("")}</div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
 }
 
 function nodeFormHTML() {
@@ -717,8 +754,21 @@ function bindModal() {
   document.getElementById("reset-service")?.addEventListener("click", resetService);
   document.getElementById("test-service")?.addEventListener("click", testService);
   document.getElementById("edit-custom")?.addEventListener("click", () => openServiceForm(state.modal.service));
+  document.getElementById("edit-service-category")?.addEventListener("click", () => openServiceCategory(state.modal.service.id));
   document.getElementById("delete-custom")?.addEventListener("click", deleteCustomService);
   document.getElementById("service-form")?.addEventListener("submit", saveCustomService);
+  document.getElementById("service-category-form")?.addEventListener("submit", saveServiceCategory);
+  document.getElementById("restore-service-category")?.addEventListener("click", restoreServiceCategory);
+  document.getElementById("open-category-manager")?.addEventListener("click", () => openCategoryManager(state.modal.service.id));
+  document.getElementById("category-create-form")?.addEventListener("submit", createCategory);
+  document.querySelectorAll(".category-delete").forEach(button => button.addEventListener("click", () => deleteCategory(button.dataset.category)));
+  document.querySelectorAll(".category-apply").forEach(button => button.addEventListener("click", () => applyManagedCategory(button.dataset.category)));
+  document.querySelectorAll(".category-filter-select").forEach(button => button.addEventListener("click", () => {
+    if (state.modal.serviceId) return;
+    state.category = button.dataset.category;
+    closeModal();
+    render();
+  }));
   document.querySelectorAll("[data-node-role]").forEach(button => button.addEventListener("click", () => {
     const form = document.getElementById("node-form"); form.querySelector('input[name="role"]').value = button.dataset.nodeRole;
     document.querySelectorAll("[data-node-role]").forEach(item => item.classList.toggle("active", item === button));
@@ -762,6 +812,85 @@ function bindModal() {
     document.getElementById("branding-preview-tagline").textContent = String(form.get("site_tagline") || "");
   });
   filterIPServiceOptions();
+}
+
+async function saveServiceCategory(event) {
+  event.preventDefault();
+  const service = state.modal.service;
+  const category = String(new FormData(event.currentTarget).get("category") || "");
+  state.modal.busy = true; state.modal.error = ""; renderModal();
+  try {
+    await api(`/enhancer/api/service-categories/${encodeURIComponent(service.id)}`, {method:"PUT", body:JSON.stringify({category})});
+    state.modal = null;
+    await loadAll(true);
+    toast(t("saved"), "good");
+  } catch (error) {
+    state.modal.busy = false; state.modal.error = error.message; renderModal();
+  }
+}
+
+async function restoreServiceCategory() {
+  const service = state.modal.service;
+  state.modal.busy = true; state.modal.error = ""; renderModal();
+  try {
+    await api(`/enhancer/api/service-categories/${encodeURIComponent(service.id)}`, {method:"DELETE"});
+    state.modal = null;
+    await loadAll(true);
+    toast(t("saved"), "good");
+  } catch (error) {
+    state.modal.busy = false; state.modal.error = error.message; renderModal();
+  }
+}
+
+async function createCategory(event) {
+  event.preventDefault();
+  const name = String(new FormData(event.currentTarget).get("name") || "").trim();
+  const serviceId = state.modal.serviceId || "";
+  state.modal.busy = true; state.modal.error = ""; renderModal();
+  try {
+    const created = await api("/enhancer/api/categories", {method:"POST", body:JSON.stringify({name})});
+    state.categories = [...new Set([...state.categories, created.name])];
+    state.customCategories = [...new Set([...state.customCategories, created.name])];
+    if (serviceId) {
+      await api(`/enhancer/api/service-categories/${encodeURIComponent(serviceId)}`, {method:"PUT", body:JSON.stringify({category:created.name})});
+      state.modal = null;
+      await loadAll(true);
+      toast(t("saved"), "good");
+      return;
+    }
+    state.modal.busy = false;
+    render();
+    toast(t("categoryCreated"), "good");
+  } catch (error) {
+    state.modal.busy = false; state.modal.error = error.message; renderModal();
+  }
+}
+
+async function deleteCategory(category) {
+  if (!confirm(t("categoryDeleteConfirm"))) return;
+  try {
+    await api("/enhancer/api/categories", {method:"DELETE", body:JSON.stringify({name:category})});
+    state.categories = state.categories.filter(item => item !== category);
+    state.customCategories = state.customCategories.filter(item => item !== category);
+    render();
+    toast(t("categoryDeleted"), "good");
+  } catch (error) {
+    state.modal.error = error.message; renderModal();
+  }
+}
+
+async function applyManagedCategory(category) {
+  const serviceId = state.modal.serviceId;
+  if (!serviceId) return;
+  state.modal.busy = true; state.modal.error = ""; renderModal();
+  try {
+    await api(`/enhancer/api/service-categories/${encodeURIComponent(serviceId)}`, {method:"PUT", body:JSON.stringify({category})});
+    state.modal = null;
+    await loadAll(true);
+    toast(t("saved"), "good");
+  } catch (error) {
+    state.modal.busy = false; state.modal.error = error.message; renderModal();
+  }
 }
 
 async function updateBranding(event) {

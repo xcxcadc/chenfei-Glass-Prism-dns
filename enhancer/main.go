@@ -40,7 +40,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize branding store: %v", err)
 	}
-	catalog := NewCatalogManager(*catalogURL, client, store)
+	catalogPreferences, err := NewCatalogPreferenceStore(filepath.Join(*dataDir, "catalog-preferences.json"))
+	if err != nil {
+		log.Fatalf("initialize catalog preference store: %v", err)
+	}
+	catalog := NewCatalogManager(*catalogURL, client, store, catalogPreferences)
 	app, err := NewApp(*upstream, catalog, store, ipStore, client, *controllerDB)
 	if err != nil {
 		log.Fatalf("initialize server: %v", err)

@@ -103,6 +103,9 @@ nameserver /youtubei.googleapis.com/group
 	if len(services) != 1 {
 		t.Fatalf("expected one service, got %d", len(services))
 	}
+	if services[0].Category != "Global Platform" {
+		t.Fatalf("YouTube should be categorized as a global service: %+v", services[0])
+	}
 	for _, domain := range []string{"googlevideo.com", "ggpht.com", "ytimg.com", "youtube.com", "youtubei.googleapis.com"} {
 		if !contains(services[0].Domains, domain) {
 			t.Fatalf("YouTube traffic domain %q missing from %#v", domain, services[0].Domains)

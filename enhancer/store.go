@@ -51,6 +51,7 @@ func (store *CustomServiceStore) Get(id string) (Service, bool) {
 func (store *CustomServiceStore) Upsert(service Service) (Service, error) {
 	service.Name = strings.TrimSpace(service.Name)
 	service.Category = strings.TrimSpace(service.Category)
+	service.OriginalCategory = ""
 	service.Domains = normalizeDomains(service.Domains)
 	service.Custom = true
 	if service.Name == "" {
@@ -59,6 +60,11 @@ func (store *CustomServiceStore) Upsert(service Service) (Service, error) {
 	if service.Category == "" {
 		service.Category = "自定义服务"
 	}
+	category, err := normalizeCategory(service.Category)
+	if err != nil {
+		return Service{}, err
+	}
+	service.Category = category
 	if len(service.Domains) == 0 {
 		return Service{}, errors.New("at least one valid domain is required")
 	}

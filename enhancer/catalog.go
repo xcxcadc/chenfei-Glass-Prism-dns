@@ -83,11 +83,12 @@ var (
 )
 
 type Service struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Category string   `json:"category"`
-	Domains  []string `json:"domains"`
-	Custom   bool     `json:"custom"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Category         string   `json:"category"`
+	OriginalCategory string   `json:"original_category,omitempty"`
+	Domains          []string `json:"domains"`
+	Custom           bool     `json:"custom"`
 }
 
 func ParseSmartDNS(reader io.Reader) ([]Service, error) {
@@ -184,6 +185,9 @@ func canonicalServiceName(name, category string) string {
 }
 
 func canonicalCategory(category, serviceName string) string {
+	if strings.EqualFold(strings.TrimSpace(serviceName), "YouTube") {
+		return "Global Platform"
+	}
 	value := strings.TrimSpace(category)
 	switch strings.ToLower(value) {
 	case "global plaform":

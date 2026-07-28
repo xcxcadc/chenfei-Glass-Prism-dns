@@ -273,6 +273,7 @@ a { color: inherit; }
 }
 .section-head h2 { margin: 0; font-size: 15px; }
 .section-head p { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
+.section-head-actions { display: flex; align-items: center; gap: 7px; }
 .library-filters { display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 8px; padding: 12px 14px; }
 .service-grid, .selected-service-list, .route-node-list {
   min-height: 0;
@@ -366,6 +367,19 @@ a { color: inherit; }
 .route-note { display: grid; gap: 5px; margin: auto 14px 14px; padding-top: 13px; border-top: 1px solid var(--line); }
 .route-note strong { font-size: 11px; }
 .route-note span { color: var(--muted); font-size: 9px; line-height: 1.55; }
+
+.category-service-summary { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: center; gap: 11px; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
+.category-service-summary strong, .category-service-summary span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.category-service-summary span { margin-top: 4px; color: var(--muted); font-size: 10px; }
+.category-note { padding: 11px 12px; border-radius: 10px; color: var(--muted); background: var(--surface-soft); font-size: 10px; line-height: 1.55; }
+.category-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.category-list { display: grid; gap: 7px; max-height: min(480px, 58vh); overflow-y: auto; overscroll-behavior: contain; }
+.category-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-strong); }
+.category-row-main { min-width: 0; padding: 0; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.category-row-main strong, .category-row-main span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.category-row-main strong { font-size: 12px; }
+.category-row-main span { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.category-row-actions { display: flex; align-items: center; gap: 6px; }
 
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .stat { padding: 16px; }

@@ -6,9 +6,9 @@
 |---|---|---|
 | Controller 数据库 | `/opt/prism/data.db` | 管理员账号、节点、密钥、规则和运行状态 |
 | Controller 环境 | `/opt/prism/.env` | JWT 密钥与 Controller 环境配置 |
-| Enhancer 数据目录 | `/var/lib/prism-enhancer` | 自定义服务、IP 配置、路由、流量、节点中文名称/地区、品牌设置和传输信息 |
+| Enhancer 数据目录 | `/var/lib/prism-enhancer` | 自定义服务与分类、IP 配置、路由、流量、节点中文名称/地区、品牌设置和传输信息 |
 
-迁移面板时必须同时迁移这三项。只复制 `data.db` 会丢失 IP 配置、流量、中文名称、地区和站点标题。
+迁移面板时必须同时迁移这三项。只复制 `data.db` 会丢失 IP 配置、流量、服务分类、中文名称、地区和站点标题。
 
 ## 一、旧服务器导出
 
@@ -113,7 +113,7 @@ journalctl -u prism-controller -u prism-enhancer --since "-10 min" --no-pager
 
 1. 原管理员账号可以登录。
 2. 节点数量、名称、地区、分组和在线状态正确。
-3. 自定义服务和域名数量正确。
+3. 自定义服务、域名、分类及服务分类归属正确。
 4. 每个目标 IP 的服务选择、解锁机映射和流量数据正确。
 5. 左上角网页名称和浏览器标签标题正确。
 6. 随机选择一个目标 IP，执行 Gemini、Claude、Disney+ 或 YouTube 的真实解锁测试。

@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.4.2"
+const uiVersion = "1.4.3"
 
 type App struct {
 	catalog      *CatalogManager
@@ -27,6 +27,7 @@ type App struct {
 	ipStore      *IPConfigStore
 	nodeLabels   *NodeLabelStore
 	branding     *BrandingStore
+	preferences  *CatalogPreferenceStore
 	transport    *TransportStore
 	upstream     *url.URL
 	proxy        *httputil.ReverseProxy
@@ -73,6 +74,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		ipStore:      ipStore,
 		nodeLabels:   &NodeLabelStore{labels: make(map[string]NodeLabel)},
 		branding:     &BrandingStore{},
+		preferences:  catalog.preferences,
 		upstream:     upstream,
 		proxy:        proxy,
 		client:       client,
@@ -92,6 +94,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/catalog", app.handleCatalog)
 	mux.HandleFunc("/enhancer/api/custom-services", app.handleCustomServices)
 	mux.HandleFunc("/enhancer/api/custom-services/", app.handleCustomService)
+	mux.HandleFunc("/enhancer/api/categories", app.handleCategories)
+	mux.HandleFunc("/enhancer/api/service-categories/", app.handleServiceCategory)
 	mux.HandleFunc("/enhancer/api/connectivity", app.handleConnectivity)
 	mux.HandleFunc("/enhancer/api/account", app.handleAccountUpdate)
 	mux.HandleFunc("/enhancer/api/branding", app.handleBranding)
@@ -172,9 +176,24 @@ func (app *App) handleCustomServices(writer http.ResponseWriter, request *http.R
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		requestedCategory := strings.TrimSpace(service.Category)
+		if requestedCategory == "" {
+			requestedCategory = "自定义服务"
+		}
+		categoryWasKnown := app.catalogHasCategory(request.Context(), requestedCategory)
 		saved, err := app.store.Upsert(service)
 		if err != nil {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if !categoryWasKnown {
+			if _, err := app.preferences.AddCategory(saved.Category); err != nil {
+				writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if err := app.preferences.ClearServiceCategory(saved.ID); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		writeJSON(writer, http.StatusCreated, saved)
@@ -200,10 +219,25 @@ func (app *App) handleCustomService(writer http.ResponseWriter, request *http.Re
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		requestedCategory := strings.TrimSpace(service.Category)
+		if requestedCategory == "" {
+			requestedCategory = "自定义服务"
+		}
+		categoryWasKnown := app.catalogHasCategory(request.Context(), requestedCategory)
 		service.ID = id
 		saved, err := app.store.Upsert(service)
 		if err != nil {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if !categoryWasKnown {
+			if _, err := app.preferences.AddCategory(saved.Category); err != nil {
+				writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if err := app.preferences.ClearServiceCategory(saved.ID); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		writeJSON(writer, http.StatusOK, saved)
@@ -215,10 +249,149 @@ func (app *App) handleCustomService(writer http.ResponseWriter, request *http.Re
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		_ = app.preferences.ClearServiceCategory(id)
 		writer.WriteHeader(http.StatusNoContent)
 	default:
 		methodNotAllowed(writer, http.MethodPut, http.MethodDelete)
 	}
+}
+
+func (app *App) handleCategories(writer http.ResponseWriter, request *http.Request) {
+	switch request.Method {
+	case http.MethodGet:
+		snapshot := app.catalog.Snapshot(request.Context(), false)
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"categories":        snapshot.Categories,
+			"custom_categories": app.preferences.Categories(),
+		})
+	case http.MethodPost:
+		if !app.authorize(request.Context(), request.Header.Get("Authorization")) {
+			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "登录已失效"})
+			return
+		}
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if err := decodeJSON(request, &payload); err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		category, err := normalizeCategory(payload.Name)
+		if err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if app.catalogHasCategory(request.Context(), category) {
+			writeJSON(writer, http.StatusConflict, map[string]string{"error": "分类已存在"})
+			return
+		}
+		category, err = app.preferences.AddCategory(category)
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusCreated, map[string]string{"name": category})
+	case http.MethodDelete:
+		if !app.authorize(request.Context(), request.Header.Get("Authorization")) {
+			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "登录已失效"})
+			return
+		}
+		var payload struct {
+			Name string `json:"name"`
+		}
+		if err := decodeJSON(request, &payload); err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		category, err := normalizeCategory(payload.Name)
+		if err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if !app.preferences.IsCustomCategory(category) {
+			writeJSON(writer, http.StatusNotFound, map[string]string{"error": "自定义分类不存在"})
+			return
+		}
+		for _, service := range app.catalog.Snapshot(request.Context(), false).Services {
+			if service.Category == category {
+				writeJSON(writer, http.StatusConflict, map[string]string{"error": "该分类仍有服务，请先移动这些服务"})
+				return
+			}
+		}
+		if err := app.preferences.DeleteCategory(category); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writer.WriteHeader(http.StatusNoContent)
+	default:
+		methodNotAllowed(writer, http.MethodGet, http.MethodPost, http.MethodDelete)
+	}
+}
+
+func (app *App) handleServiceCategory(writer http.ResponseWriter, request *http.Request) {
+	if !app.authorize(request.Context(), request.Header.Get("Authorization")) {
+		writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "登录已失效"})
+		return
+	}
+	serviceID := strings.TrimPrefix(request.URL.Path, "/enhancer/api/service-categories/")
+	if serviceID == "" {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "无效的服务 ID"})
+		return
+	}
+	service, ok := app.catalog.Service(request.Context(), serviceID)
+	if !ok {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "服务不存在"})
+		return
+	}
+	switch request.Method {
+	case http.MethodPut:
+		var payload struct {
+			Category string `json:"category"`
+		}
+		if err := decodeJSON(request, &payload); err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		category, err := normalizeCategory(payload.Category)
+		if err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		known := false
+		for _, available := range app.catalog.Snapshot(request.Context(), false).Categories {
+			if available == category {
+				known = true
+				break
+			}
+		}
+		if !known {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "分类不存在，请先新建分类"})
+			return
+		}
+		if err := app.preferences.SetServiceCategory(service.ID, category); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	case http.MethodDelete:
+		if err := app.preferences.ClearServiceCategory(service.ID); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	default:
+		methodNotAllowed(writer, http.MethodPut, http.MethodDelete)
+		return
+	}
+	updated, _ := app.catalog.Service(request.Context(), service.ID)
+	writeJSON(writer, http.StatusOK, updated)
+}
+
+func (app *App) catalogHasCategory(ctx context.Context, category string) bool {
+	for _, available := range app.catalog.Snapshot(ctx, false).Categories {
+		if available == category {
+			return true
+		}
+	}
+	return false
 }
 
 func (app *App) handleRuleSet(writer http.ResponseWriter, request *http.Request) {

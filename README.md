@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前客户端工具版本为 `1.4.0`，完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名与分类、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前客户端工具版本为 `1.4.0`，完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
@@ -28,6 +28,7 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **简体中文增强界面** - 默认中文，可切换英文和深浅主题
 - **细化服务域名库** - 动态解析 `stream.smartdns.list`，当前提供 178 项有效服务；已停止运营的 Crackle、Salto、GYAO 不再参与路由
 - **自定义服务** - 可在前端新增、编辑、删除任意服务名称与域名
+- **分类自由编排** - 可新建自定义分类，把内置或自定义服务移动到任意分类并随时恢复原分类；分类调整不改变服务 ID、域名或已下发路由
 - **服务级切换** - 每个 DNS 节点可将每项服务绑定到任意解锁机，并恢复 Smart/Fallback 自动选择
 - **双层解锁检测** - 解锁机显示 Agent UnlockTests，目标 IP 再运行同源 UnlockTests，避免把“节点自检可用”误当成“客户端实际可用”
 - **真实兼容性优先** - 节点卡片、服务状态和检测弹窗优先显示每台目标 IP 的实测结果；Agent 自检只作为参考，三次检测不一致会标记为 `UNSTABLE`
@@ -134,6 +135,7 @@ curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/mai
 
 登录后可点击右上角用户名打开“账户安全”，验证当前用户名和密码后修改管理员账户。
 侧栏的“站点设置”可以自定义左上角网页名称、说明文字和浏览器标签标题，设置保存在 `/var/lib/prism-enhancer/branding.json`。
+服务库中的“分类管理”可新建分类；每项服务右侧的“分类”按钮可移动或恢复分类，设置保存在 `/var/lib/prism-enhancer/catalog-preferences.json`。
 
 更换服务器前必须同时备份 Controller 数据库、环境文件和整个 Enhancer 数据目录。完整导出、恢复、验证及回滚步骤见 [面板迁移与灾备教程](MIGRATION_ZH.md)。
 
@@ -225,7 +227,7 @@ journalctl -u prism-controller -f
 
 ## 迁移与备份
 
-面板迁移不能只复制 `data.db`。节点中文名称与地区、自定义服务、IP 路由、流量、品牌设置和加密传输信息保存在 `/var/lib/prism-enhancer/`。
+面板迁移不能只复制 `data.db`。节点中文名称与地区、自定义服务及分类、IP 路由、流量、品牌设置和加密传输信息保存在 `/var/lib/prism-enhancer/`。
 
 请按 [面板迁移与灾备教程](MIGRATION_ZH.md) 操作，教程包含：
 
