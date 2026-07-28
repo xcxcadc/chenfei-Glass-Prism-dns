@@ -185,7 +185,41 @@ function formatDate(value) { if (!value) return "-"; try { return new Date(value
 function formatBytes(value) { const bytes = Number(value) || 0; if (bytes < 1024) return `${bytes} B`; const units = ["KB", "MB", "GB", "TB"]; let size = bytes; let unit = -1; do { size /= 1024; unit++; } while (size >= 1024 && unit < units.length - 1); return `${size >= 100 ? size.toFixed(0) : size.toFixed(2)} ${units[unit]}`; }
 function displayCategory(value) { return state.lang === "zh" ? categoryNames[value] || value : value; }
 function displayServiceName(service) { return state.lang === "zh" ? commonNames[service.name] || service.name : service.name; }
-function serviceMatches(service, query) { return !query || `${service.name} ${displayServiceName(service)} ${service.category} ${displayCategory(service.category)} ${service.domains.join(" ")}`.toLowerCase().includes(query); }
+function normalizeSearchText(value) {
+  return String(value || "").normalize("NFKC").toLocaleLowerCase(state.lang === "zh" ? "zh-CN" : "en-US").replace(/\s+/g, " ").trim();
+}
+function compactSearchText(value) {
+  return normalizeSearchText(value).replace(/[\s./_+&:·-]+/g, "");
+}
+function serviceSearchFields(service) {
+  const domains = Array.isArray(service.domains) ? service.domains : [];
+  return [
+    service.name,
+    displayServiceName(service),
+    service.id,
+    service.category,
+    displayCategory(service.category),
+    serviceDetectorKey(service),
+    ...domains,
+    ...domains.map(domain => String(domain).replace(/^www\./i, ""))
+  ].filter(Boolean);
+}
+function searchTokenMatches(field, token) {
+  if (/^[a-z0-9]{1,2}$/.test(token)) {
+    return field.split(/[^\p{L}\p{N}]+/u).includes(token);
+  }
+  return field.includes(token);
+}
+function serviceMatches(service, rawQuery) {
+  const query = normalizeSearchText(rawQuery);
+  if (!query) return true;
+  const fields = serviceSearchFields(service).map(normalizeSearchText);
+  if (fields.some(field => field === query)) return true;
+  const tokens = query.split(" ").filter(Boolean);
+  if (tokens.every(token => fields.some(field => searchTokenMatches(field, token)))) return true;
+  const compactQuery = compactSearchText(query);
+  return compactQuery.length >= 2 && fields.some(field => compactSearchText(field).includes(compactQuery));
+}
 function catalogCategories() {
   return [...new Set([...(state.categories || []), ...state.catalog.map(service => service.category)].filter(Boolean))]
     .sort((left, right) => displayCategory(left).localeCompare(displayCategory(right), state.lang === "zh" ? "zh-CN" : "en"));
@@ -541,7 +575,7 @@ function bindShell() {
 }
 
 function filterServiceCards() {
-  const query = state.search.trim().toLowerCase();
+  const query = state.search;
   let visible = 0;
   document.querySelectorAll(".service-card").forEach(card => {
     const service = state.catalog.find(item => item.id === card.dataset.serviceId);
@@ -939,7 +973,7 @@ async function updateAccount(event) {
 
 function filterIPServiceOptions() {
   if (state.modal?.type !== "ip-form" || state.modal.step !== 2) return;
-  const query = state.modal.serviceSearch.trim().toLowerCase();
+  const query = state.modal.serviceSearch;
   let visible = 0;
   document.querySelectorAll(".ip-service-option").forEach(option => {
     const service = state.catalog.find(item => item.id === option.dataset.serviceId);

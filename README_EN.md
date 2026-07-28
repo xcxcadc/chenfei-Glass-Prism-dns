@@ -28,6 +28,7 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Chinese Enhanced UI** - Simplified Chinese by default, with English and theme switching
 - **Detailed Service Catalog** - Dynamically parses `stream.smartdns.list` into 178 active services; discontinued Crackle, Salto, and GYAO entries are excluded
 - **Custom Services** - Add, edit, and delete arbitrary service names and domain lists in the UI
+- **Unified Service Search** - The service library and IP picker support exact and fuzzy matching across names, localized aliases, categories, service IDs, and domains while ignoring case and common separators
 - **Flexible Categories** - Create custom categories, move any built-in or custom service between them, and restore the original category without changing service IDs, domains, or deployed routes
 - **Per-Service Routing** - Bind each service on each DNS client to any proxy agent, or restore Smart/Fallback selection
 - **Two-Layer Unlock Audit** - Shows proxy-side Agent UnlockTests and reruns the same detector on each target IP, avoiding false confidence from proxy-only checks
