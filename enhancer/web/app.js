@@ -22,6 +22,7 @@ const translations = {
     actualAudit: "目标机实测", auditPending: "待实测", targetAvailable: "目标机可用", targetProblem: "目标机异常", targetCompatibility: "目标机兼容性",
     actualAvailable: "实测可用", actualProblem: "异常或波动", referenceOnly: "仅节点自检", agentReference: "节点自检（仅参考）", noTargetAudit: "尚无目标机实测",
     accountSettings: "账户安全", accountHint: "验证旧账号后修改管理员用户名和密码。", oldUsername: "旧用户名", oldPassword: "旧密码", newUsername: "新用户名", newPassword: "新密码", confirmPassword: "确认新密码", updateAccount: "更新账户", credentialsInvalid: "旧用户名或旧密码不正确", passwordMismatch: "两次输入的新密码不一致", accountUpdated: "账户已更新，请使用新账号重新登录",
+    siteSettings: "站点设置", siteSettingsHint: "自定义左上角产品名称、说明文字和浏览器标签标题。", siteName: "网页名称", browserTitle: "页面标签名称", siteTagline: "网页说明", saveBranding: "保存站点设置", brandingUpdated: "站点名称已更新",
     unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点自检仅供参考；已配置服务会在同一行列出每台目标 IP 的三次聚合实测。", checkAgain: "重新检测", waitingResults: "正在等待节点返回检测结果...",
   },
   en: {
@@ -47,6 +48,7 @@ const translations = {
     actualAudit: "Target audit", auditPending: "Not audited", targetAvailable: "Target passed", targetProblem: "Target issue", targetCompatibility: "Target compatibility",
     actualAvailable: "Verified passed", actualProblem: "Failed or unstable", referenceOnly: "Agent only", agentReference: "Agent self-check (reference only)", noTargetAudit: "No target audit yet",
     accountSettings: "Account security", accountHint: "Verify the current credentials before changing the administrator username and password.", oldUsername: "Current username", oldPassword: "Current password", newUsername: "New username", newPassword: "New password", confirmPassword: "Confirm new password", updateAccount: "Update account", credentialsInvalid: "Current username or password is incorrect", passwordMismatch: "The new passwords do not match", accountUpdated: "Account updated. Sign in with the new credentials.",
+    siteSettings: "Site settings", siteSettingsHint: "Customize the product name, supporting text, and browser tab title.", siteName: "Website name", browserTitle: "Browser tab title", siteTagline: "Website description", saveBranding: "Save site settings", brandingUpdated: "Site branding updated",
     unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "Agent self-checks are reference-only. Configured services list each target IP's aggregated three-run audit on the same row.", checkAgain: "Check again", waitingResults: "Waiting for the node to return results...",
   }
 };
@@ -70,11 +72,40 @@ const state = {
   lang: localStorage.getItem("enhancer_lang") || "zh",
   theme: localStorage.getItem("prism_theme_v2") || "light",
   tab: "services", nodes: [], rules: [], catalog: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
-  overrides: {}, activeSelections: {}, search: "", category: "", loading: false, modal: null, testResults: null
+  overrides: {}, activeSelections: {}, search: "", category: "", loading: false, modal: null, testResults: null, scrollPositions: {},
+  branding: {site_name:"", browser_title:"", site_tagline:""}
 };
 
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
+function siteName() { return String(state.branding.site_name || "Prism DNS"); }
+function browserTitle() { return String(state.branding.browser_title || t("title")); }
+function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
+
+const scrollSelectors = [".container", ".service-grid", ".selected-service-list", ".route-node-list"];
+function captureScrollPositions() {
+  const container = document.querySelector(".container[data-view]");
+  const view = container?.dataset.view;
+  if (!view) return;
+  const positions = {...(state.scrollPositions[view] || {})};
+  scrollSelectors.forEach(selector => {
+    const element = document.querySelector(selector);
+    if (element) positions[selector] = {top:element.scrollTop, left:element.scrollLeft};
+  });
+  state.scrollPositions[view] = positions;
+}
+function restoreScrollPositions(view) {
+  const positions = state.scrollPositions[view];
+  if (!positions) return;
+  scrollSelectors.forEach(selector => {
+    const position = positions[selector];
+    const element = document.querySelector(selector);
+    if (element && position) {
+      element.scrollTop = position.top;
+      element.scrollLeft = position.left;
+    }
+  });
+}
 function nodeID(value) { return value == null ? "" : String(value); }
 function selectedDNS() { return state.nodes.find(node => nodeID(node.id) === nodeID(state.dnsNodeId)); }
 function proxyNodes() { return state.nodes.filter(node => node.role === "proxy"); }
@@ -239,6 +270,15 @@ async function api(path, options = {}) {
   return data;
 }
 
+async function loadBranding() {
+  try {
+    const response = await fetch("/enhancer/api/branding", {cache:"no-store"});
+    if (!response.ok) return;
+    const branding = await response.json();
+    state.branding = branding && typeof branding === "object" ? branding : state.branding;
+  } catch {}
+}
+
 async function login(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -315,18 +355,21 @@ function connectSSE() {
 }
 
 function render() {
+  captureScrollPositions();
   document.documentElement.dataset.theme = state.theme === "light" ? "light" : "dark";
   document.documentElement.lang = state.lang === "zh" ? "zh-CN" : "en";
-  document.title = t("title");
+  document.title = browserTitle();
   const app = document.getElementById("app");
   if (!state.token) { app.innerHTML = loginHTML(); bindLogin(); return; }
   app.innerHTML = shellHTML();
   bindShell();
   renderModal();
+  restoreScrollPositions(state.tab);
 }
 
 function loginHTML() {
-  return `<main class="login-wrap"><section class="login-box panel"><h1>${escapeHTML(t("loginTitle"))}</h1><p>${escapeHTML(t("loginHint"))}</p>
+  const loginTitle = state.lang === "zh" ? `登录 ${siteName()}` : `Sign in to ${siteName()}`;
+  return `<main class="login-wrap"><section class="login-box panel"><h1>${escapeHTML(loginTitle)}</h1><p>${escapeHTML(t("loginHint"))}</p>
     <form class="form-stack" id="login-form"><div class="field"><label>${t("username")}</label><input class="input" name="username" autocomplete="username" required></div>
     <div class="field"><label>${t("password")}</label><input class="input" type="password" name="password" autocomplete="current-password" required></div>
     <div class="form-error"></div><button class="btn primary" type="submit">${t("login")}</button></form></section></main>`;
@@ -350,12 +393,12 @@ function shellHTML() {
   const pageHint = state.lang === "zh"
     ? (state.tab === "services" ? "编排解锁服务、验证真实可用性并选择最佳节点" : state.tab === "nodes" ? "管理解锁机与被解锁机的在线状态" : "按目标 IP 配置服务、流量与自动下发")
     : (state.tab === "services" ? "Route services, verify availability, and choose the best node" : state.tab === "nodes" ? "Manage unlock and client node health" : "Configure services, traffic, and delivery by target IP");
-  return `<div class="shell"><aside class="sidebar"><div class="sidebar-brand"><strong>Prism DNS</strong><span>${state.lang === "zh" ? "全局解锁编排" : "Global orchestration"}</span></div>
-    <nav class="tabs" aria-label="${escapeHTML(t("title"))}"><button class="tab ${state.tab === "services" ? "active" : ""}" data-tab="services">${t("services")}</button><button class="tab ${state.tab === "nodes" ? "active" : ""}" data-tab="nodes">${t("nodes")}</button><button class="tab ${state.tab === "ips" ? "active" : ""}" data-tab="ips">${t("ipConfigs")}</button></nav>
+  return `<div class="shell"><aside class="sidebar"><div class="sidebar-brand"><strong>${escapeHTML(siteName())}</strong><span>${escapeHTML(siteTagline())}</span></div>
+    <nav class="tabs" aria-label="${escapeHTML(browserTitle())}"><button class="tab ${state.tab === "services" ? "active" : ""}" data-tab="services">${t("services")}</button><button class="tab ${state.tab === "nodes" ? "active" : ""}" data-tab="nodes">${t("nodes")}</button><button class="tab ${state.tab === "ips" ? "active" : ""}" data-tab="ips">${t("ipConfigs")}</button></nav>
     <div class="sidebar-footer"><button class="user-button account-settings-trigger" id="account-settings" title="${t("accountSettings")}"><strong>${escapeHTML(state.user.username || "admin")}</strong><span>${state.lang === "zh" ? "管理员账户" : "Administrator"}</span></button>
-    <div class="sidebar-tools"><button class="btn small theme-toggle-trigger" id="theme-toggle">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger" id="lang-toggle">${t("language")}</button><button class="btn small danger logout-trigger" id="logout">${t("logout")}</button></div></div></aside>
-    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(pageTitle)}</h1><p>${escapeHTML(pageHint)}</p></div><div class="toolbar-right"><span class="live-state"><span class="status-dot"></span>${escapeHTML(t("online"))}</span>${toolbarActionsHTML()}<button class="btn" id="refresh">${t("refresh")}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small theme-toggle-trigger">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger">${t("language")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
-    <main class="container">${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main></section></div>`;
+    <button class="btn small site-settings-trigger">${t("siteSettings")}</button><div class="sidebar-tools"><button class="btn small theme-toggle-trigger" id="theme-toggle">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger" id="lang-toggle">${t("language")}</button><button class="btn small danger logout-trigger" id="logout">${t("logout")}</button></div></div></aside>
+    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(pageTitle)}</h1><p>${escapeHTML(pageHint)}</p></div><div class="toolbar-right"><span class="live-state"><span class="status-dot"></span>${escapeHTML(t("online"))}</span>${toolbarActionsHTML()}<button class="btn" id="refresh">${t("refresh")}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small site-settings-trigger">${t("siteSettings")}</button><button class="btn small theme-toggle-trigger">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger">${t("language")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
+    <main class="container" data-view="${escapeHTML(state.tab)}">${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main></section></div>`;
 }
 
 function servicesHTML() {
@@ -454,6 +497,7 @@ function bindShell() {
   document.querySelectorAll(".lang-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); }));
   document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));
   document.querySelectorAll(".account-settings-trigger").forEach(button => button.addEventListener("click", openAccountSettings));
+  document.querySelectorAll(".site-settings-trigger").forEach(button => button.addEventListener("click", openBrandingSettings));
   document.getElementById("refresh").onclick = () => loadAll();
   document.getElementById("add-service")?.addEventListener("click", () => openServiceForm());
   document.getElementById("add-node")?.addEventListener("click", () => openNodeForm());
@@ -514,10 +558,11 @@ function openService(id) {
 }
 function openServiceForm(service = null) { state.modal = {type:"service-form", service}; renderModal(); }
 function openAccountSettings() { state.modal = {type:"account", error:"", busy:false}; renderModal(); }
+function openBrandingSettings() { state.modal = {type:"branding", error:"", busy:false}; renderModal(); }
 function randomSecret() { return Math.random().toString(36).slice(-8); }
 function emptyNodeDraft() { return {id:"", name:"", role:"proxy", public_ip:"", country:"", group:"", priority:1, secret:randomSecret()}; }
 function openNodeForm(node = null) {
-  const draft = node ? {...node, public_ip:node.public_ip || "", group:node.group || "", priority:node.priority || 1} : emptyNodeDraft();
+  const draft = node ? {...node, public_ip:node.public_ip || "", country:node.country || "", group:node.group || "", priority:node.priority || 1} : emptyNodeDraft();
   state.modal = {type:"node-form", node:node ? {...node} : null, draft, step:node ? 1 : 1, smartMode:node?.smart ? "smart" : "standard", error:""};
   renderModal();
 }
@@ -570,7 +615,13 @@ function renderModal() {
   if (state.modal.type === "ip-script") root.innerHTML = ipScriptHTML();
   if (state.modal.type === "ip-delete") root.innerHTML = ipDeleteHTML();
   if (state.modal.type === "account") root.innerHTML = accountModalHTML();
+  if (state.modal.type === "branding") root.innerHTML = brandingModalHTML();
   bindModal();
+}
+
+function brandingModalHTML() {
+  const branding = state.branding || {};
+  return `<div class="modal-backdrop"><form class="modal medium panel" id="branding-form"><header class="modal-head"><div><h2>${t("siteSettings")}</h2><p>${t("siteSettingsHint")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("siteName")}</label><input class="input" name="site_name" value="${escapeHTML(branding.site_name || siteName())}" required maxlength="48" autocomplete="off"></div><div class="field"><label>${t("browserTitle")}</label><input class="input" name="browser_title" value="${escapeHTML(branding.browser_title || browserTitle())}" required maxlength="96" autocomplete="off"></div><div class="field"><label>${t("siteTagline")}</label><input class="input" name="site_tagline" value="${escapeHTML(branding.site_tagline || siteTagline())}" maxlength="120" autocomplete="off"></div><div class="branding-preview"><span>${t("siteName")}</span><strong id="branding-preview-name">${escapeHTML(siteName())}</strong><small id="branding-preview-tagline">${escapeHTML(siteTagline())}</small></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button" ${state.modal.busy ? "disabled" : ""}>${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("saveBranding")}</button></div></footer></form></div>`;
 }
 
 function accountModalHTML() {
@@ -703,7 +754,35 @@ function bindModal() {
   }));
   document.getElementById("confirm-delete-ip")?.addEventListener("click", deleteIPConfig);
   document.getElementById("account-form")?.addEventListener("submit", updateAccount);
+  const brandingForm = document.getElementById("branding-form");
+  brandingForm?.addEventListener("submit", updateBranding);
+  brandingForm?.addEventListener("input", () => {
+    const form = new FormData(brandingForm);
+    document.getElementById("branding-preview-name").textContent = String(form.get("site_name") || "");
+    document.getElementById("branding-preview-tagline").textContent = String(form.get("site_tagline") || "");
+  });
   filterIPServiceOptions();
+}
+
+async function updateBranding(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const payload = {
+    site_name:String(form.get("site_name") || "").trim(),
+    browser_title:String(form.get("browser_title") || "").trim(),
+    site_tagline:String(form.get("site_tagline") || "").trim()
+  };
+  state.modal.busy = true; state.modal.error = ""; renderModal();
+  try {
+    state.branding = await api("/enhancer/api/branding", {method:"PUT", body:JSON.stringify(payload)});
+    state.modal = null;
+    render();
+    toast(t("brandingUpdated"), "good");
+  } catch (error) {
+    state.modal.busy = false;
+    state.modal.error = error.message;
+    renderModal();
+  }
 }
 
 async function updateAccount(event) {
@@ -1014,5 +1093,9 @@ function toast(message, type = "") {
   const item = document.createElement("div"); item.className = `toast ${type}`; item.textContent = message; root.appendChild(item); setTimeout(() => item.remove(), 3200);
 }
 
-render();
-if (state.token) loadAll();
+async function initialize() {
+  await loadBranding();
+  render();
+  if (state.token) loadAll();
+}
+initialize();

@@ -28,6 +28,7 @@ func TestEnhancedNodeUnicodeLabels(t *testing.T) {
 			}
 			controllerNode["name"] = payload["name"]
 			controllerNode["group"] = payload["group"]
+			delete(controllerNode, "country")
 			writer.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(writer, request)
@@ -46,7 +47,7 @@ func TestEnhancedNodeUnicodeLabels(t *testing.T) {
 	}
 	app.nodeLabels = labelStore
 
-	body := `{"name":"EU俄罗斯","group":"欧洲,俄罗斯","public_ip":"203.0.113.10"}`
+	body := `{"name":"EU俄罗斯","group":"欧洲,俄罗斯","country":"RU / 俄罗斯","public_ip":"203.0.113.10"}`
 	request := httptest.NewRequest(http.MethodPut, "/enhancer/api/nodes/7", strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer valid")
 	response := httptest.NewRecorder()
@@ -74,7 +75,7 @@ func TestEnhancedNodeUnicodeLabels(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &nodes); err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 1 || nodes[0]["name"] != "EU俄罗斯" || nodes[0]["group"] != "欧洲,俄罗斯" {
+	if len(nodes) != 1 || nodes[0]["name"] != "EU俄罗斯" || nodes[0]["group"] != "欧洲,俄罗斯" || nodes[0]["country"] != "RU / 俄罗斯" {
 		t.Fatalf("display labels were not restored: %+v", nodes)
 	}
 }
@@ -98,6 +99,7 @@ func TestEnhancedNodeCreateWithUnicodeName(t *testing.T) {
 				created[key] = value
 			}
 			created["id"] = "8"
+			delete(created, "country")
 			writeJSON(writer, http.StatusCreated, created)
 		default:
 			http.NotFound(writer, request)
@@ -114,7 +116,7 @@ func TestEnhancedNodeCreateWithUnicodeName(t *testing.T) {
 	}
 	app.nodeLabels, _ = NewNodeLabelStore(filepath.Join(dataDir, "node-labels.json"))
 
-	body := `{"name":"俄罗斯节点","group":"欧洲","role":"dns","public_ip":"192.0.2.8","priority":1,"secret":"secret"}`
+	body := `{"name":"俄罗斯节点","group":"欧洲","country":"RU / 俄罗斯","role":"dns","public_ip":"192.0.2.8","priority":1,"secret":"secret"}`
 	request := httptest.NewRequest(http.MethodPost, "/enhancer/api/nodes", strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer valid")
 	response := httptest.NewRecorder()
@@ -129,7 +131,7 @@ func TestEnhancedNodeCreateWithUnicodeName(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	if created["name"] != "俄罗斯节点" || created["group"] != "欧洲" {
+	if created["name"] != "俄罗斯节点" || created["group"] != "欧洲" || created["country"] != "RU / 俄罗斯" {
 		t.Fatalf("display labels were not returned: %+v", created)
 	}
 }

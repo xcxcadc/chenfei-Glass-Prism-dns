@@ -173,6 +173,17 @@ a { color: inherit; }
   padding: 24px 0 42px;
 }
 
+.branding-preview {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+.branding-preview span, .branding-preview small { color: var(--muted); font-size: 11px; }
+.branding-preview strong { font-size: 18px; }
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -494,6 +505,34 @@ a { color: inherit; }
 .toast { max-width: min(390px, calc(100vw - 36px)); padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface-strong); box-shadow: var(--shadow); font-size: 11px; }
 .toast.error { border-left-color: var(--bad); }
 .toast.good { border-left-color: var(--good); }
+
+@media (min-width: 1281px) {
+  html, body, #app { height: 100%; overflow: hidden; }
+  .shell { height: 100dvh; min-height: 0; }
+  .workspace {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .topbar { position: relative; top: auto; flex: 0 0 auto; }
+  .container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .container:has(.orchestration-grid) {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-top: 16px;
+    padding-bottom: 20px;
+  }
+  .container:has(.orchestration-grid) .orchestration-summary { flex: 0 0 auto; }
+  .orchestration-grid { flex: 1 1 auto; min-height: 0; height: auto; }
+}
 
 @media (max-width: 1280px) {
   .orchestration-grid { grid-template-columns: minmax(280px, 0.86fr) minmax(340px, 1.14fr); height: auto; }

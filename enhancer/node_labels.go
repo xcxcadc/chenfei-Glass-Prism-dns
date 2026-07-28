@@ -15,8 +15,10 @@ import (
 )
 
 type NodeLabel struct {
-	Name  string `json:"name,omitempty"`
-	Group string `json:"group,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Group      string `json:"group,omitempty"`
+	Country    string `json:"country,omitempty"`
+	CountrySet bool   `json:"country_set,omitempty"`
 }
 
 type NodeLabelStore struct {
@@ -51,6 +53,9 @@ func (store *NodeLabelStore) Overlay(node map[string]any) {
 	if label.Group != "" {
 		node["group"] = label.Group
 	}
+	if label.CountrySet {
+		node["country"] = label.Country
+	}
 }
 
 func (store *NodeLabelStore) Set(id string, display, controller NodeLabel) error {
@@ -64,9 +69,11 @@ func (store *NodeLabelStore) Set(id string, display, controller NodeLabel) error
 	if display.Group != controller.Group {
 		label.Group = display.Group
 	}
+	label.Country = display.Country
+	label.CountrySet = true
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if label.Name == "" && label.Group == "" {
+	if label.Name == "" && label.Group == "" && !label.CountrySet {
 		delete(store.labels, id)
 	} else {
 		store.labels[id] = label
@@ -122,6 +129,7 @@ func (store *NodeLabelStore) saveLocked() error {
 func validateNodeLabel(label NodeLabel) error {
 	label.Name = strings.TrimSpace(label.Name)
 	label.Group = strings.TrimSpace(label.Group)
+	label.Country = strings.TrimSpace(label.Country)
 	if label.Name == "" {
 		return errors.New("node name is required")
 	}
@@ -131,12 +139,20 @@ func validateNodeLabel(label NodeLabel) error {
 	if utf8.RuneCountInString(label.Group) > 64 {
 		return errors.New("node group is too long")
 	}
+	if utf8.RuneCountInString(label.Country) > 64 {
+		return errors.New("node country is too long")
+	}
 	for _, value := range []string{label.Name, label.Group} {
 		for _, character := range value {
 			if unicode.IsLetter(character) || unicode.IsNumber(character) || strings.ContainsRune(" .,_-", character) {
 				continue
 			}
 			return errors.New("node name/group contains unsupported characters")
+		}
+	}
+	for _, character := range label.Country {
+		if unicode.IsControl(character) {
+			return errors.New("node country contains unsupported characters")
 		}
 	}
 	return nil
@@ -228,12 +244,12 @@ func (app *App) createEnhancedNode(writer http.ResponseWriter, request *http.Req
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	display := NodeLabel{Name: strings.TrimSpace(valueString(payload["name"])), Group: strings.TrimSpace(valueString(payload["group"]))}
+	display := NodeLabel{Name: strings.TrimSpace(valueString(payload["name"])), Group: strings.TrimSpace(valueString(payload["group"])), Country: strings.TrimSpace(valueString(payload["country"])), CountrySet: true}
 	if err := validateNodeLabel(display); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	controller := NodeLabel{Name: controllerNodeName(payload, display.Name), Group: controllerNodeLabel(display.Group, true)}
+	controller := NodeLabel{Name: controllerNodeName(payload, display.Name), Group: controllerNodeLabel(display.Group, true), Country: strings.TrimSpace(valueString(payload["country"])), CountrySet: true}
 	payload["name"], payload["group"] = controller.Name, controller.Group
 	var created map[string]any
 	if err := app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodPost, "/api/nodes", payload, &created); err != nil {
@@ -256,12 +272,12 @@ func (app *App) updateEnhancedNode(writer http.ResponseWriter, request *http.Req
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	display := NodeLabel{Name: strings.TrimSpace(valueString(payload["name"])), Group: strings.TrimSpace(valueString(payload["group"]))}
+	display := NodeLabel{Name: strings.TrimSpace(valueString(payload["name"])), Group: strings.TrimSpace(valueString(payload["group"])), Country: strings.TrimSpace(valueString(payload["country"])), CountrySet: true}
 	if err := validateNodeLabel(display); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	controller := NodeLabel{Name: controllerNodeName(payload, display.Name), Group: controllerNodeLabel(display.Group, true)}
+	controller := NodeLabel{Name: controllerNodeName(payload, display.Name), Group: controllerNodeLabel(display.Group, true), Country: strings.TrimSpace(valueString(payload["country"])), CountrySet: true}
 	payload["name"], payload["group"] = controller.Name, controller.Group
 	if err := app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodPut, "/api/nodes/"+url.PathEscape(id), payload, nil); err != nil {
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})

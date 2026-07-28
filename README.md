@@ -129,9 +129,13 @@ curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/mai
 - Web 界面：`http://你的IP:端口`
 - 用户名：`admin`
 - 密码：安装完成时显示
-- 自定义服务数据：`/var/lib/prism-enhancer/custom-services.json`
+- Controller 数据：`/opt/prism/data.db`
+- 中文增强层全部数据：`/var/lib/prism-enhancer/`
 
 登录后可点击右上角用户名打开“账户安全”，验证当前用户名和密码后修改管理员账户。
+侧栏的“站点设置”可以自定义左上角网页名称、说明文字和浏览器标签标题，设置保存在 `/var/lib/prism-enhancer/branding.json`。
+
+更换服务器前必须同时备份 Controller 数据库、环境文件和整个 Enhancer 数据目录。完整导出、恢复、验证及回滚步骤见 [面板迁移与灾备教程](MIGRATION_ZH.md)。
 
 ### 手动安装
 
@@ -218,6 +222,18 @@ sudo systemctl restart prism-controller
 # 查看日志
 journalctl -u prism-controller -f
 ```
+
+## 迁移与备份
+
+面板迁移不能只复制 `data.db`。节点中文名称与地区、自定义服务、IP 路由、流量、品牌设置和加密传输信息保存在 `/var/lib/prism-enhancer/`。
+
+请按 [面板迁移与灾备教程](MIGRATION_ZH.md) 操作，教程包含：
+
+- 旧服务器停机一致性备份与 SHA256 校验
+- 新服务器安装、恢复和权限修复
+- 节点、服务、IP 配置、流量和品牌设置验证
+- 域名或端口变化时的 Agent 重新接入
+- 恢复失败后的回滚流程
 
 ## 📸 截图预览
 

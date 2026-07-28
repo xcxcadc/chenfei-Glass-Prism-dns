@@ -36,12 +36,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize node label store: %v", err)
 	}
+	branding, err := NewBrandingStore(filepath.Join(*dataDir, "branding.json"))
+	if err != nil {
+		log.Fatalf("initialize branding store: %v", err)
+	}
 	catalog := NewCatalogManager(*catalogURL, client, store)
 	app, err := NewApp(*upstream, catalog, store, ipStore, client, *controllerDB)
 	if err != nil {
 		log.Fatalf("initialize server: %v", err)
 	}
 	app.nodeLabels = nodeLabels
+	app.branding = branding
 	app.transport = transport
 
 	server := &http.Server{

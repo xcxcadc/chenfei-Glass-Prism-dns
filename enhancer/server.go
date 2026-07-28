@@ -19,13 +19,14 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.4.1"
+const uiVersion = "1.4.2"
 
 type App struct {
 	catalog      *CatalogManager
 	store        *CustomServiceStore
 	ipStore      *IPConfigStore
 	nodeLabels   *NodeLabelStore
+	branding     *BrandingStore
 	transport    *TransportStore
 	upstream     *url.URL
 	proxy        *httputil.ReverseProxy
@@ -71,6 +72,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		store:        store,
 		ipStore:      ipStore,
 		nodeLabels:   &NodeLabelStore{labels: make(map[string]NodeLabel)},
+		branding:     &BrandingStore{},
 		upstream:     upstream,
 		proxy:        proxy,
 		client:       client,
@@ -92,6 +94,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/custom-services/", app.handleCustomService)
 	mux.HandleFunc("/enhancer/api/connectivity", app.handleConnectivity)
 	mux.HandleFunc("/enhancer/api/account", app.handleAccountUpdate)
+	mux.HandleFunc("/enhancer/api/branding", app.handleBranding)
 	mux.HandleFunc("/enhancer/api/nodes", app.handleEnhancedNodes)
 	mux.HandleFunc("/enhancer/api/nodes/", app.handleEnhancedNode)
 	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
