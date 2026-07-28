@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.3.4"
+VERSION="1.3.7"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -470,7 +470,7 @@ wait_for_local_dns() {
 }
 
 verify_route_probes() {
-  local bootstrap domain answer peer matched_peer expected=0 healthy=0
+  local bootstrap domain answer peer matched_peer expected=0 mapped=0 healthy=0
   local -a peers
   bootstrap=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN")
   mapfile -t peers < <(jq -r '.traffic_peers[]?' <<<"$bootstrap" | sort -u)
@@ -489,6 +489,7 @@ verify_route_probes() {
       done
     done < <({ dig @127.0.0.1 "$domain" A +short +time=2 +tries=1; dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1; } 2>/dev/null | sed '/^$/d' | sort -u)
     probe_ok=false
+    $matched && mapped=$((mapped + 1))
     for probe_attempt in 1 2; do
       if $matched && curl -sS -o /dev/null --resolve "$domain:443:$matched_peer" --connect-timeout 5 --max-time 12 "https://$domain/"; then
         probe_ok=true
@@ -500,8 +501,12 @@ verify_route_probes() {
       healthy=$((healthy + 1))
     fi
   done < <(jq -r '.health_probes[]?.domain // empty' <<<"$bootstrap" | sort -u)
-  ((expected == healthy)) || fail "所选服务端到端验证失败：$healthy/$expected 同时通过 DNS 映射与 HTTPS。"
-  ok "所选服务端到端验证通过：$healthy/$expected。"
+  ((expected == mapped)) || fail "所选服务 DNS 路由验证失败：$mapped/$expected 个域名正确映射到已配置解锁机。"
+  if ((healthy < expected)); then
+    warn "所选服务 DNS 路由正确（$mapped/$expected）；HTTPS 探测通过 $healthy/$expected。第三方服务策略或瞬时网络异常不会阻断 DNS 接管。"
+  else
+    ok "所选服务 DNS 路由和 HTTPS 验证通过：$healthy/$expected。"
+  fi
 }
 
 test_dns() {

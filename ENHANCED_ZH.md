@@ -44,7 +44,7 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 
 ## 路由自动应用
 
-`prismdns.sh 1.3.4` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh` 和 `prismdns-route-sync.timer`。增强层会把服务到 Proxy IP 的映射持久化，并在每次 Agent `/api/sync` 时重建规则，因此不再依赖上游 Controller 的内存 override。守卫每 10 秒使用该机器自己的面板地址和令牌获取配置，同时实际解析全部健康探针；配置变化、Agent 假活、53 端口失效或路由不再指向所选解锁机时，会以 60 秒限频安全重启 `prism-agent`，确认全部探针恢复后才提交新哈希。面板重启或网络瞬时不可达时，上报与守卫任务会正常退出并等待下一轮，不产生 systemd 失败误报。
+`prismdns.sh 1.3.7` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh` 和 `prismdns-route-sync.timer`。增强层会把服务到 Proxy IP 的映射持久化，并在每次 Agent `/api/sync` 时重建规则，因此不再依赖上游 Controller 的内存 override。守卫每 10 秒使用该机器自己的面板地址和令牌获取配置，同时实际解析全部健康探针；配置变化、Agent 假活、53 端口失效或路由不再指向所选解锁机时，会以 60 秒限频安全重启 `prism-agent`，确认全部探针恢复后才提交新哈希。首次接入要求全部所选域名正确映射到配置的解锁机；第三方服务 HTTPS 探测仅用于报告真实可用性，不会因地区限制、限流或瞬时 TLS 握手失败阻断系统 DNS 接管。面板重启或网络瞬时不可达时，上报与守卫任务会正常退出并等待下一轮，不产生 systemd 失败误报。
 
 目标机的 UnlockTests 会只检测该 IP 已选择的服务，并连续运行三次。三次全部通过才显示稳定可用；结果在 `YES`、`Banned`、`WAF` 或 `NO` 之间变化时显示 `UNSTABLE`。节点页会汇总每台目标 IP 的实测结果，解锁机 Agent 自检仅保留为参考，避免把解锁机本机的旧检测结果当成客户端实际可用性。
 
