@@ -8,8 +8,10 @@ BINARY_NAME="prism-agent"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"
 SCRIPT_URL="https://raw.githubusercontent.com/${SCRIPT_REPO}/main/agent_install.sh"
+TRANSPORT_URL="https://raw.githubusercontent.com/${SCRIPT_REPO}/main/prism_transport.sh"
 CUSTOM_IP=""
 CONFLICT_BACKUP_DIR="/var/lib/prism-agent/conflict-backups"
+WATCHDOG_PATH="/usr/local/lib/prismdns/prism-agent-watchdog.sh"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -101,9 +103,14 @@ parse_args() {
 
 uninstall_agent() {
     step "Uninstalling Prism Agent ($SERVICE_NAME)..."
+
+    if [ -x "/usr/local/lib/prismdns/prism_transport.sh" ]; then
+        /usr/local/lib/prismdns/prism_transport.sh --uninstall || true
+    fi
     
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+    systemctl disable --now prism-agent-watchdog.timer prism-agent-watchdog.service 2>/dev/null || true
     
     if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
         rm "/etc/systemd/system/${SERVICE_NAME}.service"
@@ -113,6 +120,10 @@ uninstall_agent() {
     if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
         rm "$INSTALL_DIR/$BINARY_NAME"
     fi
+    rm -f /etc/systemd/system/prism-agent-watchdog.service
+    rm -f /etc/systemd/system/prism-agent-watchdog.timer
+    rm -f "$WATCHDOG_PATH"
+    systemctl daemon-reload
     
     info "Uninstallation completed."
     exit 0
@@ -309,6 +320,115 @@ start_service() {
     error "Prism Agent is online but its DNS/proxy listener was not ready within 30 seconds."
 }
 
+install_proxy_transport() {
+    if [ "${AGENT_MODE:-}" != "proxy" ]; then
+        return
+    fi
+    step "Installing encrypted SNI transport..."
+    local installer="/tmp/prism_transport.sh"
+    if [ -n "${PRISM_TRANSPORT_INSTALLER_FILE:-}" ]; then
+        installer="$PRISM_TRANSPORT_INSTALLER_FILE"
+    else
+        curl -fsSL "$TRANSPORT_URL" -o "$installer"
+    fi
+    chmod +x "$installer"
+    bash "$installer" --proxy --master "$MASTER_ADDR" --secret "$SECRET_TOKEN"
+}
+
+install_proxy_watchdog() {
+    if [ "${AGENT_MODE:-}" != "proxy" ]; then
+        systemctl disable --now prism-agent-watchdog.timer prism-agent-watchdog.service >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/prism-agent-watchdog.service
+        rm -f /etc/systemd/system/prism-agent-watchdog.timer
+        rm -f "$WATCHDOG_PATH"
+        systemctl daemon-reload
+        return
+    fi
+
+    step "Installing Prism Agent resource watchdog..."
+    mkdir -p "$(dirname "$WATCHDOG_PATH")" /var/lib/prism-agent
+    cat > "$WATCHDOG_PATH" <<'EOF'
+#!/bin/bash
+
+set -u
+
+SERVICE="prism-agent"
+STATE_FILE="/var/lib/prism-agent/watchdog-failures"
+MAX_FDS=4096
+MAX_CLOSE_WAIT=1024
+
+restart_agent() {
+    local reason="$1"
+    logger -t prism-agent-watchdog "restarting prism-agent: $reason"
+    printf '0\n' > "$STATE_FILE"
+    systemctl restart "$SERVICE"
+}
+
+systemctl is-active --quiet "$SERVICE" || exit 0
+pid=$(systemctl show -p MainPID --value "$SERVICE" 2>/dev/null)
+[[ "$pid" =~ ^[1-9][0-9]*$ && -d "/proc/$pid" ]] || exit 0
+
+fds=$(find "/proc/$pid/fd" -maxdepth 1 -type l 2>/dev/null | wc -l)
+close_wait=$(ss -tanp state close-wait 2>/dev/null | grep -c "pid=$pid," || true)
+if ((fds >= MAX_FDS || close_wait >= MAX_CLOSE_WAIT)); then
+    restart_agent "resource leak detected (fds=$fds close_wait=$close_wait)"
+    exit 0
+fi
+
+healthy=false
+for domain in www.cloudflare.com www.apple.com; do
+    if curl -4 -ksS -o /dev/null \
+        --connect-timeout 4 --max-time 8 \
+        --resolve "$domain:443:127.0.0.1" "https://$domain/"; then
+        healthy=true
+        break
+    fi
+done
+
+if $healthy; then
+    printf '0\n' > "$STATE_FILE"
+    exit 0
+fi
+
+failures=0
+[[ -f "$STATE_FILE" ]] && read -r failures < "$STATE_FILE"
+[[ "$failures" =~ ^[0-9]+$ ]] || failures=0
+failures=$((failures + 1))
+printf '%s\n' "$failures" > "$STATE_FILE"
+if ((failures >= 3)); then
+    restart_agent "three consecutive local TLS probes failed"
+fi
+EOF
+    chmod 755 "$WATCHDOG_PATH"
+
+    cat > /etc/systemd/system/prism-agent-watchdog.service <<EOF
+[Unit]
+Description=Prism Agent resource and TLS watchdog
+After=network-online.target $SERVICE_NAME.service
+
+[Service]
+Type=oneshot
+ExecStart=$WATCHDOG_PATH
+EOF
+
+    cat > /etc/systemd/system/prism-agent-watchdog.timer <<'EOF'
+[Unit]
+Description=Check Prism Agent resource and TLS health
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now prism-agent-watchdog.timer >/dev/null
+}
+
 show_result() {
     LOGS=$(journalctl -u "$SERVICE_NAME" --since "${AGENT_STARTED_AT:-5 minutes ago}" --no-pager 2>/dev/null || true)
     echo ""
@@ -362,6 +482,8 @@ main() {
     configure_service
     prepare_legacy_conflicts
     start_service
+    install_proxy_watchdog
+    install_proxy_transport
     show_result
 }
 

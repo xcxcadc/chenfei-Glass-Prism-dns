@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前客户端工具版本为 `1.3.4`，完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前客户端工具版本为 `1.4.0`，完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
@@ -24,15 +24,18 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **AI 服务解锁检测** - 自动检测 OpenAI、Claude、Gemini、Copilot 等 AI 服务的可用状态
 - **双栈 IPv4/IPv6** - 完整支持双协议
 - **实时监控** - 基于 SSE 的节点状态实时更新
-- **现代 UI** - Liquid Glass 设计风格，支持深色模式
+- **现代 UI** - 三栏路由编排工作台，支持桌面/移动端、深浅主题和中英文切换
 - **简体中文增强界面** - 默认中文，可切换英文和深浅主题
-- **细化服务域名库** - 动态解析 `stream.smartdns.list`，当前可拆分 170+ 服务条目
+- **细化服务域名库** - 动态解析 `stream.smartdns.list`，当前提供 178 项有效服务；已停止运营的 Crackle、Salto、GYAO 不再参与路由
 - **自定义服务** - 可在前端新增、编辑、删除任意服务名称与域名
 - **服务级切换** - 每个 DNS 节点可将每项服务绑定到任意解锁机，并恢复 Smart/Fallback 自动选择
 - **双层解锁检测** - 解锁机显示 Agent UnlockTests，目标 IP 再运行同源 UnlockTests，避免把“节点自检可用”误当成“客户端实际可用”
 - **真实兼容性优先** - 节点卡片、服务状态和检测弹窗优先显示每台目标 IP 的实测结果；Agent 自检只作为参考，三次检测不一致会标记为 `UNSTABLE`
 - **IP 配置闭环** - 添加目标 IP，批量选择服务及对应解锁机，自动创建 DNS 节点和服务覆盖
 - **配置自动生效** - 增强层持久化逐节点路由并在每次 Agent 同步时恢复；10 秒守卫同时验证真实 DNS 路由，发现 Agent 假活或规则失配后限频安全重启
+- **受限网络传输** - 目标机可通过加密 TCP SNI 传输连接解锁机，避免跨境 UDP 53 丢包、污染或高延迟；每项服务仍可独立选择 SG、VN 等线路
+- **多域名实测回退** - 每项服务按候选域名逐一做目标机 DNS/HTTPS 实测，单个域名限流、停用或不提供 Web 首页时自动尝试下一候选
+- **共存守护** - 仅监控并恢复 `prism-agent`，不会重启或覆盖同机 MTProxy、XrayR、V2bX
 - **服务品牌图标** - 服务卡片和 IP 选择器加载对应站点图标，网络不可用时自动使用本地图标
 - **客户端管理脚本** - 安装 DNS Agent、测试本机 DNS、接管/备份/恢复系统 DNS
 - **流量统计** - 每个目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到所选解锁机的 TCP 80/443；不统计整机网卡流量
@@ -164,7 +167,7 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-页面生成的专属命令只用于目标机首次安装；后续在面板保存新增、取消或切换服务会自动生效，不再弹出安装命令。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装器会备份并停用占用 53/80/443 的旧 `dnsmasq`/`sniproxy`，但不会修改 XrayR 或 V2bX。每台新目标机默认安装通用配置哈希守卫，每 10 秒读取该机器自己的面板地址和令牌；路由变化时仅安全重启 `prism-agent`，等待 53 端口恢复后再提交新哈希，避免上游热更新残留旧 DNS 缓存。首次安装要求全部所选域名正确映射到配置的解锁机；第三方服务的 HTTPS 探测失败只会告警，不会因地区策略、限流或瞬时握手异常阻断系统 DNS 接管。安装完成后还会创建专用 nftables 计数器；systemd timer 在启用后 15 秒内首次上报，之后每分钟按目标 IP 统计本机 Prism DNS 的 UDP/TCP 53 与所选解锁机 TCP 80/443。UnlockTests 审计产生的探测流量会在上报后从计数器中清除。
+页面生成的专属命令只用于目标机首次安装；后续在面板保存新增、取消或切换服务会自动生效，不再弹出安装命令。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装器会备份并停用冲突的旧 `dnsmasq`/`sniproxy`，但不会修改 MTProxy、XrayR 或 V2bX。每台新目标机默认安装通用配置哈希守卫，每 10 秒读取该机器自己的面板地址和令牌；路由变化时仅安全重启 `prism-agent`，等待 53 端口恢复后再提交新哈希，避免上游热更新残留旧 DNS 缓存。受限网络中的目标机会使用加密 TCP SNI 传输代替不稳定的跨境 UDP 53；服务审计按多个候选域名回退。首次安装要求全部所选域名正确映射到配置的解锁机；第三方服务的 HTTPS 探测失败只会告警，不会因地区策略、限流或瞬时握手异常阻断系统 DNS 接管。安装完成后还会创建专用 nftables 计数器；systemd timer 在启用后 15 秒内首次上报，之后每分钟按目标 IP 统计本机 Prism DNS 的 UDP/TCP 53 与所选解锁机 TCP 80/443 完整 RX/TX。UnlockTests 审计产生的探测流量会在上报后从计数器中清除。
 
 以上守卫、流量统计和自动应用逻辑均从每台目标机自己的配置动态生成，不包含固定 IP，可直接用于后续新增的任意解锁机和被解锁机。
 

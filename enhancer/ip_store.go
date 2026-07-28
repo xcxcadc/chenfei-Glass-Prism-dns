@@ -100,6 +100,20 @@ func (store *IPConfigStore) Record(id string) (ipConfigRecord, bool) {
 	return record, ok
 }
 
+func (store *IPConfigStore) Records() []ipConfigRecord {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	result := make([]ipConfigRecord, 0, len(store.configs))
+	for _, record := range store.configs {
+		record.Routes = cloneStringMap(record.Routes)
+		record.ProxyPeers = cloneProxyPeers(record.ProxyPeers)
+		record.TrafficPeers = append([]string(nil), record.TrafficPeers...)
+		result = append(result, record)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
 func (store *IPConfigStore) GetByToken(token string) (ipConfigRecord, bool) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -368,4 +382,15 @@ func stringMapEqual(left, right map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }

@@ -19,10 +19,6 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 	if secret == "" {
 		secret = strings.TrimSpace(response.Request.URL.Query().Get("secret"))
 	}
-	record, ok := app.ipStore.GetByNodeSecret(secret)
-	if !ok || len(record.Routes) == 0 {
-		return nil
-	}
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil
@@ -35,7 +31,14 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 		return nil
 	}
 	role, _ := payload["role"].(string)
+	if role == "proxy" {
+		return nil
+	}
 	if role != "dns" {
+		return nil
+	}
+	record, ok := app.ipStore.GetByNodeSecret(secret)
+	if !ok || len(record.Routes) == 0 {
 		return nil
 	}
 	rules := objectMap(payload["rules"])
@@ -60,7 +63,7 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 		delete(overrides, domain)
 	}
 
-	proxyPeers := effectiveProxyPeers(record)
+	proxyPeers := app.effectiveProxyPeers(record)
 	serviceIDs := make([]string, 0, len(record.Routes))
 	for serviceID := range record.Routes {
 		serviceIDs = append(serviceIDs, serviceID)
@@ -92,11 +95,19 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 				"pattern": domain, "ips": peers, "strategy": "", "name": name, "type": "DOMAIN-SUFFIX",
 				"priority": 100, "check": domain == probeDomain, "node_id": "",
 			}
-			overrides[domain] = proxyID
+			if _, tunneled := app.transport.EffectiveProxyIP(record.ID, proxyID); tunneled {
+				delete(overrides, domain)
+			} else {
+				overrides[domain] = proxyID
+			}
 		}
 	}
 	payload["rules"] = rules
 	payload["rule_overrides"] = overrides
+	return replaceSyncResponse(response, payload)
+}
+
+func replaceSyncResponse(response *http.Response, payload map[string]any) error {
 	modified, err := json.Marshal(payload)
 	if err != nil {
 		return nil
@@ -114,6 +125,16 @@ func objectMap(value any) map[string]any {
 		return result
 	}
 	return make(map[string]any)
+}
+
+func (app *App) effectiveProxyPeers(record ipConfigRecord) map[string][]string {
+	result := effectiveProxyPeers(record)
+	for proxyID := range result {
+		if tunnelIP, ready := app.transport.EffectiveProxyIP(record.ID, proxyID); ready {
+			result[proxyID] = []string{tunnelIP}
+		}
+	}
+	return result
 }
 
 func effectiveProxyPeers(record ipConfigRecord) map[string][]string {

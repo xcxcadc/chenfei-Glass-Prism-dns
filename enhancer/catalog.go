@@ -13,10 +13,73 @@ import (
 )
 
 var (
-	categoryPattern = regexp.MustCompile(`^#\s*-+\s*>\s*(.+?)\s*$`)
-	servicePattern  = regexp.MustCompile(`^#\s*>\s*(.+?)\s*$`)
-	domainPattern   = regexp.MustCompile(`^nameserver\s+/([^/]+)/`)
-	domainValid     = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*[a-z0-9]$|^[a-z0-9]$`)
+	categoryPattern          = regexp.MustCompile(`^#\s*-+\s*>\s*(.+?)\s*$`)
+	servicePattern           = regexp.MustCompile(`^#\s*>\s*(.+?)\s*$`)
+	domainPattern            = regexp.MustCompile(`^nameserver\s+/([^/]+)/`)
+	domainValid              = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*[a-z0-9]$|^[a-z0-9]$`)
+	serviceDomainSupplements = map[string][]string{
+		"FR:France.tv": {
+			"france.tv",
+		},
+		"Gemini": {
+			"alkaliminer-pa.googleapis.com",
+		},
+		"iQIYI": {
+			"iq.com",
+			"iqiyi.com",
+		},
+		"HOY TV": {
+			"hoy.tv",
+		},
+		"J:com On Demand": {
+			"jcom.co.jp",
+			"myjcom.jp",
+		},
+		"Karaoke@DAM": {
+			"clubdam.com",
+		},
+		"LiTV": {
+			"litvfreepc.akamaized.net",
+		},
+		"NZ:Neon TV": {
+			"neontv.co.nz",
+		},
+		"NZ:ThreeNow": {
+			"threenow.co.nz",
+		},
+		"YouTube": {
+			"ggpht.com",
+			"googlevideo.com",
+			"youtu.be",
+			"youtube-nocookie.com",
+			"ytimg.com",
+		},
+		"Videomarket": {
+			"videomarket.jp",
+		},
+		"Viu.TV": {
+			"viu.com",
+			"viu.tv",
+		},
+		"VN:Galaxy Play": {
+			"galaxyplay.vn",
+		},
+		"VN:K+": {
+			"k-plus.tv",
+			"kplus.vn",
+		},
+		"Wavve": {
+			"wavve.com",
+		},
+		"AU:10 play": {
+			"global.ssl.fastly.net",
+		},
+	}
+	retiredServices = map[string]struct{}{
+		"Crackle":  {},
+		"FR:Salto": {},
+		"GYAO!":    {},
+	}
 )
 
 type Service struct {
@@ -80,7 +143,10 @@ func ParseSmartDNS(reader io.Reader) ([]Service, error) {
 	result := make([]Service, 0, len(order))
 	for _, key := range order {
 		service := services[key]
-		sort.Strings(service.Domains)
+		if _, retired := retiredServices[service.Name]; retired {
+			continue
+		}
+		service.Domains = normalizeDomains(append(service.Domains, serviceDomainSupplements[service.Name]...))
 		result = append(result, *service)
 	}
 	return result, nil

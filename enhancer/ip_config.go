@@ -177,20 +177,38 @@ func (app *App) handleBootstrap(writer http.ResponseWriter, request *http.Reques
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"id":              record.ID,
-		"expected_ip":     record.IP,
-		"detected_ip":     clientIP(request),
-		"master":          publicBaseURL(request),
-		"secret":          record.NodeSecret,
-		"smart":           record.Smart,
-		"dns":             "127.0.0.1",
-		"traffic_peers":   record.TrafficPeers,
-		"health_probes":   app.healthProbes(request.Context(), record),
-		"agent_installer": "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh",
+		"id":                  record.ID,
+		"expected_ip":         record.IP,
+		"detected_ip":         clientIP(request),
+		"master":              publicBaseURL(request),
+		"secret":              record.NodeSecret,
+		"smart":               record.Smart,
+		"dns":                 "127.0.0.1",
+		"traffic_peers":       app.effectiveTrafficPeers(record),
+		"health_probes":       app.healthProbes(request.Context(), record),
+		"agent_installer":     "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh",
+		"transport_installer": "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prism_transport.sh",
 	})
 }
 
-func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[string]string {
+func (app *App) effectiveTrafficPeers(record ipConfigRecord) []string {
+	seen := make(map[string]struct{})
+	for _, peers := range app.effectiveProxyPeers(record) {
+		for _, peer := range peers {
+			if net.ParseIP(peer) != nil {
+				seen[peer] = struct{}{}
+			}
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for peer := range seen {
+		result = append(result, peer)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[string]any {
 	services := make(map[string]Service)
 	for _, service := range app.catalog.Snapshot(ctx, false).Services {
 		services[service.ID] = service
@@ -200,45 +218,64 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 		serviceIDs = append(serviceIDs, serviceID)
 	}
 	sort.Strings(serviceIDs)
-	probes := make([]map[string]string, 0, len(serviceIDs))
+	probes := make([]map[string]any, 0, len(serviceIDs))
 	for _, serviceID := range serviceIDs {
 		service, ok := services[serviceID]
 		if !ok || len(service.Domains) == 0 {
 			continue
 		}
-		probes = append(probes, map[string]string{
-			"service_id":  service.ID,
-			"name":        service.Name,
-			"domain":      preferredProbeDomain(service),
-			"unlock_test": unlockTestProvider(service),
+		probes = append(probes, map[string]any{
+			"service_id":    service.ID,
+			"name":          service.Name,
+			"domain":        preferredProbeDomain(service),
+			"unlock_test":   unlockTestProvider(service),
+			"unlock_tests":  unlockTestProviders(service),
+			"probe_domains": preferredProbeDomains(service),
 		})
 	}
 	return probes
 }
 
 func unlockTestProvider(service Service) string {
-	providers := map[string]string{
-		"Apple TV+":                       "Apple",
-		"Bilibili":                        "Bilibili Anime",
-		"ChatGPT / OpenAI":                "ChatGPT",
-		"Claude":                          "Claude",
-		"Crunchyroll":                     "Crunchyroll",
-		"DAZN":                            "Dazn",
-		"Disney+":                         "Disney+",
-		"Gemini":                          "Gemini",
-		"HBO / Max":                       "HBO Max",
-		"Microsoft Copilot Image Creator": "Microsoft Copilot",
-		"Netflix":                         "Netflix",
-		"Paramount+":                      "ParamountPlus",
-		"Spotify":                         "Spotify Registration",
-		"TikTok":                          "TikTok",
-		"YouTube":                         "YouTube Region",
+	providers := unlockTestProviders(service)
+	if len(providers) == 0 {
+		return ""
 	}
-	return providers[service.Name]
+	return providers[0]
+}
+
+func unlockTestProviders(service Service) []string {
+	providers := map[string][]string{
+		"Apple TV+":                       {"Apple"},
+		"Bilibili":                        {"Bilibili Anime"},
+		"ChatGPT / OpenAI":                {"ChatGPT"},
+		"Claude":                          {"Claude"},
+		"Crunchyroll":                     {"Crunchyroll"},
+		"DAZN":                            {"Dazn"},
+		"Disney+":                         {"Disney+"},
+		"Gemini":                          {"Gemini"},
+		"HBO / Max":                       {"HBO Max"},
+		"Microsoft Copilot Image Creator": {"Microsoft Copilot"},
+		"Netflix":                         {"Netflix"},
+		"Paramount+":                      {"ParamountPlus"},
+		"Spotify":                         {"Spotify Registration"},
+		"TikTok":                          {"TikTok"},
+		"YouTube":                         {"YouTube Region", "YouTube CDN"},
+	}
+	return append([]string(nil), providers[service.Name]...)
 }
 
 func preferredProbeDomain(service Service) string {
+	domains := preferredProbeDomains(service)
+	if len(domains) > 0 {
+		return domains[0]
+	}
+	return service.Domains[0]
+}
+
+func preferredProbeDomains(service Service) []string {
 	preferred := map[string][]string{
+		"Abema":                           {"abema.tv"},
 		"Apple TV+":                       {"tv.apple.com"},
 		"Bilibili":                        {"bilibili.com"},
 		"ChatGPT / OpenAI":                {"chatgpt.com", "openai.com"},
@@ -246,25 +283,61 @@ func preferredProbeDomain(service Service) string {
 		"Crunchyroll":                     {"crunchyroll.com"},
 		"DAZN":                            {"dazn.com"},
 		"Disney+":                         {"disneyplus.com", "bamgrid.com"},
+		"FR:France.tv":                    {"france.tv"},
 		"Gemini":                          {"gemini.google.com", "bard.google.com"},
 		"Google AI Studio":                {"aistudio.google.com"},
 		"HBO / Max":                       {"max.com", "hbomax.com"},
+		"HOY TV":                          {"r.hoy.tv"},
+		"iQIYI":                           {"iq.com"},
+		"J:com On Demand":                 {"www.jcom.co.jp", "linkvod.myjcom.jp"},
+		"Karaoke@DAM":                     {"www.clubdam.com"},
 		"Microsoft Copilot Image Creator": {"copilot.microsoft.com"},
 		"Netflix":                         {"netflix.com"},
+		"NZ:Neon TV":                      {"www.neontv.co.nz"},
+		"NZ:ThreeNow":                     {"www.threenow.co.nz"},
 		"Paramount+":                      {"paramountplus.com"},
 		"Spotify":                         {"spotify.com"},
 		"Suno":                            {"suno.com", "suno.ai"},
 		"TikTok":                          {"tiktok.com"},
-		"YouTube":                         {"youtube.com"},
+		"Videomarket":                     {"www.videomarket.jp"},
+		"Viu.TV":                          {"viu.com", "viu.tv"},
+		"VN:Galaxy Play":                  {"galaxyplay.vn"},
+		"VN:K+":                           {"www.kplus.vn"},
+		"Wavve":                           {"www.wavve.com"},
+		"YouTube":                         {"youtube.com", "redirector.googlevideo.com"},
 	}
+	result := make([]string, 0, len(preferred[service.Name]))
 	for _, candidate := range preferred[service.Name] {
 		for _, domain := range service.Domains {
 			if domain == candidate || strings.HasSuffix(candidate, "."+domain) {
-				return candidate
+				result = append(result, candidate)
+				break
 			}
 		}
 	}
-	return service.Domains[0]
+	if len(result) == 0 && len(service.Domains) > 0 {
+		candidates := append([]string(nil), service.Domains...)
+		sort.SliceStable(candidates, func(left, right int) bool {
+			leftLabels := strings.Count(candidates[left], ".")
+			rightLabels := strings.Count(candidates[right], ".")
+			if leftLabels != rightLabels {
+				return leftLabels < rightLabels
+			}
+			if len(candidates[left]) != len(candidates[right]) {
+				return len(candidates[left]) < len(candidates[right])
+			}
+			return candidates[left] < candidates[right]
+		})
+		for _, candidate := range candidates {
+			if !contains(result, candidate) {
+				result = append(result, candidate)
+			}
+			if len(result) == 4 {
+				break
+			}
+		}
+	}
+	return result
 }
 
 func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request) {

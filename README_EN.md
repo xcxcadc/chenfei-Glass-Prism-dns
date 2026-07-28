@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, and client tool `1.3.4`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, and client tool `1.4.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -24,15 +24,18 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **AI Services Unlock Detection** - Auto-detect availability of OpenAI, Claude, Gemini, Copilot and other AI services
 - **Dual-Stack IPv4/IPv6** - Full support for both protocols
 - **Real-time Monitoring** - SSE-based live node status updates
-- **Modern UI** - Liquid Glass design with dark mode support
+- **Modern UI** - Three-column route planning workspace with desktop/mobile layouts, light/dark themes, Chinese and English
 - **Chinese Enhanced UI** - Simplified Chinese by default, with English and theme switching
-- **Detailed Service Catalog** - Dynamically parses `stream.smartdns.list` into 170+ service entries
+- **Detailed Service Catalog** - Dynamically parses `stream.smartdns.list` into 178 active services; discontinued Crackle, Salto, and GYAO entries are excluded
 - **Custom Services** - Add, edit, and delete arbitrary service names and domain lists in the UI
 - **Per-Service Routing** - Bind each service on each DNS client to any proxy agent, or restore Smart/Fallback selection
 - **Two-Layer Unlock Audit** - Shows proxy-side Agent UnlockTests and reruns the same detector on each target IP, avoiding false confidence from proxy-only checks
 - **Target Compatibility First** - Node cards, service badges, and test dialogs prioritize per-target audits; Agent self-checks are reference-only and inconsistent three-run results are marked `UNSTABLE`
 - **IP Configuration Workflow** - Add a target IP, choose services and proxy agents, then create DNS nodes and overrides automatically
 - **Automatic Route Application** - The enhancer restores persistent per-node routes on every Agent sync; a generic 10-second guard also verifies real DNS routes and safely restarts a stalled or stale Agent with rate limiting
+- **Restricted-Network Transport** - Targets can use encrypted TCP SNI transport to avoid cross-border UDP 53 loss, poisoning, and latency while preserving per-service SG/VN selection
+- **Multi-Domain Audit Fallback** - Target DNS/HTTPS audits try multiple representative domains so a throttled, retired, or non-Web suffix cannot create a false failure
+- **Coexistence Watchdog** - Monitors and recovers only `prism-agent`; co-located MTProxy, XrayR, and V2bX services are left untouched
 - **Service Brand Icons** - Service cards and the IP picker load matching site icons, with deterministic local fallbacks
 - **Client Management Script** - Installs the DNS Agent, tests local DNS, and takes over, backs up, or restores system DNS
 - **Traffic Accounting** - Per target IP, counts local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs; whole-interface traffic is excluded
@@ -162,7 +165,7 @@ First add the target IP in the Web UI's IP Configs view, select services and pro
 wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash
 ```
 
-The dedicated command is only needed for the target's first installation. Later service additions, removals, and proxy switches apply automatically when saved in the panel. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. The installer backs up and disables conflicting legacy `dnsmasq`/`sniproxy` services, but does not modify XrayR or V2bX. Every new target receives a generic 10-second configuration hash guard that reads that machine's own panel URL and token. When routes change, it restarts only `prism-agent`, waits for port 53, and then commits the new hash so upstream hot-reload cannot leave stale DNS entries. Initial installation requires every selected domain to resolve to a configured proxy. Third-party HTTPS probe failures remain warnings, so regional policy, rate limiting, or transient TLS failures cannot block system DNS activation. Dedicated nftables counters record local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs. The first report runs within 15 seconds and repeats every minute; automated UnlockTests traffic is removed from the counters after the audit.
+The dedicated command is only needed for the target's first installation. Later service additions, removals, and proxy switches apply automatically when saved in the panel. The generic tool installs/connects the DNS Client Agent, tests local DNS, applies permanent or temporary system DNS, and supports backup, restore, and status checks. The installer backs up and disables conflicting legacy `dnsmasq`/`sniproxy` services, but does not modify MTProxy, XrayR, or V2bX. Every new target receives a generic 10-second configuration hash guard that reads that machine's own panel URL and token. When routes change, it restarts only `prism-agent`, waits for port 53, and then commits the new hash so upstream hot-reload cannot leave stale DNS entries. Restricted-network targets use encrypted TCP SNI transport instead of unreliable cross-border UDP 53, and service audits fall back across multiple candidate domains. Initial installation requires every selected domain to resolve to a configured proxy. Third-party HTTPS probe failures remain warnings, so regional policy, rate limiting, or transient TLS failures cannot block system DNS activation. Dedicated nftables counters record full RX/TX for local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs. The first report runs within 15 seconds and repeats every minute; automated UnlockTests traffic is removed from the counters after the audit.
 
 The guard, traffic accounting, and automatic-apply logic are generated from each target's own configuration and contain no fixed host addresses, so future proxy and target machines inherit the same behavior by default.
 

@@ -24,6 +24,7 @@ type App struct {
 	store        *CustomServiceStore
 	ipStore      *IPConfigStore
 	nodeLabels   *NodeLabelStore
+	transport    *TransportStore
 	upstream     *url.URL
 	proxy        *httputil.ReverseProxy
 	client       *http.Client
@@ -76,6 +77,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		indexHTML:    indexHTML,
 		controllerDB: databasePath,
 	}
+	app.transport, _ = NewTransportStore("")
 	proxy.ModifyResponse = app.modifyUpstreamResponse
 	return app, nil
 }
@@ -93,6 +95,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
 	mux.HandleFunc("/enhancer/api/ip-configs/", app.handleIPConfig)
 	mux.HandleFunc("/enhancer/api/bootstrap/", app.handleBootstrap)
+	mux.HandleFunc("/enhancer/api/transport/proxy", app.handleProxyTransport)
+	mux.HandleFunc("/enhancer/api/transport/client", app.handleClientTransport)
 	mux.HandleFunc("/enhancer/api/traffic/report", app.handleTrafficReport)
 	mux.HandleFunc("/enhancer/api/audit/report", app.handleServiceAuditReport)
 	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)

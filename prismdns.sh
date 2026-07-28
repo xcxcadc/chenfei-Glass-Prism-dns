@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.3.7"
+VERSION="1.4.0"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -102,14 +102,15 @@ bootstrap() {
   validate_master
   local response
   response=$(curl -fsSL --connect-timeout 8 --max-time 20 "$MASTER/enhancer/api/bootstrap/$TOKEN") || fail "无法从面板获取配置，请检查地址和令牌。"
-  local expected detected secret smart installer configured_master
+  local expected detected secret smart installer transport_installer configured_master
   expected=$(jq -r '.expected_ip // empty' <<<"$response")
   detected=$(jq -r '.detected_ip // empty' <<<"$response")
   secret=$(jq -r '.secret // empty' <<<"$response")
   smart=$(jq -r '.smart // true' <<<"$response")
   installer=$(jq -r '.agent_installer // empty' <<<"$response")
+  transport_installer=$(jq -r '.transport_installer // empty' <<<"$response")
   configured_master=$(jq -r '.master // empty' <<<"$response")
-  [[ -n "$secret" && -n "$installer" ]] || fail "面板返回的节点配置不完整。"
+  [[ -n "$secret" && -n "$installer" && -n "$transport_installer" ]] || fail "面板返回的节点配置不完整。"
   if [[ -n "$expected" && -n "$detected" && "$expected" != "$detected" ]]; then
     warn "控制台配置 IP 为 $expected，但面板检测到当前出口 IP 为 $detected。"
     confirm "仍要继续安装吗？" || return 1
@@ -127,8 +128,21 @@ bootstrap() {
   else
     curl -fsSL "$installer" | bash -s -- "${args[@]}"
   fi
+  install_client_transport "$transport_installer"
   install_traffic_reporter
   wait_for_local_dns
+}
+
+install_client_transport() {
+  local installer_url="$1" installer="/tmp/prism_transport.sh"
+  info "安装 Prism 加密解锁传输..."
+  if [[ -n "${PRISM_TRANSPORT_INSTALLER_FILE:-}" ]]; then
+    installer="$PRISM_TRANSPORT_INSTALLER_FILE"
+  else
+    curl -fsSL "$installer_url" -o "$installer"
+  fi
+  chmod +x "$installer"
+  bash "$installer" --client --master "$MASTER" --token "$TOKEN"
 }
 
 install_traffic_reporter() {
@@ -143,9 +157,9 @@ AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
 AUDIT_TIME_FILE="/var/lib/prismdns/service-audit.timestamp"
 AUDIT_OUTPUT_FILE="/var/lib/prismdns/service-audit.txt"
 NFT_TABLE="prismdns_traffic"
-COUNTER_VERSION="dns-sni-ports-v4"
+COUNTER_VERSION="dns-sni-ports-v7-encrypted-transport-rx-tx"
 AUDIT_INTERVAL=21600
-AUDIT_VERSION="selected-providers-3x-v2"
+AUDIT_VERSION="selected-providers-multi-domain-v5-playback"
 [[ -f "$CONFIG_FILE" ]] || exit 0
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
 TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
@@ -154,7 +168,7 @@ if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/
   exit 0
 fi
 mapfile -t PEERS < <(jq -r '.traffic_peers[]?' <<<"$BOOTSTRAP" | sort -u)
-mapfile -t PROBES < <(jq -r '.health_probes[]?.domain // empty' <<<"$BOOTSTRAP" | sort -u)
+mapfile -t PROBES < <(jq -r '.health_probes[]? | (.probe_domains[]?, .domain // empty) | select(length > 0)' <<<"$BOOTSTRAP" | sort -u)
 ((${#PEERS[@]} > 0)) || exit 0
 PEER_HASH=$({ printf '%s\n' "$COUNTER_VERSION"; printf '%s\n' "${PEERS[@]}"; } | sha256sum | awk '{print $1}')
 CURRENT_HASH=$(cat "$PEER_HASH_FILE" 2>/dev/null || true)
@@ -176,7 +190,7 @@ if [[ "$PEER_HASH" != "$CURRENT_HASH" ]] || ! nft list table inet "$NFT_TABLE" >
     ((${#PEERS6[@]} > 0)) && printf ' elements = { %s };' "$(join_csv "${PEERS6[@]}")"
     printf ' }\n'
     printf '  chain input { type filter hook input priority -10; policy accept; tcp dport 53 counter name rx; udp dport 53 counter name rx; ip saddr @peers4 tcp sport { 80, 443 } counter name rx; ip6 saddr @peers6 tcp sport { 80, 443 } counter name rx; }\n'
-    printf '  chain output { type filter hook output priority -10; policy accept; tcp sport 53 counter name tx; udp sport 53 counter name tx; ip daddr @peers4 tcp dport { 80, 443 } counter name tx; ip6 daddr @peers6 tcp dport { 80, 443 } counter name tx; }\n'
+    printf '  chain output { type filter hook output priority -10; policy accept; ip daddr @peers4 udp dport 443 reject with icmp type port-unreachable; ip6 daddr @peers6 udp dport 443 reject with icmpv6 type port-unreachable; tcp sport 53 counter name tx; udp sport 53 counter name tx; ip daddr @peers4 tcp dport { 80, 443 } counter name tx; ip6 daddr @peers6 tcp dport { 80, 443 } counter name tx; }\n'
     printf '}\n'
   } > "$RULE_FILE"
   nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || true
@@ -186,6 +200,14 @@ if [[ "$PEER_HASH" != "$CURRENT_HASH" ]] || ! nft list table inet "$NFT_TABLE" >
 fi
 RX=$(nft -j list counter inet "$NFT_TABLE" rx | jq '[.nftables[].counter? | .bytes] | add // 0')
 TX=$(nft -j list counter inet "$NFT_TABLE" tx | jq '[.nftables[].counter? | .bytes] | add // 0')
+if nft list counter inet prism_transport tx >/dev/null 2>&1; then
+  TRANSPORT_TX=$(nft -j list counter inet prism_transport tx | jq '[.nftables[].counter? | .bytes] | add // 0')
+  TX=$((TX + TRANSPORT_TX))
+fi
+if nft list counter inet prism_transport rx >/dev/null 2>&1; then
+  TRANSPORT_RX=$(nft -j list counter inet prism_transport rx | jq '[.nftables[].counter? | .bytes] | add // 0')
+  RX=$((RX + TRANSPORT_RX))
+fi
 DNS_READY=false
 SYSTEM_DNS_READY=false
 ROUTES_READY=false
@@ -230,14 +252,14 @@ PAYLOAD=$(jq -nc \
 curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d "$PAYLOAD" "$MASTER/enhancer/api/traffic/report" >/dev/null || exit 0
 
 run_service_audit() {
-  local audit_hash="$1" now="$2" output="" attempt_output plain results probe service_id provider domain result matched_peer answer peer
-  local providers_csv candidate failure
-  local attempt attempt_count pass_count
-  local -a provider_results
+  local audit_hash="$1" now="$2" output="" attempt_output plain results probe service_id service_name provider domain result matched_peer answer peer mapping_output
+  local providers_csv candidate failure test_provider probe_domain probe_pass mapped_domain
+  local attempt attempt_count pass_count youtube_pass
+  local -a provider_results test_providers matched_results probe_domains
   if [[ ! -x /usr/bin/ut ]]; then
     timeout 180 bash -c 'curl -sL https://raw.githubusercontent.com/oneclickvirt/UnlockTests/main/ut_install.sh -sSf | bash' >/dev/null 2>&1 || return 0
   fi
-  providers_csv=$(jq -r '[.health_probes[]?.unlock_test | select(length > 0)] | unique | join(",")' <<<"$BOOTSTRAP")
+  providers_csv=$(jq -r '[.health_probes[]? | (.unlock_tests[]?, .unlock_test // empty) | select(length > 0)] | unique | join(",")' <<<"$BOOTSTRAP")
   for attempt in 1 2 3; do
     if [[ -n "$providers_csv" ]] && /usr/bin/ut -h 2>&1 | grep -q -- '-test string'; then
       attempt_output=$(timeout 180 /usr/bin/ut -m 4 -test "$providers_csv" -b=false -s=false 2>&1 || true)
@@ -255,18 +277,41 @@ run_service_audit() {
   results='{}'
   while IFS= read -r probe; do
     service_id=$(jq -r '.service_id // empty' <<<"$probe")
+    service_name=$(jq -r '.name // empty' <<<"$probe")
     provider=$(jq -r '.unlock_test // empty' <<<"$probe")
     domain=$(jq -r '.domain // empty' <<<"$probe")
     [[ -n "$service_id" ]] || continue
     result=""
-    if [[ -n "$provider" ]]; then
-      mapfile -t provider_results < <(awk -v provider="$provider" '
-        index($0, provider) == 1 && substr($0, length(provider) + 1, 2) ~ /^[[:space:]][[:space:]]$/ {
-          value = substr($0, length(provider) + 1)
-          sub(/^[[:space:]]+/, "", value)
-          print value
-        }
-      ' <<<"$plain")
+    if [[ "$service_name" == "YouTube" ]]; then
+      youtube_pass=0
+      for attempt in 1 2 3; do
+        mapping_output=$(curl -4 -fsSL --connect-timeout 6 --max-time 20 "https://redirector.googlevideo.com/report_mapping" || true)
+        if curl -4 -fsSL --connect-timeout 6 --max-time 20 -o /dev/null "https://www.youtube.com/" &&
+          grep -q '=> ' <<<"$mapping_output"; then
+          youtube_pass=$((youtube_pass + 1))
+        fi
+      done
+      if ((youtube_pass == 3)); then
+        result="YES (Playback + CDN 3/3; Premium region is informational)"
+      elif ((youtube_pass > 0)); then
+        result="UNSTABLE (Playback + CDN ${youtube_pass}/3)"
+      else
+        result="FAIL (Playback CDN unavailable)"
+      fi
+    fi
+    mapfile -t test_providers < <(jq -r '[(.unlock_tests[]?, .unlock_test // empty) | select(length > 0)] | unique[]' <<<"$probe")
+    if [[ -z "$result" ]] && ((${#test_providers[@]} > 0)); then
+      provider_results=()
+      for test_provider in "${test_providers[@]}"; do
+        mapfile -t matched_results < <(awk -v provider="$test_provider" '
+          index($0, provider) == 1 && substr($0, length(provider) + 1, 2) ~ /^[[:space:]][[:space:]]$/ {
+            value = substr($0, length(provider) + 1)
+            sub(/^[[:space:]]+/, "", value)
+            print value
+          }
+        ' <<<"$plain")
+        provider_results+=("${matched_results[@]}")
+      done
       attempt_count=${#provider_results[@]}
       pass_count=0
       failure=""
@@ -278,29 +323,45 @@ run_service_audit() {
         fi
       done
       if ((attempt_count > 0 && pass_count == attempt_count)); then
-        result="${provider_results[attempt_count - 1]}"
+        if ((${#test_providers[@]} > 1)); then
+          result="YES (${#test_providers[@]} checks; ${pass_count}/${attempt_count} passes)"
+        else
+          result="${provider_results[attempt_count - 1]}"
+        fi
       elif ((pass_count > 0)); then
         result="UNSTABLE (${pass_count}/${attempt_count} YES; ${failure:-intermittent failure})"
       elif ((attempt_count > 0)); then
         result="${provider_results[attempt_count - 1]}"
       fi
     fi
-    if [[ -z "$result" && -n "$domain" ]]; then
-      matched_peer=""
-      while IFS= read -r answer; do
-        for peer in "${PEERS[@]}"; do
-          if [[ "$answer" == "$peer" ]]; then
-            matched_peer="$peer"
-            break 2
-          fi
-        done
-      done < <({ dig @127.0.0.1 "$domain" A +short +time=2 +tries=1; dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1; } 2>/dev/null | sed '/^$/d' | sort -u)
-      if [[ -z "$matched_peer" ]]; then
-        result="FAIL (DNS route mismatch)"
-      elif curl -sS -o /dev/null --resolve "$domain:443:$matched_peer" --connect-timeout 5 --max-time 15 "https://$domain/"; then
-        result="PASS (HTTPS reachable) [Via DNS]"
-      else
-        result="FAIL (HTTPS unavailable)"
+    if [[ -z "$result" ]]; then
+      mapfile -t probe_domains < <(jq -r '[(.probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
+      probe_pass=false
+      mapped_domain=""
+      for probe_domain in "${probe_domains[@]}"; do
+        matched_peer=""
+        while IFS= read -r answer; do
+          for peer in "${PEERS[@]}"; do
+            if [[ "$answer" == "$peer" ]]; then
+              matched_peer="$peer"
+              break 2
+            fi
+          done
+        done < <({ dig @127.0.0.1 "$probe_domain" A +short +time=2 +tries=1; dig @127.0.0.1 "$probe_domain" AAAA +short +time=2 +tries=1; } 2>/dev/null | sed '/^$/d' | sort -u)
+        [[ -n "$matched_peer" ]] || continue
+        mapped_domain="$probe_domain"
+        if curl -sS -o /dev/null --resolve "$probe_domain:443:$matched_peer" --connect-timeout 5 --max-time 15 "https://$probe_domain/"; then
+          result="PASS (HTTPS reachable: ${probe_domain}) [Via DNS]"
+          probe_pass=true
+          break
+        fi
+      done
+      if ! $probe_pass; then
+        if [[ -z "$mapped_domain" ]]; then
+          result="FAIL (DNS route mismatch)"
+        else
+          result="FAIL (HTTPS unavailable across candidates)"
+        fi
       fi
     fi
     [[ -n "$result" ]] || result="N/A (No UnlockTests result)"
@@ -314,9 +375,17 @@ run_service_audit() {
   fi
   nft reset counter inet "$NFT_TABLE" rx >/dev/null 2>&1 || true
   nft reset counter inet "$NFT_TABLE" tx >/dev/null 2>&1 || true
+  nft reset counter inet prism_transport tx >/dev/null 2>&1 || true
+  nft reset counter inet prism_transport rx >/dev/null 2>&1 || true
 }
 
-AUDIT_HASH=$({ printf '%s\n' "$AUDIT_VERSION"; jq -Sc '[.health_probes[]? | {service_id,unlock_test,domain}]' <<<"$BOOTSTRAP"; } | sha256sum | awk '{print $1}')
+AUDIT_HASH=$({
+  printf '%s\n' "$AUDIT_VERSION"
+  jq -Sc '{
+    traffic_peers:((.traffic_peers // []) | sort),
+    health_probes:([.health_probes[]? | {service_id,unlock_test,unlock_tests,domain,probe_domains}] | sort_by(.service_id))
+  }' <<<"$BOOTSTRAP"
+} | sha256sum | awk '{print $1}')
 LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)
 LAST_AUDIT_TIME=$(cat "$AUDIT_TIME_FILE" 2>/dev/null || echo 0)
 NOW=$(date +%s)
@@ -350,11 +419,11 @@ fi
 CURRENT_HASH=$(jq -Sc '{
   smart:(.smart // true),
   traffic_peers:((.traffic_peers // []) | sort),
-  health_probes:([.health_probes[]? | {service_id,domain,unlock_test}] | sort_by(.service_id))
+  health_probes:([.health_probes[]? | {service_id,domain,probe_domains,unlock_test,unlock_tests}] | sort_by(.service_id))
 }' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 LAST_HASH=$(cat "$HASH_FILE" 2>/dev/null || true)
 mapfile -t PEERS < <(jq -r '.traffic_peers[]?' <<<"$BOOTSTRAP" | sort -u)
-mapfile -t PROBES < <(jq -r '.health_probes[]?.domain // empty' <<<"$BOOTSTRAP" | sort -u)
+mapfile -t PROBES < <(jq -r '.health_probes[]? | (.probe_domains[]?, .domain // empty) | select(length > 0)' <<<"$BOOTSTRAP" | sort -u)
 route_health_ok() {
   systemctl is-active --quiet prism-agent 2>/dev/null || return 1
   ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}' || return 1
@@ -652,6 +721,14 @@ one_click() {
   apply_permanent
 }
 
+refresh_runtime() {
+  require_root
+  ensure_dependencies
+  load_config
+  validate_master
+  install_traffic_reporter
+}
+
 show_menu() {
   clear 2>/dev/null || true
   printf '%b\n' "${CYAN}${BOLD}PRISM DNS${NC} v$VERSION - DNS Client 管理工具"
@@ -681,6 +758,7 @@ parse_args() {
       --one-click) ACTION="one-click"; shift ;;
       --restore) ACTION="restore"; shift ;;
       --status) ACTION="status"; shift ;;
+      --refresh-runtime) ACTION="refresh-runtime"; shift ;;
       --help|-h) echo "Usage: prismdns.sh [--master URL --token TOKEN] [--install|--apply|--one-click|--restore|--status]"; exit 0 ;;
       *) fail "未知参数: $1" ;;
     esac
@@ -696,6 +774,7 @@ main() {
     one-click) one_click; exit ;;
     restore) restore_dns; exit ;;
     status) show_status; exit ;;
+    refresh-runtime) refresh_runtime; exit ;;
   esac
   while true; do
     show_menu

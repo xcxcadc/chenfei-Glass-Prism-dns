@@ -28,6 +28,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize IP config store: %v", err)
 	}
+	transport, err := NewTransportStore(filepath.Join(*dataDir, "transports.json"))
+	if err != nil {
+		log.Fatalf("initialize transport registry: %v", err)
+	}
 	nodeLabels, err := NewNodeLabelStore(filepath.Join(*dataDir, "node-labels.json"))
 	if err != nil {
 		log.Fatalf("initialize node label store: %v", err)
@@ -38,6 +42,7 @@ func main() {
 		log.Fatalf("initialize server: %v", err)
 	}
 	app.nodeLabels = nodeLabels
+	app.transport = transport
 
 	server := &http.Server{
 		Addr:              *listen,

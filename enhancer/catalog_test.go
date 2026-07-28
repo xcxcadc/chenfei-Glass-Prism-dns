@@ -89,3 +89,108 @@ nameserver /openai.com/group
 		t.Fatalf("OpenAI label was not normalized: %+v", services[1])
 	}
 }
+
+func TestParseSmartDNSSupplementsYouTubeTrafficDomains(t *testing.T) {
+	input := `# ---------- > China Media
+# > YouTube
+nameserver /youtube.com/group
+nameserver /youtubei.googleapis.com/group
+`
+	services, err := ParseSmartDNS(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(services) != 1 {
+		t.Fatalf("expected one service, got %d", len(services))
+	}
+	for _, domain := range []string{"googlevideo.com", "ggpht.com", "ytimg.com", "youtube.com", "youtubei.googleapis.com"} {
+		if !contains(services[0].Domains, domain) {
+			t.Fatalf("YouTube traffic domain %q missing from %#v", domain, services[0].Domains)
+		}
+	}
+}
+
+func TestParseSmartDNSSupplementsCurrentViuDomains(t *testing.T) {
+	input := `# ---------- > Global Platform
+# > Viu.TV
+nameserver /viu.now.com/group
+`
+	services, err := ParseSmartDNS(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(services) != 1 {
+		t.Fatalf("expected one service, got %d", len(services))
+	}
+	for _, domain := range []string{"viu.com", "viu.tv"} {
+		if !contains(services[0].Domains, domain) {
+			t.Fatalf("Viu traffic domain %q missing from %#v", domain, services[0].Domains)
+		}
+	}
+}
+
+func TestParseSmartDNSRefreshesKnownStaleDomains(t *testing.T) {
+	input := strings.NewReader(`# ---------- > Europe Media
+# > FR:France.tv
+nameserver /ftven.fr/group
+# ---------- > Hong Kong Media
+# > HOY TV
+nameserver /hoy.tv/group
+# ---------- > Japan Media
+# > J:com On Demand
+nameserver /id.zaq.ne.jp/group
+# ---------- > Southeast Asia Media
+# > VN:Galaxy Play
+nameserver /glxplay.io/group
+# > VN:K+
+nameserver /solocoo.tv/group
+`)
+	services, err := ParseSmartDNS(input)
+	if err != nil {
+		t.Fatalf("ParseSmartDNS returned error: %v", err)
+	}
+	expected := map[string][]string{
+		"FR:France.tv":    {"france.tv"},
+		"HOY TV":          {"hoy.tv"},
+		"J:com On Demand": {"jcom.co.jp", "myjcom.jp"},
+		"VN:Galaxy Play":  {"galaxyplay.vn"},
+		"VN:K+":           {"k-plus.tv", "kplus.vn"},
+	}
+	for _, service := range services {
+		domains, ok := expected[service.Name]
+		if !ok {
+			continue
+		}
+		for _, domain := range domains {
+			if !contains(service.Domains, domain) {
+				t.Fatalf("%s missing refreshed domain %q: %#v", service.Name, domain, service.Domains)
+			}
+		}
+		delete(expected, service.Name)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing refreshed services: %#v", expected)
+	}
+}
+
+func TestParseSmartDNSOmitsRetiredServices(t *testing.T) {
+	input := strings.NewReader(`# ---------- > North America Media
+# > Crackle
+nameserver /crackle.com/group
+# ---------- > Japan Media
+# > GYAO!
+nameserver /gyao.yahoo.co.jp/group
+# ---------- > Europe Media
+# > FR:Salto
+nameserver /salto.fr/group
+# > FR:France.tv
+nameserver /ftven.fr/group
+`)
+	services, err := ParseSmartDNS(input)
+	if err != nil {
+		t.Fatalf("ParseSmartDNS returned error: %v", err)
+	}
+	if len(services) != 1 || services[0].Name != "FR:France.tv" {
+		t.Fatalf("retired services were not removed: %#v", services)
+	}
+}

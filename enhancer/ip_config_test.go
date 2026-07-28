@@ -272,3 +272,27 @@ func TestApplyIPRoutesMigratesLegacyRuleBeforeClearingOverride(t *testing.T) {
 		t.Fatalf("override was not cleared: %+v", override)
 	}
 }
+
+func TestPreferredProbeDomainsUsesSeveralStableGenericCandidates(t *testing.T) {
+	service := Service{
+		Name: "Future Service",
+		Domains: []string{
+			"legacy-api.long-example.invalid",
+			"stream.example.com",
+			"example.com",
+			"cdn.example.net",
+			"api.example.org",
+		},
+	}
+
+	domains := preferredProbeDomains(service)
+	if len(domains) != 4 {
+		t.Fatalf("expected four generic probe domains, got %#v", domains)
+	}
+	if domains[0] != "example.com" {
+		t.Fatalf("expected the shortest root domain first, got %#v", domains)
+	}
+	if contains(domains, "legacy-api.long-example.invalid") {
+		t.Fatalf("deep legacy hostname should not displace stable root candidates: %#v", domains)
+	}
+}

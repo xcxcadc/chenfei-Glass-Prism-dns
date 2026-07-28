@@ -68,7 +68,7 @@ const state = {
   token: localStorage.getItem("prism_token") || "",
   user: JSON.parse(localStorage.getItem("prism_user") || "{}"),
   lang: localStorage.getItem("enhancer_lang") || "zh",
-  theme: localStorage.getItem("prism_theme") || "dark",
+  theme: localStorage.getItem("prism_theme_v2") || "light",
   tab: "services", nodes: [], rules: [], catalog: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
   overrides: {}, activeSelections: {}, search: "", category: "", loading: false, modal: null, testResults: null
 };
@@ -334,9 +334,9 @@ function loginHTML() {
 function bindLogin() { document.getElementById("login-form").addEventListener("submit", login); }
 
 function toolbarActionsHTML() {
-  if (state.tab === "services") return `<button class="btn" id="refresh-catalog">↻ ${t("catalogRefresh")}</button><button class="btn primary" id="add-service">＋ ${t("addService")}</button>`;
-  if (state.tab === "nodes") return `<button class="btn primary" id="add-node">＋ ${t("addNode")}</button>`;
-  return `<button class="btn primary" id="add-ip">＋ ${t("addIP")}</button>`;
+  if (state.tab === "services") return `<button class="btn" id="refresh-catalog">${t("catalogRefresh")}</button><button class="btn primary" id="add-service">${t("addService")}</button>`;
+  if (state.tab === "nodes") return `<button class="btn primary" id="add-node">${t("addNode")}</button>`;
+  return `<button class="btn primary" id="add-ip">${t("addIP")}</button>`;
 }
 
 function activeContentHTML() {
@@ -346,39 +346,62 @@ function activeContentHTML() {
 }
 
 function shellHTML() {
-  return `<div class="shell"><header class="topbar"><div class="brand"><h1>${escapeHTML(t("title"))}</h1><div class="brand-meta"><span class="status-dot"></span><span>${escapeHTML(t("online"))}</span></div></div>
-    <div class="top-actions"><button class="btn icon" id="theme-toggle" title="${t("theme")}">${state.theme === "light" ? "☾" : "☀"}</button>
-    <button class="btn" id="lang-toggle">${t("language")}</button><button class="user-button" id="account-settings" title="${t("accountSettings")}">${escapeHTML(state.user.username || "admin")}</button><button class="btn icon danger" id="logout" title="${t("logout")}">↪</button></div></header>
-    <main class="container"><div class="toolbar"><div class="toolbar-left"><nav class="tabs"><button class="tab ${state.tab === "services" ? "active" : ""}" data-tab="services">${t("services")}</button><button class="tab ${state.tab === "nodes" ? "active" : ""}" data-tab="nodes">${t("nodes")}</button><button class="tab ${state.tab === "ips" ? "active" : ""}" data-tab="ips">${t("ipConfigs")}</button></nav></div>
-    <div class="toolbar-right">${toolbarActionsHTML()}<button class="btn icon" id="refresh" title="${t("refresh")}">↻</button></div></div>
-    ${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main></div>`;
+  const pageTitle = state.tab === "services" ? t("services") : state.tab === "nodes" ? t("nodes") : t("ipConfigs");
+  const pageHint = state.lang === "zh"
+    ? (state.tab === "services" ? "编排解锁服务、验证真实可用性并选择最佳节点" : state.tab === "nodes" ? "管理解锁机与被解锁机的在线状态" : "按目标 IP 配置服务、流量与自动下发")
+    : (state.tab === "services" ? "Route services, verify availability, and choose the best node" : state.tab === "nodes" ? "Manage unlock and client node health" : "Configure services, traffic, and delivery by target IP");
+  return `<div class="shell"><aside class="sidebar"><div class="sidebar-brand"><strong>Prism DNS</strong><span>${state.lang === "zh" ? "全局解锁编排" : "Global orchestration"}</span></div>
+    <nav class="tabs" aria-label="${escapeHTML(t("title"))}"><button class="tab ${state.tab === "services" ? "active" : ""}" data-tab="services">${t("services")}</button><button class="tab ${state.tab === "nodes" ? "active" : ""}" data-tab="nodes">${t("nodes")}</button><button class="tab ${state.tab === "ips" ? "active" : ""}" data-tab="ips">${t("ipConfigs")}</button></nav>
+    <div class="sidebar-footer"><button class="user-button account-settings-trigger" id="account-settings" title="${t("accountSettings")}"><strong>${escapeHTML(state.user.username || "admin")}</strong><span>${state.lang === "zh" ? "管理员账户" : "Administrator"}</span></button>
+    <div class="sidebar-tools"><button class="btn small theme-toggle-trigger" id="theme-toggle">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger" id="lang-toggle">${t("language")}</button><button class="btn small danger logout-trigger" id="logout">${t("logout")}</button></div></div></aside>
+    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(pageTitle)}</h1><p>${escapeHTML(pageHint)}</p></div><div class="toolbar-right"><span class="live-state"><span class="status-dot"></span>${escapeHTML(t("online"))}</span>${toolbarActionsHTML()}<button class="btn" id="refresh">${t("refresh")}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small theme-toggle-trigger">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger">${t("language")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
+    <main class="container">${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main></section></div>`;
 }
 
 function servicesHTML() {
   const dns = dnsNodes(); const proxies = proxyNodes();
   const categories = [...new Set(state.catalog.map(service => service.category))].sort((a,b) => a.localeCompare(b));
   const filtered = state.catalog.filter(service => !state.category || service.category === state.category);
-  const configured = state.catalog.filter(service => serviceRule(service)).length;
+  const configuredServices = state.catalog.filter(service => {
+    const rule = serviceRule(service);
+    return rule && activeNodeFor(rule);
+  });
+  const configured = configuredServices.length;
+  const targetNode = selectedDNS();
+  const targetConfig = configForNode(targetNode);
+  const targetHealth = targetNode ? clientState(targetConfig, targetNode) : {kind:"warn", label:t("pending"), detail:t("selectDNS")};
+  const targetIP = targetConfig?.ip || targetNode?.public_ip || targetNode?.address || "-";
   return `${dns.length === 0 ? `<div class="panel empty"><strong>${t("noDNS")}</strong><button class="btn primary" id="empty-add-node">＋ ${t("addNode")}</button></div>` : ""}
-    <section class="stats"><div class="panel stat"><div class="stat-label">${t("totalServices")}</div><div class="stat-value">${state.catalog.length}</div><div class="stat-sub">${t("sourceList")}</div></div>
-    <div class="panel stat"><div class="stat-label">${t("configured")}</div><div class="stat-value">${configured}</div><div class="stat-sub">${dns.length} ${t("dnsClient")}</div></div>
-    <div class="panel stat"><div class="stat-label">${t("proxyNodes")}</div><div class="stat-value">${proxies.length}</div><div class="stat-sub">${proxies.filter(isOnline).length} online</div></div>
-    <div class="panel stat"><div class="stat-label">${t("customServices")}</div><div class="stat-value">${state.catalog.filter(item => item.custom).length}</div><div class="stat-sub">${t("sourceUpdated")}: ${formatDate(state.catalogMeta.updated_at)}</div></div></section>
-    <section class="filterbar panel"><input class="input" id="service-search" value="${escapeHTML(state.search)}" placeholder="${t("search")}">
-    <select class="select" id="category-filter"><option value="">${t("allCategories")}</option>${categories.map(category => `<option value="${escapeHTML(category)}" ${state.category === category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select>
-    <select class="select" id="dns-select"><option value="">${t("selectDNS")}</option>${dns.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(state.dnsNodeId) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select>
-    <button class="btn" id="clear-filter">× ${state.lang === "zh" ? "清除筛选" : "Clear"}</button></section>
-    ${filtered.length ? `<section class="service-grid">${filtered.map(serviceCardHTML).join("")}</section><div class="panel empty" id="service-filter-empty" hidden><strong>${t("noServices")}</strong></div>` : `<div class="panel empty"><strong>${t("noServices")}</strong></div>`}`;
+    <section class="orchestration-summary panel"><div class="summary-target"><span>${t("targetIP")}</span><strong>${escapeHTML(targetIP)}</strong><select class="select" id="dns-select"><option value="">${t("selectDNS")}</option>${dns.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(state.dnsNodeId) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select></div>
+    <div class="summary-health"><span>${state.lang === "zh" ? "路线健康" : "Route health"}</span><strong class="${targetHealth.kind}">${escapeHTML(targetHealth.label)}</strong><small title="${escapeHTML(targetHealth.detail)}">${escapeHTML(targetHealth.detail)}</small></div>
+    <div class="summary-metric"><span>${t("selectedServices")}</span><strong>${configured} <small>/ ${state.catalog.length}</small></strong></div>
+    <div class="summary-metric"><span>${state.lang === "zh" ? "可用节点" : "Available nodes"}</span><strong>${proxies.filter(isOnline).length} <small>/ ${proxies.length}</small></strong></div>
+    <div class="summary-metric"><span>${t("customServices")}</span><strong>${state.catalog.filter(item => item.custom).length}</strong></div></section>
+    <section class="orchestration-grid"><div class="panel orchestration-column service-library"><header class="section-head"><div><h2>${state.lang === "zh" ? "服务库" : "Service library"}</h2><p>${state.catalog.length} ${t("totalServices")}</p></div><button class="btn small" id="clear-filter">${state.lang === "zh" ? "重置" : "Reset"}</button></header>
+    <div class="library-filters"><input class="input" id="service-search" value="${escapeHTML(state.search)}" placeholder="${t("search")}"><select class="select" id="category-filter"><option value="">${t("allCategories")}</option>${categories.map(category => `<option value="${escapeHTML(category)}" ${state.category === category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select></div>
+    ${filtered.length ? `<div class="service-grid">${filtered.map(serviceCardHTML).join("")}</div><div class="empty" id="service-filter-empty" hidden><strong>${t("noServices")}</strong></div>` : `<div class="empty"><strong>${t("noServices")}</strong></div>`}</div>
+    <div class="panel orchestration-column selected-services"><header class="section-head"><div><h2>${t("selectedServices")}</h2><p>${configured} ${state.lang === "zh" ? "项已路由" : "routed"}</p></div></header><div class="selected-service-list">${configuredServices.length ? configuredServices.map(selectedServiceRowHTML).join("") : `<div class="empty compact"><strong>${t("notConfigured")}</strong><span>${state.lang === "zh" ? "从左侧选择服务开始配置" : "Choose a service from the library"}</span></div>`}</div></div>
+    <div class="panel orchestration-column route-nodes"><header class="section-head"><div><h2>${state.lang === "zh" ? "节点选择与线路表现" : "Nodes and route health"}</h2><p>${state.lang === "zh" ? "依据真实目标机检测结果选择" : "Based on real target audits"}</p></div></header><div class="route-node-list">${proxies.length ? proxies.map(node => routeNodeCardHTML(node, configuredServices)).join("") : `<div class="empty compact"><strong>${t("noProxy")}</strong></div>`}</div><div class="route-note"><strong>${state.lang === "zh" ? "线路测试说明" : "Route testing"}</strong><span>${state.lang === "zh" ? "Agent 按真实 DNS、HTTPS 与播放链路定期复测；保存后自动下发并刷新 DNS。" : "Agents retest real DNS, HTTPS, and playback routes. Saves are delivered automatically."}</span></div></div></section>`;
 }
 
 function serviceCardHTML(service) {
   const rule = serviceRule(service); const node = activeNodeFor(rule); const status = serviceStatus(service, node); const manual = !!overrideFor(rule);
   const displayName = displayServiceName(service);
-  return `<article class="panel service-card ${rule ? "configured" : ""} ${service.custom ? "custom" : ""}" data-service-id="${escapeHTML(service.id)}">
-    <div class="service-head">${serviceIconHTML(service)}<span class="badge ${status.kind}">${status.label}</span></div>
-    <div class="service-name" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div><div class="service-category">${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</div>
-    <div class="service-route"><span>${manual ? "●" : "○"}</span><strong>${escapeHTML(node?.name || (rule ? t("auto") : t("notConfigured")))}</strong></div>
-    <div class="service-actions"><span class="badge ${manual ? "warn" : ""}">${manual ? t("manual") : t("auto")}</span><button class="btn small primary service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button></div></article>`;
+  return `<article class="service-card ${rule ? "configured" : ""} ${service.custom ? "custom" : ""}" data-service-id="${escapeHTML(service.id)}"><div class="service-row-main">${serviceIconHTML(service)}<div><div class="service-name" title="${escapeHTML(displayName)}">${escapeHTML(displayName)}</div><div class="service-category">${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</div></div></div>
+    <div class="service-row-state"><span class="badge ${status.kind}" title="${escapeHTML(status.raw || status.label)}">${escapeHTML(status.kind ? status.label : (rule ? t("configured") : t("notConfigured")))}</span><button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button></div></article>`;
+}
+
+function selectedServiceRowHTML(service) {
+  const rule = serviceRule(service); const node = activeNodeFor(rule); const status = serviceStatus(service, node);
+  return `<article class="selected-service-row" data-service-id="${escapeHTML(service.id)}">${serviceIconHTML(service)}<div class="selected-service-main"><strong>${escapeHTML(displayServiceName(service))}</strong><span>${escapeHTML(node?.name || t("auto"))}</span></div><span class="badge ${status.kind}" title="${escapeHTML(status.raw || status.label)}">${escapeHTML(status.kind ? status.label : t("configured"))}</span><button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${state.lang === "zh" ? "查看" : "View"}</button></article>`;
+}
+
+function routeNodeCardHTML(node, configuredServices) {
+  const online = isOnline(node);
+  const compatibility = proxyCompatibilitySummary(node.id);
+  const assigned = configuredServices.filter(service => nodeID(activeNodeFor(serviceRule(service))?.id) === nodeID(node.id));
+  const detail = compatibility.total ? `${compatibility.passed}/${compatibility.total} ${t("actualAudit")}` : t("noTargetAudit");
+  return `<article class="route-node-card ${online ? "online" : "offline"}"><header><div><strong>${escapeHTML(node.name)}</strong><span>${escapeHTML(node.country || node.public_ip || node.address || "-")}</span></div><span class="badge ${online ? "good" : "bad"}">${online ? "ONLINE" : "OFFLINE"}</span></header><div class="route-node-metrics"><div><span>${state.lang === "zh" ? "目标实测" : "Target audits"}</span><strong>${escapeHTML(detail)}</strong></div><div><span>${t("selectedServices")}</span><strong>${assigned.length}</strong></div></div><div class="node-service-icons">${assigned.slice(0, 8).map(serviceIconHTML).join("")}${assigned.length > 8 ? `<span class="badge">+${assigned.length - 8}</span>` : ""}</div></article>`;
 }
 
 function nodesHTML() {
@@ -427,10 +450,10 @@ function ipConfigsHTML() {
 
 function bindShell() {
   document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => { state.tab = button.dataset.tab; render(); }));
-  document.getElementById("theme-toggle").onclick = () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme", state.theme); render(); };
-  document.getElementById("lang-toggle").onclick = () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); };
-  document.getElementById("logout").onclick = () => logout(true);
-  document.getElementById("account-settings").onclick = openAccountSettings;
+  document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
+  document.querySelectorAll(".lang-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); }));
+  document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));
+  document.querySelectorAll(".account-settings-trigger").forEach(button => button.addEventListener("click", openAccountSettings));
   document.getElementById("refresh").onclick = () => loadAll();
   document.getElementById("add-service")?.addEventListener("click", () => openServiceForm());
   document.getElementById("add-node")?.addEventListener("click", () => openNodeForm());
@@ -444,6 +467,7 @@ function bindShell() {
   document.getElementById("clear-filter")?.addEventListener("click", () => { state.search = ""; state.category = ""; render(); });
   document.querySelectorAll(".service-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openService(button.dataset.serviceId); }));
   document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openService(card.dataset.serviceId)));
+  document.querySelectorAll(".selected-service-row").forEach(row => row.addEventListener("click", () => openService(row.dataset.serviceId)));
   document.querySelectorAll(".node-test").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); triggerNodeCheck(button.dataset.nodeId); }));
   document.querySelectorAll(".node-install").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openInstallCommand(button.dataset.nodeId); }));
   document.querySelectorAll(".node-manage-ip").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openIPForm(null, 1, state.nodes.find(node => nodeID(node.id) === nodeID(button.dataset.nodeId))); }));
@@ -621,7 +645,7 @@ function ipFormHTML() {
   return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
     const selectedProxy = modal.routes[service.id] || ""; const checked = !!selectedProxy; const audit = auditResultState(modal.config?.service_results?.[service.id]);
     return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><span>${t("actualAudit")}</span><span class="badge ${audit.kind}" title="${escapeHTML(audit.label)}">${escapeHTML(audit.label)}</span></div></article>`;
-  }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${t("saveConfig")}</button></div></footer></form></div>`;
+  }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 将自动同步服务增删并安全刷新 DNS" : "The Agent applies additions and removals, then safely refreshes DNS"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
 }
 
 function ipScriptHTML() {
