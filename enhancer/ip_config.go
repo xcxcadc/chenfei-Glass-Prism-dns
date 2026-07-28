@@ -16,10 +16,11 @@ import (
 )
 
 type ipConfigRequest struct {
-	IP     string            `json:"ip"`
-	Note   string            `json:"note"`
-	Smart  bool              `json:"smart"`
-	Routes map[string]string `json:"routes"`
+	IP                string            `json:"ip"`
+	Note              string            `json:"note"`
+	Smart             bool              `json:"smart"`
+	Routes            map[string]string `json:"routes"`
+	ExistingDNSNodeID string            `json:"existing_dns_node_id,omitempty"`
 }
 
 type trafficReportRequest struct {
@@ -283,40 +284,85 @@ func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request
 			return
 		}
 	}
-	secret, err := randomToken()
+	dnsNodeID, nodeName, secret, externalNode, err := app.resolveIPConfigNode(request.Context(), request.Header.Get("Authorization"), payload)
 	if err != nil {
-		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	nodeName := safeNodeName(payload.IP)
-	nodePayload := map[string]any{
-		"name": nodeName, "role": "dns", "public_ip": payload.IP, "country": "", "group": "ip clients", "priority": 1, "secret": secret,
-	}
-	var created map[string]any
-	if err := app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodPost, "/api/nodes", nodePayload, &created); err != nil {
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
-	}
-	dnsNodeID := valueString(created["id"])
-	if returnedSecret := valueString(created["secret"]); returnedSecret != "" {
-		secret = returnedSecret
-	}
-	if dnsNodeID == "" {
-		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": "Controller 未返回 DNS 节点 ID"})
 		return
 	}
 	application, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), dnsNodeID, nil, payload.Routes, publicBaseURL(request))
 	if err != nil {
-		_ = app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodDelete, "/api/nodes/"+url.PathEscape(dnsNodeID), nil, nil)
+		if !externalNode {
+			_ = app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodDelete, "/api/nodes/"+url.PathEscape(dnsNodeID), nil, nil)
+		}
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, Smart: payload.Smart, Routes: payload.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
+	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, ExternalDNSNode: externalNode, Smart: payload.Smart, Routes: payload.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	writeJSON(writer, http.StatusCreated, config)
+}
+
+func (app *App) resolveIPConfigNode(ctx context.Context, authorization string, payload ipConfigRequest) (string, string, string, bool, error) {
+	if payload.ExistingDNSNodeID == "" {
+		secret, err := randomToken()
+		if err != nil {
+			return "", "", "", false, err
+		}
+		nodeName := safeNodeName(payload.IP)
+		nodePayload := map[string]any{
+			"name": nodeName, "role": "dns", "public_ip": payload.IP, "country": "", "group": "ip clients", "priority": 1, "secret": secret,
+		}
+		var created map[string]any
+		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/nodes", nodePayload, &created); err != nil {
+			return "", "", "", false, err
+		}
+		dnsNodeID := valueString(created["id"])
+		if returnedSecret := valueString(created["secret"]); returnedSecret != "" {
+			secret = returnedSecret
+		}
+		if dnsNodeID == "" {
+			return "", "", "", false, errors.New("Controller did not return a DNS node ID")
+		}
+		return dnsNodeID, nodeName, secret, false, nil
+	}
+
+	var nodes []map[string]any
+	if err := app.upstreamJSON(ctx, authorization, http.MethodGet, "/api/nodes", nil, &nodes); err != nil {
+		return "", "", "", false, err
+	}
+	for _, node := range nodes {
+		if valueString(node["id"]) != payload.ExistingDNSNodeID {
+			continue
+		}
+		if valueString(node["role"]) != "dns" {
+			return "", "", "", false, errors.New("only DNS client nodes can be adopted")
+		}
+		nodeIP := strings.TrimSpace(valueString(node["public_ip"]))
+		if nodeIP == "" {
+			nodeIP = strings.TrimSpace(strings.Split(valueString(node["address"]), ",")[0])
+		}
+		if nodeIP != payload.IP {
+			return "", "", "", false, errors.New("DNS node address does not match the target IP")
+		}
+		secret := valueString(node["secret"])
+		if secret == "" {
+			return "", "", "", false, errors.New("DNS node has no installation secret; recreate the node")
+		}
+		for _, existing := range app.ipStore.List() {
+			if existing.DNSNodeID == payload.ExistingDNSNodeID {
+				return "", "", "", false, errors.New("DNS node is already managed by an IP configuration")
+			}
+		}
+		nodeName := strings.TrimSpace(valueString(node["name"]))
+		if nodeName == "" {
+			nodeName = safeNodeName(payload.IP)
+		}
+		return payload.ExistingDNSNodeID, nodeName, secret, true, nil
+	}
+	return "", "", "", false, errors.New("DNS node to adopt was not found")
 }
 
 func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request, record ipConfigRecord) {
@@ -347,9 +393,11 @@ func (app *App) deleteIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodDelete, "/api/nodes/"+url.PathEscape(record.DNSNodeID), nil, nil); err != nil {
-		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return
+	if !record.ExternalDNSNode {
+		if err := app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodDelete, "/api/nodes/"+url.PathEscape(record.DNSNodeID), nil, nil); err != nil {
+			writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	if err := app.ipStore.Delete(record.ID); errors.Is(err, os.ErrNotExist) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "IP 配置不存在"})

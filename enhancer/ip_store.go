@@ -22,6 +22,7 @@ type IPConfig struct {
 	Note             string            `json:"note,omitempty"`
 	DNSNodeID        string            `json:"dns_node_id"`
 	NodeName         string            `json:"node_name"`
+	ExternalDNSNode  bool              `json:"external_dns_node,omitempty"`
 	NodeSecret       string            `json:"-"`
 	EnrollmentToken  string            `json:"enrollment_token"`
 	Smart            bool              `json:"smart"`

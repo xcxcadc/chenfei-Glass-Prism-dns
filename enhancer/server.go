@@ -94,7 +94,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)
 	mux.HandleFunc("/enhancer/rules/", app.handleRuleSet)
 	mux.HandleFunc("/enhancer/icons/", app.handleServiceIcon)
-	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(app.web))))
+	mux.Handle("/assets/", noStore(http.StripPrefix("/assets/", http.FileServer(http.FS(app.web)))))
 	mux.HandleFunc("/", app.handleRoot)
 	return securityHeaders(requestLogger(mux))
 }
@@ -105,6 +105,7 @@ func (app *App) handleRoot(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	if request.URL.Path == "/" && request.Method == http.MethodGet {
+		writer.Header().Set("Cache-Control", "no-store, max-age=0")
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 		writer.WriteHeader(http.StatusOK)
 		_, _ = writer.Write(app.indexHTML)
@@ -287,6 +288,13 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 func methodNotAllowed(writer http.ResponseWriter, methods ...string) {
 	writer.Header().Set("Allow", strings.Join(methods, ", "))
 	writeJSON(writer, http.StatusMethodNotAllowed, map[string]string{"error": "请求方法不受支持"})
+}
+
+func noStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Cache-Control", "no-store, max-age=0")
+		next.ServeHTTP(writer, request)
+	})
 }
 
 func securityHeaders(next http.Handler) http.Handler {

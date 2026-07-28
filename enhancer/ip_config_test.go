@@ -122,6 +122,112 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	}
 }
 
+func TestIPConfigAdoptsExistingDNSNode(t *testing.T) {
+	createdNode := false
+	var override map[string]string
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/catalog" {
+			_, _ = writer.Write([]byte("# ---------- > Global Platform\n# > Netflix\nnameserver /netflix.com/group\n"))
+			return
+		}
+		if request.Header.Get("Authorization") != "Bearer valid" {
+			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		switch {
+		case request.URL.Path == "/api/nodes" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{
+				map[string]any{"id": "2", "role": "proxy", "public_ip": "198.51.100.20"},
+				map[string]any{"id": "7", "name": "EU", "role": "dns", "public_ip": "203.0.113.10", "secret": "existing-secret"},
+			})
+		case request.URL.Path == "/api/nodes" && request.Method == http.MethodPost:
+			createdNode = true
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "unexpected node creation"})
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{})
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodPost:
+			writeJSON(writer, http.StatusCreated, map[string]any{"id": "11"})
+		case request.URL.Path == "/api/rules/11/override" && request.Method == http.MethodPost:
+			_ = json.NewDecoder(request.Body).Decode(&override)
+			writeJSON(writer, http.StatusOK, map[string]bool{"ok": true})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore)
+	serviceID := catalog.Snapshot(context.Background(), true).Services[0].ID
+	app, err := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"ip":"203.0.113.10","note":"EU","smart":true,"existing_dns_node_id":"7","routes":{"` + serviceID + `":"2"}}`
+	request := httptest.NewRequest(http.MethodPost, "/enhancer/api/ip-configs", strings.NewReader(body))
+	request.Header.Set("Authorization", "Bearer valid")
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("adopt returned %d: %s", response.Code, response.Body.String())
+	}
+	var config IPConfig
+	if err := json.Unmarshal(response.Body.Bytes(), &config); err != nil {
+		t.Fatal(err)
+	}
+	if createdNode || config.DNSNodeID != "7" || !config.ExternalDNSNode || override["dns_node_id"] != "7" || override["proxy_node_id"] != "2" {
+		t.Fatalf("existing DNS node was not adopted correctly: config=%+v override=%+v created=%v", config, override, createdNode)
+	}
+	record, ok := ipStore.Record(config.ID)
+	if !ok || record.NodeSecret != "existing-secret" {
+		t.Fatalf("existing node secret was not retained: %+v", record)
+	}
+}
+
+func TestDeleteAdoptedIPConfigKeepsExistingDNSNode(t *testing.T) {
+	deletedNode := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.URL.Path == "/api/nodes" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{})
+		case request.URL.Path == "/api/nodes/7" && request.Method == http.MethodDelete:
+			deletedNode = true
+			writer.WriteHeader(http.StatusNoContent)
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	stored, err := ipStore.Save(IPConfig{IP: "203.0.113.10", DNSNodeID: "7", NodeName: "EU", ExternalDNSNode: true, Routes: map[string]string{}}, "existing-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(upstream.URL, NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore), customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodDelete, "/enhancer/api/ip-configs/"+stored.ID, nil)
+	request.Header.Set("Authorization", "Bearer valid")
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("delete returned %d: %s", response.Code, response.Body.String())
+	}
+	if deletedNode {
+		t.Fatal("deleting an adopted IP configuration must not delete the existing DNS node")
+	}
+	if _, ok := ipStore.Record(stored.ID); ok {
+		t.Fatal("IP configuration was not deleted")
+	}
+}
+
 func TestApplyIPRoutesMigratesLegacyRuleBeforeClearingOverride(t *testing.T) {
 	var migrated map[string]any
 	var override map[string]string

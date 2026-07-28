@@ -91,3 +91,11 @@ cd .. && bash -n prismdns.sh enhanced_install.sh agent_install.sh
 细化域名目录运行时读取自 [1-stream/1stream-public-utils](https://github.com/1-stream/1stream-public-utils) 的 `stream.smartdns.list`。该仓库目前未声明许可证，本 Fork 不提交其名单副本，只在部署实例中按用户请求实时读取和转换。
 
 上游 `mslxi/Liquid-Glass-Prism-dns` 同样未提供 Controller/Agent 源码及许可证。增强层不复制、不修改上游二进制，只通过已公开的 HTTP API 与其协作。上游二进制的使用和分发仍受原作者权利约束。
+
+## 节点接入与解锁配置
+
+“节点管理”直接新增的 DNS 客户端仅完成上游 Agent 入网。它在已上线但尚未选择解锁服务时，会显示为“未纳管”，而不会误报为等待健康上报。
+
+点击该节点卡片的“接入 IP 服务”，选择解锁机和要启用的服务，保存后即会复用原 DNS 节点的 Agent 密钥生成专属 `prismdns.sh` 安装命令。完成安装后，该节点会自动上报 DNS 、路由、解锁链路流量和目标测试结果。
+
+对这类被接管的既有节点，删除 IP 配置只会清理对应解锁路由和本面板配置，不会删除原手动创建的 DNS 节点。节点名称和分组支持简体中文、英文、数字、空格、点、下划线和连字符。

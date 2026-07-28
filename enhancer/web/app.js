@@ -157,7 +157,8 @@ function isOnline(node) { if (!node.last_heartbeat) return false; return Date.no
 function configForNode(node) { return state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(node?.id)); }
 function clientState(config, node) {
   if (!isOnline(node)) return {kind:"bad", label:"OFFLINE", detail:state.lang === "zh" ? "控制通道离线" : "Control channel offline"};
-  if (!config?.health_updated_at) return {kind:"warn", label:t("pending"), detail:state.lang === "zh" ? "等待客户端健康上报" : "Waiting for client health report"};
+  if (!config) return {kind:"warn", label:state.lang === "zh" ? "未纳管" : "UNMANAGED", detail:state.lang === "zh" ? "Agent 已在线，尚未配置解锁服务" : "Agent connected; unlock services are not configured"};
+  if (!config.health_updated_at) return {kind:"warn", label:t("pending"), detail:state.lang === "zh" ? "等待客户端健康上报" : "Waiting for client health report"};
   if (Date.now() - new Date(config.health_updated_at).getTime() > 180000) return {kind:"warn", label:t("stale"), detail:state.lang === "zh" ? "健康上报已超时" : "Health report is stale"};
   const routes = `${Number(config.healthy_routes || 0)}/${Number(config.expected_routes || 0)}`;
   if (config.dns_ready && config.system_dns_ready && config.routes_ready) return {kind:"good", label:t("ready"), detail:`${t("healthRoutes")} ${routes}`};
@@ -388,7 +389,7 @@ function nodesHTML() {
     const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail};
     return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${status.kind}" title="${escapeHTML(status.detail)}">${escapeHTML(status.label)}</span></div>
       <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("targetCompatibility")}</span><strong title="${escapeHTML(status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
-      <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button><button class="btn small node-test" data-node-id="${nodeID(node.id)}" ${node.role !== "proxy" ? "disabled" : ""}>${t("triggerUnlock")}</button><button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
+      <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${nodeID(node.id)}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}<button class="btn small node-test" data-node-id="${nodeID(node.id)}" ${node.role !== "proxy" ? "disabled" : ""}>${t("triggerUnlock")}</button><button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
 
@@ -445,6 +446,7 @@ function bindShell() {
   document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openService(card.dataset.serviceId)));
   document.querySelectorAll(".node-test").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); triggerNodeCheck(button.dataset.nodeId); }));
   document.querySelectorAll(".node-install").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openInstallCommand(button.dataset.nodeId); }));
+  document.querySelectorAll(".node-manage-ip").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openIPForm(null, 1, state.nodes.find(node => nodeID(node.id) === nodeID(button.dataset.nodeId))); }));
   document.querySelectorAll(".node-edit").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openNodeForm(state.nodes.find(node => nodeID(node.id) === nodeID(button.dataset.nodeId))); }));
   document.querySelectorAll(".node-delete").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openDeleteNode(button.dataset.nodeId); }));
   document.querySelectorAll(".ip-row").forEach(row => {
@@ -508,10 +510,10 @@ function openInstallCommand(id) {
   state.modal = {type:"install-command", node, command:installCommand(node, smartMode)};
   renderModal();
 }
-function openIPForm(config = null, step = config ? 2 : 1) {
+function openIPForm(config = null, step = config ? 2 : 1, existingNode = null) {
   const routes = {...(config?.routes || {})};
   const defaultProxy = Object.values(routes)[0] || nodeID(proxyNodes()[0]?.id);
-  state.modal = {type:"ip-form", config, step, draft:{ip:config?.ip || "", note:config?.note || "", smart:config?.smart !== false}, routes, defaultProxy, serviceSearch:"", error:""};
+  state.modal = {type:"ip-form", config, existingNode, step, draft:{ip:config?.ip || serverHost(existingNode || {}) || "", note:config?.note || existingNode?.name || "", smart:config?.smart !== false}, routes, defaultProxy, serviceSearch:"", error:""};
   renderModal();
 }
 function ipScriptCommand(config) {
@@ -629,9 +631,9 @@ function ipScriptHTML() {
 
 function ipDeleteHTML() {
   const config = state.modal.config;
-  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("deleteNode")}</h2><p>${escapeHTML(config.ip)}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p>${t("ipDeleteConfirm")}</p></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn danger" id="confirm-delete-ip" type="button">${t("deleteNode")}</button></div></footer></section></div>`;
+  const message = config.external_dns_node ? (state.lang === "zh" ? "删除此 IP 配置？手动创建的 DNS 节点将被保留。" : "Delete this IP configuration? The manually created DNS node will be kept.") : t("ipDeleteConfirm");
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("deleteNode")}</h2><p>${escapeHTML(config.ip)}</p></div><button class="btn icon modal-close" type="button">&times;</button></header><div class="modal-body"><p>${message}</p></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn danger" id="confirm-delete-ip" type="button">${t("deleteNode")}</button></div></footer></section></div>`;
 }
-
 function bindModal() {
   document.querySelectorAll(".modal-close").forEach(button => button.addEventListener("click", closeModal));
   document.querySelector(".modal-backdrop")?.addEventListener("click", event => { if (event.target.classList.contains("modal-backdrop")) closeModal(); });
@@ -810,7 +812,7 @@ function submitIPForm(event) {
   const defaultProxy = String(form.get("default_proxy") || "");
   if (!ip) { state.modal.error = t("addressInvalid"); renderModal(); return; }
   if (!defaultProxy) { state.modal.error = t("noProxy"); renderModal(); return; }
-  state.modal.draft = {ip, note:String(form.get("note") || "").trim(), smart:form.get("smart") === "on"};
+  state.modal.draft = {ip, note:String(form.get("note") || "").trim(), smart:form.get("smart") === "on", existing_dns_node_id:nodeID(state.modal.existingNode?.id)};
   state.modal.defaultProxy = defaultProxy;
   state.modal.step = 2;
   state.modal.error = "";
@@ -863,10 +865,9 @@ async function clearAllTraffic() {
 
 function readNodeDraft(form) {
   const current = state.modal.draft || emptyNodeDraft();
-  const normalizeLabel = (value, keepComma = false) => String(value || "").trim().replace(keepComma ? /[^a-zA-Z0-9 ,]+/g : /[^a-zA-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const normalizeLabel = (value, keepComma = false) => String(value || "").trim().replace(keepComma ? /[^\p{L}\p{N} ,._-]+/gu : /[^\p{L}\p{N} ._-]+/gu, " ").replace(/\s+/g, " ").trim();
   return {...current, name:normalizeLabel(form.get("name")), role:String(form.get("role") || "proxy"), public_ip:String(form.get("public_ip") || "").trim(), country:String(form.get("country") || "").trim(), group:normalizeLabel(form.get("group"), true), priority:Number(form.get("priority")) || 0};
 }
-
 function validAddress(value) {
   if (!value) return true;
   const candidate = value.replace(/^\[|\]$/g, "");
@@ -878,9 +879,9 @@ function validAddress(value) {
 function validateNodeDraft(draft) {
   if (!draft.name) return t("nameRequired");
   if (draft.name.length > 64) return t("nameTooLong");
-  if (!/^[a-zA-Z0-9 ]+$/.test(draft.name)) return t("nameInvalid");
+  if (!/^[\p{L}\p{N} ._-]+$/u.test(draft.name)) return t("nameInvalid");
   if (draft.group.length > 64) return t("groupTooLong");
-  if (!/^[a-zA-Z0-9 ,]*$/.test(draft.group)) return t("groupInvalid");
+  if (!/^[\p{L}\p{N} ,._-]*$/u.test(draft.group)) return t("groupInvalid");
   if (!validAddress(draft.public_ip)) return t("addressInvalid");
   if (draft.role === "proxy" && (!Number.isInteger(draft.priority) || draft.priority < 1 || draft.priority > 100)) return t("priorityInvalid");
   return "";
