@@ -133,3 +133,35 @@ func TestServiceIconHandlerFallsBackToSVG(t *testing.T) {
 		t.Fatalf("unexpected fallback icon: %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 	}
 }
+
+func TestWebAssetsExposeVersionAndDisableCaching(t *testing.T) {
+	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	catalog := NewCatalogManager("http://127.0.0.1:1/unavailable", http.DefaultClient, store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, _ := NewApp("http://127.0.0.1:1", catalog, store, ipStore, http.DefaultClient)
+
+	for _, path := range []string{"/", "/assets/app.js?v=" + uiVersion} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		app.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s returned %d", path, response.Code)
+		}
+		if cacheControl := response.Header().Get("Cache-Control"); !strings.Contains(cacheControl, "no-store") || !strings.Contains(cacheControl, "no-cache") {
+			t.Fatalf("%s has weak cache control: %q", path, cacheControl)
+		}
+		if response.Header().Get("Pragma") != "no-cache" || response.Header().Get("Expires") != "0" {
+			t.Fatalf("%s is missing legacy no-cache headers", path)
+		}
+		if response.Header().Get("X-Prism-UI-Version") != uiVersion {
+			t.Fatalf("%s is missing UI version header", path)
+		}
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if !strings.Contains(response.Body.String(), "/assets/app.js?v="+uiVersion) {
+		t.Fatalf("index does not reference versioned UI assets: %s", response.Body.String())
+	}
+}

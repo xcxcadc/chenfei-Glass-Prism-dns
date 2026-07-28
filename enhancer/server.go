@@ -19,6 +19,8 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
+const uiVersion = "1.4.1"
+
 type App struct {
 	catalog      *CatalogManager
 	store        *CustomServiceStore
@@ -113,7 +115,7 @@ func (app *App) handleRoot(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	if request.URL.Path == "/" && request.Method == http.MethodGet {
-		writer.Header().Set("Cache-Control", "no-store, max-age=0")
+		setNoCacheHeaders(writer)
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 		writer.WriteHeader(http.StatusOK)
 		_, _ = writer.Write(app.indexHTML)
@@ -135,6 +137,7 @@ func (app *App) handleHealth(writer http.ResponseWriter, request *http.Request) 
 		"service_count":     len(snapshot.Services),
 		"custom_count":      len(app.store.List()),
 		"controller_target": app.upstream.String(),
+		"ui_version":        uiVersion,
 	})
 }
 
@@ -300,9 +303,16 @@ func methodNotAllowed(writer http.ResponseWriter, methods ...string) {
 
 func noStore(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.Header().Set("Cache-Control", "no-store, max-age=0")
+		setNoCacheHeaders(writer)
 		next.ServeHTTP(writer, request)
 	})
+}
+
+func setNoCacheHeaders(writer http.ResponseWriter) {
+	writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	writer.Header().Set("Pragma", "no-cache")
+	writer.Header().Set("Expires", "0")
+	writer.Header().Set("X-Prism-UI-Version", uiVersion)
 }
 
 func securityHeaders(next http.Handler) http.Handler {
