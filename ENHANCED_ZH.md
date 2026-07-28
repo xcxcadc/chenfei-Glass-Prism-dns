@@ -99,3 +99,5 @@ cd .. && bash -n prismdns.sh enhanced_install.sh agent_install.sh
 点击该节点卡片的“接入 IP 服务”，选择解锁机和要启用的服务，保存后即会复用原 DNS 节点的 Agent 密钥生成专属 `prismdns.sh` 安装命令。完成安装后，该节点会自动上报 DNS 、路由、解锁链路流量和目标测试结果。
 
 对这类被接管的既有节点，删除 IP 配置只会清理对应解锁路由和本面板配置，不会删除原手动创建的 DNS 节点。节点名称和分组支持简体中文、英文、数字、空格、点、下划线和连字符。
+
+由于上游 Controller 只接受 ASCII 节点名称和分组，增强层会把中文显示名称持久化到 `/var/lib/prism-enhancer/node-labels.json`，并向 Controller 提交兼容名称。新增、编辑、删除及面板重启后都会自动保持映射，不改变节点 ID、Agent 密钥或路由关系。

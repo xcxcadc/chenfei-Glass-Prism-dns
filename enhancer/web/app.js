@@ -270,7 +270,7 @@ async function loadAll(silent = false) {
   state.loading = !silent;
   if (!silent) render();
   try {
-    const [nodes, rules, catalog, ipConfigs] = await Promise.all([api("/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs")]);
+    const [nodes, rules, catalog, ipConfigs] = await Promise.all([api("/enhancer/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs")]);
     state.nodes = Array.isArray(nodes) ? nodes : [];
     state.rules = Array.isArray(rules) ? rules : [];
     state.catalog = catalog.services || [];
@@ -905,7 +905,7 @@ function submitNodeForm(event) {
 async function saveNode(draft) {
   const node = state.modal.node;
   try {
-    await api(`/api/nodes/${encodeURIComponent(node.id)}`, {method:"PUT", body:JSON.stringify({...node, ...draft})});
+    await api(`/enhancer/api/nodes/${encodeURIComponent(node.id)}`, {method:"PUT", body:JSON.stringify({...node, ...draft})});
     state.modal = null; toast(t("saved"), "good"); await loadAll(true);
   } catch (error) { state.modal.error = error.message; renderModal(); }
 }
@@ -919,7 +919,7 @@ function installCommand(node, smartMode) {
 async function createNode(draft) {
   const payload = {...draft, secret:draft.secret || randomSecret()};
   try {
-    const node = await api("/api/nodes", {method:"POST", body:JSON.stringify(payload)});
+    const node = await api("/enhancer/api/nodes", {method:"POST", body:JSON.stringify(payload)});
     const created = node && typeof node === "object" ? {...payload, ...node} : payload;
     state.modal = {type:"install-command", node:created, command:installCommand(created, state.modal.smartMode)};
     await loadAll(true);
@@ -932,7 +932,7 @@ async function deleteNode() {
   const node = state.modal?.node;
   if (!node) return;
   try {
-    await api(`/api/nodes/${encodeURIComponent(node.id)}`, {method:"DELETE"});
+    await api(`/enhancer/api/nodes/${encodeURIComponent(node.id)}`, {method:"DELETE"});
     if (nodeID(state.dnsNodeId) === nodeID(node.id)) { state.dnsNodeId = ""; localStorage.removeItem("enhancer_dns"); }
     state.modal = null; toast(t("deleted"), "good"); await loadAll(true);
   } catch (error) { toast(error.message, "error"); }
@@ -956,7 +956,7 @@ async function refreshNodeUnlock(id, trigger = false) {
   let latest = state.nodes.find(node => nodeID(node.id) === nodeID(id));
   while (Date.now() - started < 45000) {
     await delay(2000);
-    const nodes = await api("/api/nodes");
+    const nodes = await api("/enhancer/api/nodes");
     state.nodes = Array.isArray(nodes) ? nodes : state.nodes;
     latest = state.nodes.find(node => nodeID(node.id) === nodeID(id));
     const current = JSON.stringify(parseUnlock(latest));

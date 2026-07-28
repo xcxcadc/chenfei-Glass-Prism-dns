@@ -23,6 +23,7 @@ type App struct {
 	catalog      *CatalogManager
 	store        *CustomServiceStore
 	ipStore      *IPConfigStore
+	nodeLabels   *NodeLabelStore
 	upstream     *url.URL
 	proxy        *httputil.ReverseProxy
 	client       *http.Client
@@ -66,6 +67,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		catalog:      catalog,
 		store:        store,
 		ipStore:      ipStore,
+		nodeLabels:   &NodeLabelStore{labels: make(map[string]NodeLabel)},
 		upstream:     upstream,
 		proxy:        proxy,
 		client:       client,
@@ -86,6 +88,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/custom-services/", app.handleCustomService)
 	mux.HandleFunc("/enhancer/api/connectivity", app.handleConnectivity)
 	mux.HandleFunc("/enhancer/api/account", app.handleAccountUpdate)
+	mux.HandleFunc("/enhancer/api/nodes", app.handleEnhancedNodes)
+	mux.HandleFunc("/enhancer/api/nodes/", app.handleEnhancedNode)
 	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
 	mux.HandleFunc("/enhancer/api/ip-configs/", app.handleIPConfig)
 	mux.HandleFunc("/enhancer/api/bootstrap/", app.handleBootstrap)

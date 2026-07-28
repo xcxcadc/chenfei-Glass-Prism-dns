@@ -28,11 +28,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize IP config store: %v", err)
 	}
+	nodeLabels, err := NewNodeLabelStore(filepath.Join(*dataDir, "node-labels.json"))
+	if err != nil {
+		log.Fatalf("initialize node label store: %v", err)
+	}
 	catalog := NewCatalogManager(*catalogURL, client, store)
 	app, err := NewApp(*upstream, catalog, store, ipStore, client, *controllerDB)
 	if err != nil {
 		log.Fatalf("initialize server: %v", err)
 	}
+	app.nodeLabels = nodeLabels
 
 	server := &http.Server{
 		Addr:              *listen,

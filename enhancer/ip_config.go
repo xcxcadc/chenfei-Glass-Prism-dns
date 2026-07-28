@@ -398,6 +398,7 @@ func (app *App) deleteIPConfig(writer http.ResponseWriter, request *http.Request
 			writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
+		_ = app.nodeLabels.Delete(record.DNSNodeID)
 	}
 	if err := app.ipStore.Delete(record.ID); errors.Is(err, os.ErrNotExist) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "IP 配置不存在"})
