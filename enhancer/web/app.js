@@ -289,9 +289,10 @@ function preferredServiceTestDomain(service) {
     "TikTok": ["tiktok.com"],
     "YouTube": ["youtube.com"],
   };
+  const domains = service.domains.map(domain => domain.replace(/^\*\./, "").replace(/^\./, ""));
   return (preferred[service.name] || []).find(candidate =>
-    service.domains.some(domain => candidate === domain || candidate.endsWith(`.${domain}`))
-  ) || service.domains[0];
+    domains.some(domain => candidate === domain || candidate.endsWith(`.${domain}`))
+  ) || domains[0];
 }
 
 async function api(path, options = {}) {
@@ -708,7 +709,7 @@ function serviceFormHTML(service) {
   return `<div class="modal-backdrop"><form class="modal medium panel" id="service-form"><header class="modal-head"><div><h2>${service ? t("customEdit") : t("addService")}</h2></div><button class="btn icon modal-close" type="button">×</button></header>
     <div class="modal-body form-stack"><div class="field"><label>${t("serviceName")}</label><input class="input" name="name" value="${escapeHTML(service?.name || "")}" required maxlength="80"></div>
     <div class="field"><label>${t("category")}</label><input class="input" name="category" list="service-category-options" value="${escapeHTML(service?.category || (state.lang === "zh" ? "自定义服务" : "Custom services"))}" maxlength="64"><datalist id="service-category-options">${categoryOptions}</datalist></div>
-    <div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" placeholder="example.com&#10;cdn.example.com" required>${escapeHTML((service?.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名，也支持逗号或分号分隔。" : "One domain per line; commas and semicolons are also accepted."}</span></div></div>
+    <div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" placeholder="example.com&#10;*.example.com" required>${escapeHTML((service?.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名；泛域名请写成 *.example.com，也支持逗号或分号分隔。" : "One domain per line. Use *.example.com for wildcards; commas and semicolons are also accepted."}</span></div></div>
     <footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit">${t("save")}</button></div></footer></form></div>`;
 }
 

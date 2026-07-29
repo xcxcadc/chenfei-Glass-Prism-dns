@@ -31,7 +31,7 @@ func TestRuleSetHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := store.Upsert(Service{Name: "Custom", Domains: []string{"example.com", "cdn.example.com"}})
+	service, err := store.Upsert(Service{Name: "Custom", Domains: []string{"example.com", "*.example.com", "*.cdn.example.com"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +51,12 @@ func TestRuleSetHandler(t *testing.T) {
 	body, _ := io.ReadAll(response.Body)
 	if !strings.Contains(string(body), "DOMAIN-SUFFIX,example.com") {
 		t.Fatalf("unexpected ruleset: %s", body)
+	}
+	if !strings.Contains(string(body), "DOMAIN-SUFFIX,cdn.example.com") || strings.Contains(string(body), "DOMAIN-SUFFIX,*.") {
+		t.Fatalf("wildcard ruleset was not compiled safely: %s", body)
+	}
+	if strings.Count(string(body), "DOMAIN-SUFFIX,example.com") != 1 {
+		t.Fatalf("duplicate compiled suffix rule: %s", body)
 	}
 }
 

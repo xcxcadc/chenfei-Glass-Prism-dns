@@ -26,7 +26,7 @@ type DomainTestResult struct {
 }
 
 func TestConnectivity(ctx context.Context, request ConnectivityRequest) ([]DomainTestResult, error) {
-	domains := normalizeDomains(request.Domains)
+	domains := routingDomains(request.Domains)
 	if len(domains) == 0 {
 		return nil, fmt.Errorf("at least one valid domain is required")
 	}

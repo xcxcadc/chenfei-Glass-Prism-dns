@@ -52,7 +52,11 @@ func (store *CustomServiceStore) Upsert(service Service) (Service, error) {
 	service.Name = strings.TrimSpace(service.Name)
 	service.Category = strings.TrimSpace(service.Category)
 	service.OriginalCategory = ""
-	service.Domains = normalizeDomains(service.Domains)
+	domains, err := normalizeCustomDomains(service.Domains)
+	if err != nil {
+		return Service{}, err
+	}
+	service.Domains = domains
 	service.Custom = true
 	if service.Name == "" {
 		return Service{}, errors.New("service name is required")
@@ -77,8 +81,14 @@ func (store *CustomServiceStore) Upsert(service Service) (Service, error) {
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	previous, existed := store.services[service.ID]
 	store.services[service.ID] = service
 	if err := store.saveLocked(); err != nil {
+		if existed {
+			store.services[service.ID] = previous
+		} else {
+			delete(store.services, service.ID)
+		}
 		return Service{}, err
 	}
 	return service, nil
@@ -87,11 +97,16 @@ func (store *CustomServiceStore) Upsert(service Service) (Service, error) {
 func (store *CustomServiceStore) Delete(id string) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if _, ok := store.services[id]; !ok {
+	service, ok := store.services[id]
+	if !ok {
 		return os.ErrNotExist
 	}
 	delete(store.services, id)
-	return store.saveLocked()
+	if err := store.saveLocked(); err != nil {
+		store.services[id] = service
+		return err
+	}
+	return nil
 }
 
 func (store *CustomServiceStore) load() error {
@@ -107,6 +122,17 @@ func (store *CustomServiceStore) load() error {
 		return fmt.Errorf("decode custom services: %w", err)
 	}
 	for _, service := range services {
+		if service.ID == "" || !strings.HasPrefix(service.ID, "custom-") {
+			return fmt.Errorf("invalid custom service id %q", service.ID)
+		}
+		domains, err := normalizeCustomDomains(service.Domains)
+		if err != nil {
+			return fmt.Errorf("validate custom service %q: %w", service.Name, err)
+		}
+		if len(domains) == 0 {
+			return fmt.Errorf("validate custom service %q: at least one valid domain is required", service.Name)
+		}
+		service.Domains = domains
 		service.Custom = true
 		store.services[service.ID] = service
 	}

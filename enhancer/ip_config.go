@@ -270,7 +270,7 @@ func preferredProbeDomain(service Service) string {
 	if len(domains) > 0 {
 		return domains[0]
 	}
-	return service.Domains[0]
+	return ""
 }
 
 func preferredProbeDomains(service Service) []string {
@@ -306,17 +306,18 @@ func preferredProbeDomains(service Service) []string {
 		"Wavve":                           {"www.wavve.com"},
 		"YouTube":                         {"youtube.com", "redirector.googlevideo.com"},
 	}
+	serviceDomains := routingDomains(service.Domains)
 	result := make([]string, 0, len(preferred[service.Name]))
 	for _, candidate := range preferred[service.Name] {
-		for _, domain := range service.Domains {
+		for _, domain := range serviceDomains {
 			if domain == candidate || strings.HasSuffix(candidate, "."+domain) {
 				result = append(result, candidate)
 				break
 			}
 		}
 	}
-	if len(result) == 0 && len(service.Domains) > 0 {
-		candidates := append([]string(nil), service.Domains...)
+	if len(result) == 0 && len(serviceDomains) > 0 {
+		candidates := append([]string(nil), serviceDomains...)
 		sort.SliceStable(candidates, func(left, right int) bool {
 			leftLabels := strings.Count(candidates[left], ".")
 			rightLabels := strings.Count(candidates[right], ".")

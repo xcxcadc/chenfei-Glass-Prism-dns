@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.4.4"
+const uiVersion = "1.4.5"
 
 type App struct {
 	catalog      *CatalogManager
@@ -409,7 +409,7 @@ func (app *App) handleRuleSet(writer http.ResponseWriter, request *http.Request)
 	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	writer.Header().Set("Cache-Control", "public, max-age=1800")
 	_, _ = fmt.Fprintf(writer, "# %s | %s\n", service.Category, service.Name)
-	for _, domain := range service.Domains {
+	for _, domain := range routingDomains(service.Domains) {
 		_, _ = fmt.Fprintf(writer, "DOMAIN-SUFFIX,%s\n", domain)
 	}
 }

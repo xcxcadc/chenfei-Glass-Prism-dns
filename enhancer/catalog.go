@@ -16,7 +16,6 @@ var (
 	categoryPattern          = regexp.MustCompile(`^#\s*-+\s*>\s*(.+?)\s*$`)
 	servicePattern           = regexp.MustCompile(`^#\s*>\s*(.+?)\s*$`)
 	domainPattern            = regexp.MustCompile(`^nameserver\s+/([^/]+)/`)
-	domainValid              = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*[a-z0-9]$|^[a-z0-9]$`)
 	serviceDomainSupplements = map[string][]string{
 		"FR:France.tv": {
 			"france.tv",
@@ -203,36 +202,112 @@ func canonicalCategory(category, serviceName string) string {
 }
 
 func normalizeDomain(value string) string {
+	return routingDomain(normalizeDomainPattern(value))
+}
+
+func normalizeDomainPattern(value string) string {
 	domain := strings.ToLower(strings.TrimSpace(value))
-	domain = strings.TrimPrefix(domain, "*.")
+	wildcard := strings.HasPrefix(domain, "*.")
+	if wildcard {
+		domain = strings.TrimPrefix(domain, "*.")
+	}
 	domain = strings.TrimPrefix(domain, ".")
 	domain = strings.TrimSuffix(domain, ".")
-	if domain == "" || len(domain) > 253 || strings.Contains(domain, " ") || !domainValid.MatchString(domain) {
+	if !validDomainName(domain) {
 		return ""
+	}
+	if wildcard {
+		return "*." + domain
 	}
 	return domain
 }
 
 func normalizeDomains(domains []string) []string {
+	return collectDomains(domains, normalizeDomain)
+}
+
+func normalizeCustomDomains(domains []string) ([]string, error) {
+	values := splitDomainValues(domains)
+	if len(values) > 1000 {
+		return nil, fmt.Errorf("域名数量过多，最多支持 1000 项")
+	}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		domain := normalizeDomainPattern(value)
+		if domain == "" {
+			return nil, fmt.Errorf("域名或泛域名格式无效 %q；请使用 example.com 或 *.example.com", strings.TrimSpace(value))
+		}
+		if _, ok := seen[domain]; ok {
+			continue
+		}
+		seen[domain] = struct{}{}
+		result = append(result, domain)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func routingDomains(domains []string) []string {
+	return collectDomains(domains, routingDomain)
+}
+
+func routingDomain(value string) string {
+	domain := normalizeDomainPattern(value)
+	return strings.TrimPrefix(domain, "*.")
+}
+
+func collectDomains(domains []string, normalize func(string) string) []string {
 	seen := make(map[string]struct{})
+	result := make([]string, 0, len(domains))
+	for _, value := range splitDomainValues(domains) {
+		domain := normalize(value)
+		if domain == "" {
+			continue
+		}
+		if _, ok := seen[domain]; ok {
+			continue
+		}
+		seen[domain] = struct{}{}
+		result = append(result, domain)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func splitDomainValues(domains []string) []string {
 	result := make([]string, 0, len(domains))
 	for _, line := range domains {
 		for _, value := range strings.FieldsFunc(line, func(r rune) bool {
 			return r == '\n' || r == '\r' || r == ',' || r == ';'
 		}) {
-			domain := normalizeDomain(value)
-			if domain == "" {
-				continue
+			if strings.TrimSpace(value) != "" {
+				result = append(result, value)
 			}
-			if _, ok := seen[domain]; ok {
-				continue
-			}
-			seen[domain] = struct{}{}
-			result = append(result, domain)
 		}
 	}
-	sort.Strings(result)
 	return result
+}
+
+func validDomainName(domain string) bool {
+	if domain == "" || len(domain) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if len(label) == 0 || len(label) > 63 || !asciiAlphaNumeric(label[0]) || !asciiAlphaNumeric(label[len(label)-1]) {
+			return false
+		}
+		for index := 1; index < len(label)-1; index++ {
+			if !asciiAlphaNumeric(label[index]) && label[index] != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func asciiAlphaNumeric(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
 }
 
 func stableServiceID(category, name string) string {

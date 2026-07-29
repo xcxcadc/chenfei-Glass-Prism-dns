@@ -45,6 +45,9 @@ func TestCustomServiceStorePersists(t *testing.T) {
 	if !saved.Custom || len(saved.Domains) != 2 {
 		t.Fatalf("unexpected saved service: %#v", saved)
 	}
+	if saved.Domains[0] != "*.cdn.example.com" || saved.Domains[1] != "example.com" {
+		t.Fatalf("wildcard domain was not preserved: %#v", saved.Domains)
+	}
 	reloaded, err := NewCustomServiceStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +55,9 @@ func TestCustomServiceStorePersists(t *testing.T) {
 	service, ok := reloaded.Get(saved.ID)
 	if !ok || service.Name != "My Service" {
 		t.Fatalf("service was not persisted: %#v", service)
+	}
+	if service.Domains[0] != "*.cdn.example.com" || service.Domains[1] != "example.com" {
+		t.Fatalf("reloaded wildcard domain changed: %#v", service.Domains)
 	}
 	if err := reloaded.Delete(saved.ID); err != nil {
 		t.Fatal(err)
@@ -65,6 +71,64 @@ func TestNormalizeDomainsRejectsInvalidValues(t *testing.T) {
 	domains := normalizeDomains([]string{"ok.example", "bad value", "https://example.com", "ok.example"})
 	if len(domains) != 1 || domains[0] != "ok.example" {
 		t.Fatalf("unexpected domains: %#v", domains)
+	}
+}
+
+func TestNormalizeCustomDomainsPreservesWildcards(t *testing.T) {
+	domains, err := normalizeCustomDomains([]string{"Example.COM.", "*.API.Example.COM.", "example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{"*.api.example.com", "example.com"}
+	if len(domains) != len(expected) {
+		t.Fatalf("unexpected domains: %#v", domains)
+	}
+	for index := range expected {
+		if domains[index] != expected[index] {
+			t.Fatalf("unexpected domains: %#v", domains)
+		}
+	}
+	routes := routingDomains(domains)
+	if len(routes) != 2 || routes[0] != "api.example.com" || routes[1] != "example.com" {
+		t.Fatalf("unexpected routing domains: %#v", routes)
+	}
+}
+
+func TestNormalizeCustomDomainsRejectsMalformedWildcards(t *testing.T) {
+	for _, value := range []string{"*", "*example.com", "foo.*.example.com", "**.example.com", "https://example.com", "-bad.example"} {
+		if _, err := normalizeCustomDomains([]string{value}); err == nil {
+			t.Fatalf("expected %q to be rejected", value)
+		}
+	}
+}
+
+func TestCustomServiceStoreRollsBackFailedWrites(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewCustomServiceStore(filepath.Join(root, "services.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.Upsert(Service{Name: "Original", Domains: []string{"example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := filepath.Join(root, "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store.path = filepath.Join(blocked, "services.json")
+	if _, err := store.Upsert(Service{ID: saved.ID, Name: "Changed", Domains: []string{"changed.example"}}); err == nil {
+		t.Fatal("expected update persistence failure")
+	}
+	current, ok := store.Get(saved.ID)
+	if !ok || current.Name != "Original" || current.Domains[0] != "example.com" {
+		t.Fatalf("failed update was not rolled back: %#v", current)
+	}
+	if err := store.Delete(saved.ID); err == nil {
+		t.Fatal("expected delete persistence failure")
+	}
+	if _, ok := store.Get(saved.ID); !ok {
+		t.Fatal("failed delete was not rolled back")
 	}
 }
 

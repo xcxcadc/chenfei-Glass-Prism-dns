@@ -20,7 +20,7 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	defer upstream.Close()
 
 	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
-	service, err := customStore.Upsert(Service{Name: "Persistent", Domains: []string{"example.com", "cdn.example.com"}})
+	service, err := customStore.Upsert(Service{Name: "Persistent", Domains: []string{"example.com", "*.example.com", "*.cdn.example.com"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +51,9 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	}
 	if payload.RuleOverrides["example.com"] != "proxy-1" || payload.RuleOverrides["cdn.example.com"] != "proxy-1" {
 		t.Fatalf("persistent overrides were not restored: %+v", payload.RuleOverrides)
+	}
+	if _, exists := payload.RuleOverrides["*.example.com"]; exists {
+		t.Fatalf("wildcard leaked into agent overrides: %+v", payload.RuleOverrides)
 	}
 	if payload.RuleOverrides["stale.example"] != "old-proxy" || payload.RuleOverrides["example.net"] != "public-proxy" {
 		t.Fatalf("unmanaged overrides changed: %+v", payload.RuleOverrides)

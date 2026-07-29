@@ -296,3 +296,11 @@ func TestPreferredProbeDomainsUsesSeveralStableGenericCandidates(t *testing.T) {
 		t.Fatalf("deep legacy hostname should not displace stable root candidates: %#v", domains)
 	}
 }
+
+func TestPreferredProbeDomainsCompilesWildcardPatterns(t *testing.T) {
+	service := Service{Name: "Custom", Domains: []string{"*.cdn.example.com", "*.example.com"}}
+	domains := preferredProbeDomains(service)
+	if len(domains) != 2 || domains[0] != "example.com" || domains[1] != "cdn.example.com" {
+		t.Fatalf("wildcard patterns reached probes: %#v", domains)
+	}
+}

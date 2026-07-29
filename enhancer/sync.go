@@ -48,7 +48,7 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 	managedDomains := make(map[string]struct{})
 	for _, service := range services {
 		serviceByID[service.ID] = service
-		for _, domain := range service.Domains {
+		for _, domain := range routingDomains(service.Domains) {
 			managedDomains[domain] = struct{}{}
 		}
 	}
@@ -85,11 +85,7 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 			"priority": 100, "check": false, "node_id": proxyID,
 		}
 		probeDomain := preferredProbeDomain(service)
-		for _, domain := range service.Domains {
-			domain = strings.TrimSpace(strings.ToLower(domain))
-			if domain == "" {
-				continue
-			}
+		for _, domain := range routingDomains(service.Domains) {
 			name := "enhancer:" + service.ID
 			rules[name+":"+domain] = map[string]any{
 				"pattern": domain, "ips": peers, "strategy": "", "name": name, "type": "DOMAIN-SUFFIX",
