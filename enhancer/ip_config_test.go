@@ -85,6 +85,9 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if !strings.Contains(bootstrapResponse.Body.String(), `"health_probes"`) || !strings.Contains(bootstrapResponse.Body.String(), `"netflix.com"`) {
 		t.Fatalf("bootstrap did not include route probes: %s", bootstrapResponse.Body.String())
 	}
+	if !strings.Contains(bootstrapResponse.Body.String(), `"route_domains":["netflix.com"]`) {
+		t.Fatalf("bootstrap did not include every routed domain: %s", bootstrapResponse.Body.String())
+	}
 	if !strings.Contains(bootstrapResponse.Body.String(), `"unlock_test":"Netflix"`) {
 		t.Fatalf("bootstrap did not include UnlockTests provider: %s", bootstrapResponse.Body.String())
 	}
@@ -396,5 +399,45 @@ func TestPreferredProbeDomainsCompilesWildcardPatterns(t *testing.T) {
 	domains := preferredProbeDomains(service)
 	if len(domains) != 2 || domains[0] != "example.com" || domains[1] != "cdn.example.com" {
 		t.Fatalf("wildcard patterns reached probes: %#v", domains)
+	}
+}
+
+func TestPreferredProbeDomainsIncludesGeminiApplicationDependencies(t *testing.T) {
+	service := Service{Name: "Gemini", Domains: []string{
+		"gemini.google.com",
+		"aisandbox-pa.googleapis.com",
+		"alkaliminer-pa.googleapis.com",
+		"proactivebackend-pa.googleapis.com",
+		"robinfrontend-pa.googleapis.com",
+	}}
+	domains := preferredProbeDomains(service)
+	if len(domains) != len(service.Domains) {
+		t.Fatalf("expected every Gemini application dependency, got %#v", domains)
+	}
+	for _, domain := range service.Domains {
+		if !contains(domains, domain) {
+			t.Fatalf("missing Gemini application dependency %q from %#v", domain, domains)
+		}
+	}
+}
+
+func TestPreferredProbeDomainsUsesReachableOpenAIDependencyHosts(t *testing.T) {
+	service := Service{Name: "ChatGPT / OpenAI", Domains: []string{
+		"chatgpt.com",
+		"openai.com",
+		"oaistatic.com",
+		"oaiusercontent.com",
+		"sora.com",
+	}}
+	domains := preferredProbeDomains(service)
+	for _, domain := range []string{"chatgpt.com", "openai.com", "cdn.oaistatic.com", "files.oaiusercontent.com", "sora.com"} {
+		if !contains(domains, domain) {
+			t.Fatalf("missing reachable OpenAI dependency %q from %#v", domain, domains)
+		}
+	}
+	for _, rootOnly := range []string{"oaistatic.com", "oaiusercontent.com"} {
+		if contains(domains, rootOnly) {
+			t.Fatalf("non-serving root %q should not be used as an HTTPS dependency: %#v", rootOnly, domains)
+		}
 	}
 }

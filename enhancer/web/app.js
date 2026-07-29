@@ -19,7 +19,7 @@ const translations = {
     addIP: "添加 IP", editIP: "配置服务", targetIP: "目标 IP", note: "备注", defaultProxy: "默认解锁机", chooseServices: "选择服务", selectedServices: "已选服务", clientScript: "客户端脚本", runScriptHint: "在目标服务器以 root 身份执行，脚本会安装 DNS Agent、测试本机 DNS，并可接管或恢复系统 DNS。", noIPConfigs: "尚未添加 IP 配置", ipDeleteConfirm: "删除该 IP 配置及其 DNS 节点？", saveConfig: "保存配置", scriptCommand: "一键配置命令",
     totalTraffic: "全体解锁流量", clientTraffic: "解锁链路流量", clearTraffic: "清零流量", clearAllTraffic: "全部清零", trafficHint: "按目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到已选解锁机 TCP 80/443 的 RX/TX；不统计整机网卡流量。", trafficUpdated: "流量更新时间",
     clientState: "数据面状态", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "路由探针",
-    actualAudit: "目标机实测", auditPending: "待实测", targetAvailable: "目标机可用", targetProblem: "目标机异常", targetCompatibility: "目标机兼容性",
+    actualAudit: "目标机实测", auditPending: "待实测", targetAvailable: "目标机可用", targetUncertain: "探测待确认", targetProblem: "目标机异常", targetCompatibility: "目标机兼容性",
     actualAvailable: "实测可用", actualProblem: "异常或波动", referenceOnly: "仅节点自检", agentReference: "节点自检（仅参考）", noTargetAudit: "尚无目标机实测",
     accountSettings: "账户安全", accountHint: "验证旧账号后修改管理员用户名和密码。", oldUsername: "旧用户名", oldPassword: "旧密码", newUsername: "新用户名", newPassword: "新密码", confirmPassword: "确认新密码", updateAccount: "更新账户", credentialsInvalid: "旧用户名或旧密码不正确", passwordMismatch: "两次输入的新密码不一致", accountUpdated: "账户已更新，请使用新账号重新登录",
     siteSettings: "站点设置", siteSettingsHint: "自定义左上角产品名称、说明文字和浏览器标签标题。", siteName: "网页名称", browserTitle: "页面标签名称", siteTagline: "网页说明", saveBranding: "保存站点设置", brandingUpdated: "站点名称已更新",
@@ -46,7 +46,7 @@ const translations = {
     addIP: "Add IP", editIP: "Configure services", targetIP: "Target IP", note: "Note", defaultProxy: "Default proxy", chooseServices: "Choose services", selectedServices: "Selected services", clientScript: "Client script", runScriptHint: "Run as root on the target server. The script installs the DNS Agent, tests local DNS, and can take over or restore system DNS.", noIPConfigs: "No IP configuration yet", ipDeleteConfirm: "Delete this IP configuration and its DNS node?", saveConfig: "Save configuration", scriptCommand: "One-click command",
     totalTraffic: "Total unlock traffic", clientTraffic: "Unlock link traffic", clearTraffic: "Clear traffic", clearAllTraffic: "Clear all", trafficHint: "Each target IP counts local Prism DNS UDP/TCP 53 plus TCP 80/443 to selected unlock proxies. Whole-interface traffic is excluded.", trafficUpdated: "Traffic updated",
     clientState: "Data-plane status", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "Route probes",
-    actualAudit: "Target audit", auditPending: "Not audited", targetAvailable: "Target passed", targetProblem: "Target issue", targetCompatibility: "Target compatibility",
+    actualAudit: "Target audit", auditPending: "Not audited", targetAvailable: "Target passed", targetUncertain: "Probe inconclusive", targetProblem: "Target issue", targetCompatibility: "Target compatibility",
     actualAvailable: "Verified passed", actualProblem: "Failed or unstable", referenceOnly: "Agent only", agentReference: "Agent self-check (reference only)", noTargetAudit: "No target audit yet",
     accountSettings: "Account security", accountHint: "Verify the current credentials before changing the administrator username and password.", oldUsername: "Current username", oldPassword: "Current password", newUsername: "New username", newPassword: "New password", confirmPassword: "Confirm new password", updateAccount: "Update account", credentialsInvalid: "Current username or password is incorrect", passwordMismatch: "The new passwords do not match", accountUpdated: "Account updated. Sign in with the new credentials.",
     siteSettings: "Site settings", siteSettingsHint: "Customize the product name, supporting text, and browser tab title.", siteName: "Website name", browserTitle: "Browser tab title", siteTagline: "Website description", saveBranding: "Save site settings", brandingUpdated: "Site branding updated",
@@ -73,8 +73,9 @@ const state = {
   user: JSON.parse(localStorage.getItem("prism_user") || "{}"),
   lang: localStorage.getItem("enhancer_lang") || "zh",
   theme: localStorage.getItem("prism_theme_v2") || "light",
-  tab: "services", nodes: [], rules: [], catalog: [], categories: [], customCategories: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
-  overrides: {}, activeSelections: {}, search: "", category: "", loading: false, modal: null, testResults: null, scrollPositions: {},
+  tab: localStorage.getItem("enhancer_tab") || "services", nodes: [], rules: [], catalog: [], categories: [], customCategories: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
+  overrides: {}, activeSelections: {}, search: "", category: "", statusFilter: "", nodeFilter: "", page: 1, pageSize: 20, selectedServiceIds: new Set(),
+  loading: false, modal: null, testResults: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "",
   branding: {site_name:"", browser_title:"", site_tagline:""}
 };
 
@@ -91,6 +92,11 @@ function markLoadedServiceIcons(root = document) {
 document.addEventListener("load", event => {
   if (event.target instanceof HTMLImageElement && event.target.matches(".service-icon img")) {
     event.target.parentElement?.classList.add("loaded");
+  }
+}, true);
+document.addEventListener("error", event => {
+  if (event.target instanceof HTMLImageElement && event.target.matches(".service-icon img")) {
+    event.target.parentElement?.classList.remove("loaded");
   }
 }, true);
 new MutationObserver(() => requestAnimationFrame(() => markLoadedServiceIcons()))
@@ -177,12 +183,18 @@ function activeNodeFor(rule) {
   if (rule?.target_type === "node") return state.nodes.find(node => nodeID(node.id) === nodeID(rule.target_val)) || null;
   return null;
 }
+function routedNodeForService(service) {
+  const targetConfig = configForNode(selectedDNS());
+  const proxyId = nodeID(targetConfig?.routes?.[service.id]);
+  if (proxyId) return state.nodes.find(node => nodeID(node.id) === proxyId) || null;
+  return activeNodeFor(serviceRule(service));
+}
 function serviceStatus(service, node) {
   const targetConfig = configForNode(selectedDNS());
   const targetResult = targetConfig?.service_results?.[service.id];
   if (targetResult && nodeID(targetConfig?.routes?.[service.id]) === nodeID(node?.id)) {
     const audit = auditResultState(targetResult);
-    return {kind:audit.kind, label:audit.kind === "good" ? t("targetAvailable") : t("targetProblem"), raw:targetResult};
+    return {kind:audit.kind, label:audit.kind === "good" ? t("targetAvailable") : audit.kind === "warn" ? t("targetUncertain") : t("targetProblem"), raw:targetResult};
   }
   const key = serviceDetectorKey(service);
   const value = key ? parseUnlock(node)[key] || "" : "";
@@ -193,9 +205,21 @@ function serviceIconHTML(service) {
   const name = displayServiceName(service);
   const initial = Array.from(String(name || "P").trim())[0] || "P";
   const iconDomain = serviceRouteDomains(service)[0] || service.id;
-  return `<span class="service-icon" data-initial="${escapeHTML(initial)}"><img src="/enhancer/icons/${encodeURIComponent(service.id)}.png?domain=${encodeURIComponent(iconDomain)}" alt="" title="${escapeHTML(name)}" loading="lazy" decoding="async"></span>`;
+  return `<span class="service-icon" data-initial="${escapeHTML(initial)}"><span class="service-icon-fallback" aria-hidden="true">${escapeHTML(initial)}</span><img src="/enhancer/icons/${encodeURIComponent(service.id)}.png?domain=${encodeURIComponent(iconDomain)}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="eager" decoding="async" fetchpriority="high"></span>`;
 }
 function formatDate(value) { if (!value) return "-"; try { return new Date(value).toLocaleString(state.lang === "zh" ? "zh-CN" : "en-US"); } catch { return value; } }
+function formatRelativeDate(value) {
+  if (!value) return state.lang === "zh" ? "待检测" : "Pending";
+  const milliseconds = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return formatDate(value);
+  const minutes = Math.floor(milliseconds / 60000);
+  if (minutes < 1) return state.lang === "zh" ? "刚刚" : "Just now";
+  if (minutes < 60) return state.lang === "zh" ? `${minutes} 分钟前` : `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return state.lang === "zh" ? `${hours} 小时前` : `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return state.lang === "zh" ? `${days} 天前` : `${days}d ago`;
+}
 function formatBytes(value) { const bytes = Number(value) || 0; if (bytes < 1024) return `${bytes} B`; const units = ["KB", "MB", "GB", "TB"]; let size = bytes; let unit = -1; do { size /= 1024; unit++; } while (size >= 1024 && unit < units.length - 1); return `${size >= 100 ? size.toFixed(0) : size.toFixed(2)} ${units[unit]}`; }
 function displayCategory(value) { return state.lang === "zh" ? categoryNames[value] || value : value; }
 function displayServiceName(service) { return state.lang === "zh" ? commonNames[service.name] || service.name : service.name; }
@@ -284,6 +308,45 @@ function clientState(config, node) {
   if (config.dns_ready && config.system_dns_ready && config.routes_ready) return {kind:"good", label:t("ready"), detail:`${t("healthRoutes")} ${routes}`};
   return {kind:"bad", label:t("degraded"), detail:config.health_message || `${t("healthRoutes")} ${routes}`};
 }
+
+function viewFingerprint() {
+  const nodes = state.nodes.map(node => ({
+    id:nodeID(node.id), role:node.role, name:node.name, address:node.address, public_ip:node.public_ip,
+    country:node.country, group:node.group, priority:node.priority, online:isOnline(node),
+    unlock:state.tab === "nodes" || state.tab === "audit" || state.tab === "alerts" ? parseUnlock(node) : undefined
+  }));
+  const configs = state.ipConfigs.map(config => ({
+    id:config.id, ip:config.ip, note:config.note, dns_node_id:nodeID(config.dns_node_id), routes:config.routes,
+    dns_ready:config.dns_ready, system_dns_ready:config.system_dns_ready, routes_ready:config.routes_ready,
+    healthy_routes:config.healthy_routes, expected_routes:config.expected_routes, health_message:config.health_message,
+    service_results:config.service_results, service_audited_at:config.service_audited_at,
+    traffic_rx_bytes:state.tab === "ips" ? config.traffic_rx_bytes : undefined,
+    traffic_tx_bytes:state.tab === "ips" ? config.traffic_tx_bytes : undefined
+  }));
+  return JSON.stringify({
+    tab:state.tab,
+    nodes,
+    configs,
+    rules:state.rules,
+    overrides:state.overrides,
+    activeSelections:state.activeSelections,
+    catalog:state.catalog.map(service => ({id:service.id, name:service.name, category:service.category, domains:service.domains, custom:service.custom})),
+    categories:state.categories,
+    branding:state.branding
+  });
+}
+
+function updateBackgroundIndicator() {
+  const indicator = document.getElementById("background-sync-state");
+  if (!indicator) return;
+  indicator.classList.toggle("pending", !!state.backgroundPending);
+  const label = indicator.querySelector("span:last-child");
+  if (label) {
+    label.textContent = state.backgroundPending
+      ? (state.lang === "zh" ? "有后台更新" : "Background update")
+      : (state.lang === "zh" ? "数据已同步" : "Data synced");
+  }
+}
 function auditResultState(result) {
   const value = String(result || "").trim();
   if (!value) return {kind:"", label:t("auditPending"), detail:""};
@@ -291,7 +354,7 @@ function auditResultState(result) {
     return {kind:"good", label:state.lang === "zh" ? "可用" : "Available", detail:value};
   }
   const ratio = value.match(/(\d+)\s*\/\s*(\d+)(?:\s*YES)?/i);
-  if (/UNSTABLE/i.test(value) && ratio) {
+  if (/INCONCLUSIVE|DEGRADED|UNSTABLE|Banned|WAF/i.test(value) && ratio) {
     const passed = Number(ratio[1]); const total = Number(ratio[2]);
     const wafCount = /WAF|Banned/i.test(value) ? Math.max(1, total - passed) : 0;
     const suffix = wafCount
@@ -300,78 +363,18 @@ function auditResultState(result) {
     return {
       kind:"bad",
       label:state.lang === "zh"
-        ? `不可用（稳定性未达标：${total} 次仅 ${passed} 次成功${suffix}）`
-        : `Unavailable (stability failed: ${passed} of ${total} passed${suffix})`,
+        ? `不可用（${total} 次仅 ${passed} 次成功${suffix}）`
+        : `Unavailable (${passed} of ${total} passed${suffix})`,
       detail:value
     };
   }
-  if (/UNSTABLE/i.test(value)) return {kind:"bad", label:state.lang === "zh" ? "不可用（稳定性未达标）" : "Unavailable (stability failed)", detail:value};
-  if (/Restricted|Partial|Banned|WAF|Error|Failed|FAIL|N\/A|Unavailable|No result/i.test(value)) {
+  if (/INCONCLUSIVE|DEGRADED|UNSTABLE|Banned|WAF/i.test(value)) {
+    return {kind:"bad", label:state.lang === "zh" ? "不可用（真实检测未通过）" : "Unavailable (real check failed)", detail:value};
+  }
+  if (/Restricted|Partial|Error|Failed|FAIL|N\/A|Unavailable|No result|^NO\b/i.test(value)) {
     return {kind:"bad", label:state.lang === "zh" ? "不可用" : "Unavailable", detail:value};
   }
   return {kind:"bad", label:state.lang === "zh" ? "不可用" : "Unavailable", detail:value};
-}
-
-function failoverEvent(config, serviceId) {
-  return config?.failovers?.[serviceId] || null;
-}
-
-function proxyDisplayName(proxyId, fallback = "") {
-  return String(fallback || state.nodes.find(node => nodeID(node.id) === nodeID(proxyId))?.name || proxyId || "-");
-}
-
-function failoverState(config, serviceId) {
-  const event = failoverEvent(config, serviceId);
-  if (!event) return {kind:"", label:"", detail:""};
-  const from = proxyDisplayName(event.from_proxy_id, event.from_proxy_name);
-  const to = proxyDisplayName(event.to_proxy_id, event.to_proxy_name);
-  if (event.status === "recovered") {
-    const stayed = nodeID(event.from_proxy_id) && nodeID(event.from_proxy_id) === nodeID(event.to_proxy_id);
-    return {
-      kind:"good",
-      label:stayed
-        ? (state.lang === "zh" ? `${to} 已恢复，复测可用` : `${to} recovered; re-audit passed`)
-        : (state.lang === "zh" ? `已切换到 ${to}，复测可用` : `Switched to ${to}; re-audit passed`),
-      detail:event.recovered_result || event.reason || ""
-    };
-  }
-  if (event.status === "switched") {
-    return {
-      kind:"warn",
-      label:state.lang === "zh" ? `异常后已从 ${from} 自动切换到 ${to}，等待复测` : `Automatically switched from ${from} to ${to}; awaiting re-audit`,
-      detail:event.reason || ""
-    };
-  }
-  return {
-    kind:"bad",
-    label:state.lang === "zh" ? `当前服务异常，暂无其他可用 IPv4 解锁机` : "Service failed; no alternative IPv4 unlock proxy is available",
-    detail:event.reason || ""
-  };
-}
-
-function latestFailover(config) {
-  return Object.entries(config?.failovers || {})
-    .map(([serviceId, event]) => ({serviceId, event, state:failoverState(config, serviceId)}))
-    .sort((left, right) => new Date(right.event.updated_at || 0) - new Date(left.event.updated_at || 0))[0] || null;
-}
-
-function notifyFailoverChanges(previousConfigs, nextConfigs) {
-  const changes = [];
-  nextConfigs.forEach(config => {
-    const previous = previousConfigs.find(item => item.id === config.id);
-    if (!previous) return;
-    Object.entries(config.failovers || {}).forEach(([serviceId, event]) => {
-      if (!event.updated_at || previous.failovers?.[serviceId]?.updated_at === event.updated_at) return;
-      const service = state.catalog.find(item => item.id === serviceId);
-      changes.push({
-        updatedAt:new Date(event.updated_at).getTime(),
-        message:`${config.ip} · ${service ? displayServiceName(service) : serviceId}：${failoverState(config, serviceId).label}`,
-        type:event.status === "recovered" ? "good" : event.status === "unavailable" ? "error" : "warn"
-      });
-    });
-  });
-  changes.sort((left, right) => right.updatedAt - left.updatedAt);
-  if (changes[0]) toast(changes[0].message, changes[0].type);
 }
 
 function targetAuditObservations(proxyId, service) {
@@ -479,10 +482,10 @@ function logout(callAPI = true) {
 
 async function loadAll(silent = false) {
   if (!state.token) return render();
+  const previousFingerprint = viewFingerprint();
   state.loading = !silent;
   if (!silent) render();
   try {
-    const previousConfigs = state.ipConfigs;
     const [nodes, rules, catalog, ipConfigs, categoryData] = await Promise.all([api("/enhancer/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs"), api("/enhancer/api/categories")]);
     state.nodes = Array.isArray(nodes) ? nodes : [];
     state.rules = Array.isArray(rules) ? rules : [];
@@ -491,7 +494,6 @@ async function loadAll(silent = false) {
     state.customCategories = Array.isArray(categoryData?.custom_categories) ? categoryData.custom_categories : [];
     state.catalogMeta = catalog;
     state.ipConfigs = Array.isArray(ipConfigs) ? ipConfigs : [];
-    notifyFailoverChanges(previousConfigs, state.ipConfigs);
     if (!dnsNodes().some(node => nodeID(node.id) === nodeID(state.dnsNodeId))) state.dnsNodeId = dnsNodes()[0]?.id || "";
     localStorage.setItem("enhancer_dns", nodeID(state.dnsNodeId));
     await loadRoutingState();
@@ -500,7 +502,11 @@ async function loadAll(silent = false) {
   finally {
     state.loading = false;
     const preserveDraft = silent && ["service-form", "service-category", "category-manager", "node-form", "ip-form"].includes(state.modal?.type);
-    if (!preserveDraft) render();
+    const changed = previousFingerprint !== viewFingerprint();
+    state.lastBackgroundSync = new Date().toISOString();
+    state.backgroundPending = preserveDraft && changed;
+    if (!preserveDraft && (!silent || changed)) render();
+    else updateBackgroundIndicator();
   }
 }
 
@@ -515,19 +521,37 @@ async function loadRoutingState() {
 
 let eventSource;
 let reloadTimer;
+let searchRenderTimer;
+let searchComposing = false;
+let clockTimer;
 function scheduleLiveReload() {
-  clearTimeout(reloadTimer);
+  if (reloadTimer) return;
   reloadTimer = setTimeout(() => {
+    reloadTimer = null;
     const active = document.activeElement;
-    if (state.modal || active?.matches?.("input, textarea, select, [contenteditable=true]")) { scheduleLiveReload(); return; }
+    if (state.modal || active?.matches?.("input, textarea, select, [contenteditable=true]")) {
+      state.backgroundPending = true;
+      updateBackgroundIndicator();
+      scheduleLiveReload();
+      return;
+    }
     loadAll(true);
-  }, 700);
+  }, 5000);
 }
 function connectSSE() {
   if (eventSource || !state.token) return;
   eventSource = new EventSource(`/api/sse?token=${encodeURIComponent(state.token)}`);
   eventSource.onmessage = scheduleLiveReload;
   eventSource.onerror = () => { eventSource.close(); eventSource = null; setTimeout(connectSSE, 3500); };
+}
+
+function updateClock() {
+  const element = document.getElementById("topbar-clock");
+  if (!element) return;
+  const now = new Date();
+  const date = now.toLocaleDateString(state.lang === "zh" ? "zh-CN" : "en-US", {year:"numeric", month:"2-digit", day:"2-digit", weekday:"short"});
+  const time = now.toLocaleTimeString(state.lang === "zh" ? "zh-CN" : "en-US", {hour12:false});
+  element.textContent = `${date}  ${time}`;
 }
 
 function render() {
@@ -541,6 +565,7 @@ function render() {
   bindShell();
   renderModal();
   restoreScrollPositions(state.tab);
+  updateBackgroundIndicator();
 }
 
 function loginHTML() {
@@ -552,55 +577,182 @@ function loginHTML() {
 }
 function bindLogin() { document.getElementById("login-form").addEventListener("submit", login); }
 
-function toolbarActionsHTML() {
-  if (state.tab === "services") return `<button class="btn" id="refresh-catalog">${t("catalogRefresh")}</button><button class="btn primary" id="add-service">${t("addService")}</button>`;
-  if (state.tab === "nodes") return `<button class="btn primary" id="add-node">${t("addNode")}</button>`;
-  return `<button class="btn primary" id="add-ip">${t("addIP")}</button>`;
-}
-
 function activeContentHTML() {
   if (state.tab === "services") return servicesHTML();
   if (state.tab === "nodes") return nodesHTML();
-  return ipConfigsHTML();
+  if (state.tab === "ips") return ipConfigsHTML();
+  if (state.tab === "sync") return syncHTML();
+  if (state.tab === "audit") return auditHTML();
+  if (state.tab === "alerts") return alertsHTML();
+  return settingsHTML();
+}
+
+function pageMeta() {
+  const pages = {
+    services: ["服务编排", "Service Routing", "配置真实可用的 DNS 解锁线路"],
+    nodes: ["节点管理", "Nodes", "管理解锁机与被解锁机"],
+    ips: ["IP 配置", "IP Configs", "按目标 IP 管理服务与流量"],
+    sync: ["同步域名名单", "Domain Catalog", "更新和检查细化域名库"],
+    audit: ["日志与审计", "Logs & Audits", "查看目标机真实复测结果"],
+    alerts: ["告警中心", "Alerts", "集中处理当前异常与待确认项目"],
+    settings: ["设置中心", "Settings", "管理站点、账户与服务分类"]
+  };
+  const current = pages[state.tab] || pages.services;
+  return {title:state.lang === "zh" ? current[0] : current[1], hint:current[2]};
+}
+
+function navigationHTML() {
+  const items = [
+    ["services", "bi-grid-fill", state.lang === "zh" ? "服务编排" : "Service Routing"],
+    ["nodes", "bi-diagram-3", state.lang === "zh" ? "节点管理" : "Nodes"],
+    ["ips", "bi-globe2", state.lang === "zh" ? "IP 配置" : "IP Configs"],
+    ["sync", "bi-arrow-repeat", state.lang === "zh" ? "同步域名名单" : "Domain Catalog"],
+    ["audit", "bi-journal-text", state.lang === "zh" ? "日志与审计" : "Logs & Audits"],
+    ["alerts", "bi-bell", state.lang === "zh" ? "告警中心" : "Alerts"],
+    ["settings", "bi-gear", state.lang === "zh" ? "设置中心" : "Settings"]
+  ];
+  return items.map(([id, icon, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}"><i class="bi ${icon}" aria-hidden="true"></i><span>${escapeHTML(label)}</span></button>`).join("");
 }
 
 function shellHTML() {
-  const pageTitle = state.tab === "services" ? t("services") : state.tab === "nodes" ? t("nodes") : t("ipConfigs");
-  const pageHint = state.lang === "zh"
-    ? (state.tab === "services" ? "编排解锁服务、验证真实可用性并选择最佳节点" : state.tab === "nodes" ? "管理解锁机与被解锁机的在线状态" : "按目标 IP 配置服务、流量与自动下发")
-    : (state.tab === "services" ? "Route services, verify availability, and choose the best node" : state.tab === "nodes" ? "Manage unlock and client node health" : "Configure services, traffic, and delivery by target IP");
-  return `<div class="shell"><aside class="sidebar"><div class="sidebar-brand"><strong>${escapeHTML(siteName())}</strong><span>${escapeHTML(siteTagline())}</span></div>
-    <nav class="tabs" aria-label="${escapeHTML(browserTitle())}"><button class="tab ${state.tab === "services" ? "active" : ""}" data-tab="services">${t("services")}</button><button class="tab ${state.tab === "nodes" ? "active" : ""}" data-tab="nodes">${t("nodes")}</button><button class="tab ${state.tab === "ips" ? "active" : ""}" data-tab="ips">${t("ipConfigs")}</button></nav>
-    <div class="sidebar-footer"><button class="user-button account-settings-trigger" id="account-settings" title="${t("accountSettings")}"><strong>${escapeHTML(state.user.username || "admin")}</strong><span>${state.lang === "zh" ? "管理员账户" : "Administrator"}</span></button>
-    <button class="btn small site-settings-trigger">${t("siteSettings")}</button><div class="sidebar-tools"><button class="btn small theme-toggle-trigger" id="theme-toggle">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger" id="lang-toggle">${t("language")}</button><button class="btn small danger logout-trigger" id="logout">${t("logout")}</button></div></div></aside>
-    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(pageTitle)}</h1><p>${escapeHTML(pageHint)}</p></div><div class="toolbar-right"><span class="live-state"><span class="status-dot"></span>${escapeHTML(t("online"))}</span><span class="live-state authorization-state"><span class="status-dot"></span>${state.lang === "zh" ? "授权白名单 5 秒同步" : "Allowlist sync 5s"}</span>${toolbarActionsHTML()}<button class="btn" id="refresh">${t("refresh")}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small site-settings-trigger">${t("siteSettings")}</button><button class="btn small theme-toggle-trigger">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger">${t("language")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
+  const meta = pageMeta();
+  return `<div class="shell"><aside class="sidebar"><div class="sidebar-brand"><span class="brand-mark"><i class="bi bi-triangle-fill" aria-hidden="true"></i></span><div><strong>${escapeHTML(siteName())}</strong><span>${escapeHTML(siteTagline())}</span></div></div>
+    <nav class="tabs" aria-label="${escapeHTML(browserTitle())}">${navigationHTML()}</nav>
+    <div class="sidebar-footer"><button class="user-button account-settings-trigger" id="account-settings" title="${t("accountSettings")}"><span class="user-avatar">${escapeHTML(Array.from(state.user.username || "A")[0] || "A")}</span><span class="user-copy"><strong>${escapeHTML(state.user.username || "admin")}</strong><small>${state.lang === "zh" ? "超级管理员" : "Administrator"}</small></span><i class="bi bi-chevron-up" aria-hidden="true"></i></button>
+    <div class="sidebar-tools"><button class="btn small theme-toggle-trigger" id="theme-toggle" title="${t("theme")}"><i class="bi ${state.theme === "light" ? "bi-moon" : "bi-sun"}" aria-hidden="true"></i></button><button class="btn small lang-toggle-trigger" id="lang-toggle">${t("language")}</button><button class="btn small danger logout-trigger" id="logout">${t("logout")}</button></div></div></aside>
+    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(meta.title)}</h1><p>${escapeHTML(meta.hint)}</p></div><div class="toolbar-right"><span class="topbar-clock" id="topbar-clock"></span><span class="topbar-divider"></span><span class="live-state authorization-state" title="${state.lang === "zh" ? "只有面板授权目标 IP 可使用 DNS 解锁" : "Only panel-authorized target IPs may use unlock DNS"}"><span class="status-dot"></span>${state.lang === "zh" ? "授权白名单" : "Allowlist"}</span><span class="live-state" id="background-sync-state"><span class="status-dot"></span><span>${state.lang === "zh" ? "数据已同步" : "Data synced"}</span></span><button class="btn icon" id="refresh" title="${t("refresh")}"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button><button class="btn icon theme-toggle-trigger" title="${t("theme")}"><i class="bi ${state.theme === "light" ? "bi-moon" : "bi-sun"}" aria-hidden="true"></i></button><button class="btn lang-toggle-trigger"><i class="bi bi-translate" aria-hidden="true"></i>${state.lang === "zh" ? "中文" : "EN"}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
     <main class="container" data-view="${escapeHTML(state.tab)}">${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main></section></div>`;
 }
 
 function servicesHTML() {
   const dns = dnsNodes(); const proxies = proxyNodes();
   const categories = catalogCategories();
-  const filtered = state.catalog.filter(service => !state.category || service.category === state.category);
-  const configuredServices = state.catalog.filter(service => {
-    const rule = serviceRule(service);
-    return rule && activeNodeFor(rule);
-  });
-  const configured = configuredServices.length;
   const targetNode = selectedDNS();
   const targetConfig = configForNode(targetNode);
+  const totalTraffic = state.ipConfigs.reduce((total, config) => total + Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0), 0);
+  const configuredServices = state.catalog.filter(service => {
+    return !!routedNodeForService(service);
+  });
+  const configured = configuredServices.length;
   const targetHealth = targetNode ? clientState(targetConfig, targetNode) : {kind:"warn", label:t("pending"), detail:t("selectDNS")};
   const targetIP = targetConfig?.ip || targetNode?.public_ip || targetNode?.address || "-";
-  return `${dns.length === 0 ? `<div class="panel empty"><strong>${t("noDNS")}</strong><button class="btn primary" id="empty-add-node">＋ ${t("addNode")}</button></div>` : ""}
-    <section class="orchestration-summary panel"><div class="summary-target"><span>${t("targetIP")}</span><strong>${escapeHTML(targetIP)}</strong><select class="select" id="dns-select"><option value="">${t("selectDNS")}</option>${dns.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(state.dnsNodeId) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select></div>
-    <div class="summary-health"><span>${state.lang === "zh" ? "路线健康" : "Route health"}</span><strong class="${targetHealth.kind}">${escapeHTML(targetHealth.label)}</strong><small title="${escapeHTML(targetHealth.detail)}">${escapeHTML(targetHealth.detail)}</small></div>
-    <div class="summary-metric"><span>${t("selectedServices")}</span><strong>${configured} <small>/ ${state.catalog.length}</small></strong></div>
-    <div class="summary-metric"><span>${state.lang === "zh" ? "可用节点" : "Available nodes"}</span><strong>${proxies.filter(isOnline).length} <small>/ ${proxies.length}</small></strong></div>
-    <div class="summary-metric"><span>${t("customServices")}</span><strong>${state.catalog.filter(item => item.custom).length}</strong></div></section>
-    <section class="orchestration-grid"><div class="panel orchestration-column service-library"><header class="section-head"><div><h2>${state.lang === "zh" ? "服务库" : "Service library"}</h2><p>${state.catalog.length} ${t("totalServices")}</p></div><div class="section-head-actions"><button class="btn small" id="manage-categories">${t("manageCategories")}</button><button class="btn small" id="clear-filter">${state.lang === "zh" ? "重置" : "Reset"}</button></div></header>
-    <div class="library-filters"><input class="input" id="service-search" value="${escapeHTML(state.search)}" placeholder="${t("search")}"><select class="select" id="category-filter"><option value="">${t("allCategories")}</option>${categories.map(category => `<option value="${escapeHTML(category)}" ${state.category === category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select></div>
-    ${filtered.length ? `<div class="service-grid">${filtered.map(serviceCardHTML).join("")}</div><div class="empty" id="service-filter-empty" hidden><strong>${t("noServices")}</strong></div>` : `<div class="empty"><strong>${t("noServices")}</strong></div>`}</div>
-    <div class="panel orchestration-column selected-services"><header class="section-head"><div><h2>${t("selectedServices")}</h2><p>${configured} ${state.lang === "zh" ? "项已路由" : "routed"}</p></div></header><div class="selected-service-list">${configuredServices.length ? configuredServices.map(selectedServiceRowHTML).join("") : `<div class="empty compact"><strong>${t("notConfigured")}</strong><span>${state.lang === "zh" ? "从左侧选择服务开始配置" : "Choose a service from the library"}</span></div>`}</div></div>
-    <div class="panel orchestration-column route-nodes"><header class="section-head"><div><h2>${state.lang === "zh" ? "节点选择与线路表现" : "Nodes and route health"}</h2><p>${state.lang === "zh" ? "依据真实目标机检测结果选择" : "Based on real target audits"}</p></div></header><div class="route-node-list">${proxies.length ? proxies.map(node => routeNodeCardHTML(node, configuredServices)).join("") : `<div class="empty compact"><strong>${t("noProxy")}</strong></div>`}</div><div class="route-note"><strong>${state.lang === "zh" ? "线路测试说明" : "Route testing"}</strong><span>${state.lang === "zh" ? "Agent 按真实 DNS、HTTPS 与播放链路定期复测；保存后自动下发并刷新 DNS。" : "Agents retest real DNS, HTTPS, and playback routes. Saves are delivered automatically."}</span></div></div></section>`;
+  const filtered = state.catalog.filter(service => {
+    if (state.category && service.category !== state.category) return false;
+    if (!serviceMatches(service, state.search)) return false;
+    const node = routedNodeForService(service);
+    const status = serviceStatus(service, node);
+    if (state.nodeFilter && nodeID(node?.id) !== nodeID(state.nodeFilter)) return false;
+    if (state.statusFilter === "configured" && !node) return false;
+    if (state.statusFilter === "available" && status.kind !== "good") return false;
+    if (state.statusFilter === "issue" && !["warn", "bad"].includes(status.kind)) return false;
+    if (state.statusFilter === "unconfigured" && node) return false;
+    return true;
+  });
+  const pageCount = Math.max(1, Math.ceil(filtered.length / state.pageSize));
+  state.page = Math.min(Math.max(1, state.page), pageCount);
+  const pageStart = (state.page - 1) * state.pageSize;
+  const pageServices = filtered.slice(pageStart, pageStart + state.pageSize);
+  return `${dns.length === 0 ? `<div class="panel empty"><strong>${t("noDNS")}</strong><button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button></div>` : ""}
+    <section class="dashboard-summary panel">
+      <div class="dashboard-stat"><span class="stat-icon blue"><i class="bi bi-grid-fill"></i></span><div><span>${state.lang === "zh" ? "活跃服务" : "Active services"}</span><strong>${configured}</strong><small>${state.lang === "zh" ? `总计 ${state.catalog.length}` : `${state.catalog.length} total`}</small></div></div>
+      <div class="dashboard-stat"><span class="stat-icon cyan"><i class="bi bi-server"></i></span><div><span>${state.lang === "zh" ? "DNS 节点" : "DNS nodes"}</span><strong>${dns.length}</strong><small class="good-copy"><i class="bi bi-circle-fill"></i>${dns.filter(isOnline).length}/${dns.length} ${state.lang === "zh" ? "在线" : "online"}</small></div></div>
+      <div class="dashboard-stat"><span class="stat-icon violet"><i class="bi bi-shield-check"></i></span><div><span>${t("targetIP")}</span><strong class="summary-ip">${escapeHTML(targetIP)}</strong><small>${escapeHTML(targetNode?.country || targetNode?.name || "-")}</small></div></div>
+      <div class="dashboard-stat"><span class="stat-icon green"><i class="bi bi-activity"></i></span><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small class="${targetHealth.kind}-copy">${escapeHTML(targetHealth.label)}</small></div></div>
+    </section>
+    <section class="service-dashboard panel">
+      <div class="service-toolbar">
+        <label class="search-control"><i class="bi bi-search"></i><input id="service-search" value="${escapeHTML(state.search)}" placeholder="${t("search")}"></label>
+        <select class="select compact-select" id="category-filter"><option value="">${t("allCategories")}</option>${categories.map(category => `<option value="${escapeHTML(category)}" ${state.category === category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select>
+        <select class="select compact-select" id="status-filter"><option value="">${state.lang === "zh" ? "全部状态" : "All statuses"}</option><option value="available" ${state.statusFilter === "available" ? "selected" : ""}>${state.lang === "zh" ? "实测可用" : "Verified"}</option><option value="issue" ${state.statusFilter === "issue" ? "selected" : ""}>${state.lang === "zh" ? "异常/待确认" : "Issues"}</option><option value="configured" ${state.statusFilter === "configured" ? "selected" : ""}>${t("configured")}</option><option value="unconfigured" ${state.statusFilter === "unconfigured" ? "selected" : ""}>${t("notConfigured")}</option></select>
+        <select class="select compact-select" id="node-filter"><option value="">${state.lang === "zh" ? "全部节点" : "All nodes"}</option>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(state.nodeFilter) === nodeID(node.id) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select>
+        <span class="toolbar-spacer"></span>
+        <select class="select compact-select" id="batch-action"><option value="">${state.lang === "zh" ? "批量操作" : "Bulk actions"}</option><option value="select-page">${state.lang === "zh" ? "选择当前页" : "Select page"}</option><option value="clear">${state.lang === "zh" ? "取消选择" : "Clear selection"}</option><option value="configure">${state.lang === "zh" ? "配置所选服务" : "Configure selected"}</option></select>
+        <button class="btn" id="clear-filter"><i class="bi bi-arrow-counterclockwise"></i>${state.lang === "zh" ? "重置" : "Reset"}</button>
+        <button class="btn" id="manage-categories"><i class="bi bi-tags"></i>${t("manageCategories")}</button>
+        <button class="btn primary" id="add-service"><i class="bi bi-plus-circle"></i>${t("addService")}</button>
+      </div>
+      <div class="target-strip"><div><span>${state.lang === "zh" ? "当前目标 IP" : "Current target"}</span><strong>${escapeHTML(targetIP)}</strong><span class="region-pill">${escapeHTML(targetNode?.country || "-")}</span><span>${escapeHTML(targetNode?.name || "-")}</span></div><label><span>${state.lang === "zh" ? "更换" : "Switch"}</span><select class="select" id="dns-select"><option value="">${t("selectDNS")}</option>${dns.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(state.dnsNodeId) ? "selected" : ""}>${escapeHTML(node.name)} · ${escapeHTML(node.public_ip || node.address || "")}</option>`).join("")}</select></label></div>
+      <div class="service-table-wrap"><table class="service-table"><thead><tr><th><input type="checkbox" id="select-page-services" aria-label="${state.lang === "zh" ? "选择当前页" : "Select page"}"></th><th>${state.lang === "zh" ? "服务名称" : "Service"}</th><th>${state.lang === "zh" ? "状态" : "Status"}</th><th>${state.lang === "zh" ? "解析结果" : "Audit"}</th><th>${state.lang === "zh" ? "路由节点" : "Route node"}</th><th>${state.lang === "zh" ? "上次检测" : "Last test"}</th><th>${state.lang === "zh" ? "操作" : "Actions"}</th></tr></thead><tbody>${pageServices.map(serviceTableRowHTML).join("")}</tbody></table>${pageServices.length ? "" : `<div class="empty"><strong>${t("noServices")}</strong></div>`}</div>
+      <footer class="table-footer"><div><strong>${filtered.length}</strong> ${state.lang === "zh" ? "项" : "items"}${state.selectedServiceIds.size ? `<span> · ${state.lang === "zh" ? "已选择" : "selected"} ${state.selectedServiceIds.size}</span>` : ""}</div><div class="pagination"><select class="select" id="page-size"><option value="10" ${state.pageSize === 10 ? "selected" : ""}>10 / ${state.lang === "zh" ? "页" : "page"}</option><option value="20" ${state.pageSize === 20 ? "selected" : ""}>20 / ${state.lang === "zh" ? "页" : "page"}</option><option value="50" ${state.pageSize === 50 ? "selected" : ""}>50 / ${state.lang === "zh" ? "页" : "page"}</option></select><button class="btn icon page-prev" ${state.page <= 1 ? "disabled" : ""}><i class="bi bi-chevron-left"></i></button><span>${state.page} / ${pageCount}</span><button class="btn icon page-next" ${state.page >= pageCount ? "disabled" : ""}><i class="bi bi-chevron-right"></i></button></div></footer>
+    </section>`;
+}
+
+function serviceTableRowHTML(service) {
+  const node = routedNodeForService(service);
+  const status = serviceStatus(service, node);
+  const targetConfig = configForNode(selectedDNS());
+  const result = targetConfig?.service_results?.[service.id] || "";
+  const configured = !!node;
+  const checked = state.selectedServiceIds.has(service.id);
+  const statusClass = !configured ? "neutral" : status.kind === "warn" ? "warn" : status.kind === "bad" ? "bad" : "";
+  const statusLabel = configured ? (status.kind === "bad" ? (state.lang === "zh" ? "异常" : "Issue") : (state.lang === "zh" ? "已配置" : "Configured")) : t("notConfigured");
+  const auditLabel = status.kind === "good" ? (state.lang === "zh" ? "成功" : "Passed") : status.kind === "warn" ? (state.lang === "zh" ? "待确认" : "Review") : status.kind === "bad" ? (state.lang === "zh" ? "失败" : "Failed") : t("auditPending");
+  return `<tr class="${configured ? "configured" : ""}" data-service-id="${escapeHTML(service.id)}"><td><input class="service-select" type="checkbox" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}></td><td><button class="service-identity service-open" data-service-id="${escapeHTML(service.id)}">${serviceIconHTML(service)}<span><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</small></span></button></td><td><span class="table-status"><i class="status-dot ${statusClass}"></i>${escapeHTML(statusLabel)}</span></td><td><span class="result-badge ${status.kind || "neutral"}" title="${escapeHTML(result || status.raw || status.label)}">${escapeHTML(auditLabel)}</span></td><td>${node ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.country || node.public_ip || node.address || "-")}</small></span></div>` : `<span class="muted-cell">${t("notConfigured")}</span>`}</td><td><span class="last-audit" title="${escapeHTML(formatDate(targetConfig?.service_audited_at))}">${result ? escapeHTML(formatRelativeDate(targetConfig?.service_audited_at)) : t("auditPending")}</span></td><td><div class="table-actions">${configured ? `<button class="btn small icon service-audit-run" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "立即实测" : "Test now"}"><i class="bi bi-play-circle"></i></button>` : ""}<button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button><button class="btn small icon service-category-open" data-service-id="${escapeHTML(service.id)}" title="${t("editCategory")}"><i class="bi bi-three-dots"></i></button></div></td></tr>`;
+}
+
+function contentHeaderHTML(title, hint, actions = "") {
+  return `<header class="content-header"><div><h2>${escapeHTML(title)}</h2><p>${escapeHTML(hint)}</p></div><div>${actions}</div></header>`;
+}
+
+function syncHTML() {
+  const updatedAt = state.catalogMeta.updated_at || state.catalogMeta.updated || state.catalogMeta.source_updated_at;
+  const error = state.catalogMeta.error || "";
+  const categoryRows = catalogCategories().map(category => `<div class="compact-row"><span>${escapeHTML(displayCategory(category))}</span><strong>${state.catalog.filter(service => service.category === category).length}</strong></div>`).join("");
+  return `${contentHeaderHTML(state.lang === "zh" ? "同步域名名单" : "Domain catalog", state.lang === "zh" ? "从细化域名库更新服务、泛域名与分类，现有目标路由不会被自动切换。" : "Refresh services, wildcards, and categories without changing selected target routes.", `<button class="btn primary" id="refresh-catalog"><i class="bi bi-arrow-repeat"></i>${t("catalogRefresh")}</button>`)}
+    <section class="two-column-layout"><article class="panel info-card"><span class="info-card-icon"><i class="bi bi-database-check"></i></span><div><span>${state.lang === "zh" ? "当前服务库" : "Current catalog"}</span><strong>${state.catalog.length}</strong><small>${state.lang === "zh" ? `自定义服务 ${state.catalog.filter(service => service.custom).length} 项` : `${state.catalog.filter(service => service.custom).length} custom services`}</small></div></article><article class="panel info-card ${error ? "danger-card" : ""}"><span class="info-card-icon"><i class="bi ${error ? "bi-exclamation-triangle" : "bi-cloud-check"}"></i></span><div><span>${state.lang === "zh" ? "上次同步" : "Last sync"}</span><strong>${escapeHTML(formatRelativeDate(updatedAt))}</strong><small>${escapeHTML(error || formatDate(updatedAt))}</small></div></article></section>
+    <section class="panel settings-card"><div class="settings-card-head"><div><h3>${state.lang === "zh" ? "服务分类概览" : "Category overview"}</h3><p>${state.lang === "zh" ? "同步只更新域名库；你的自定义分类、节点和目标路由保持不变。" : "Sync updates the catalog only. Custom categories, nodes, and target routes remain unchanged."}</p></div><button class="btn" id="manage-categories">${t("manageCategories")}</button></div><div class="compact-list">${categoryRows}</div></section>`;
+}
+
+function auditRows() {
+  const services = new Map(state.catalog.map(service => [service.id, service]));
+  return state.ipConfigs.flatMap(config => Object.entries(config.service_results || {}).map(([serviceID, raw]) => {
+    const service = services.get(serviceID);
+    const audit = auditResultState(raw);
+    const proxy = state.nodes.find(node => nodeID(node.id) === nodeID(config.routes?.[serviceID]));
+    return {config, service, serviceID, raw, audit, proxy};
+  })).sort((left, right) => String(right.config.service_audited_at || "").localeCompare(String(left.config.service_audited_at || "")));
+}
+
+function auditHTML() {
+  const rows = auditRows();
+  return `${contentHeaderHTML(state.lang === "zh" ? "日志与审计" : "Logs & Audits", state.lang === "zh" ? "这里仅展示目标机经过真实 DNS、HTTPS 与服务依赖路径后的结果；节点自检不等同于可用。" : "Only target-machine DNS, HTTPS, and dependency-path results are shown here. Node self-checks are not treated as proof.", `<button class="btn" id="refresh-audits"><i class="bi bi-arrow-clockwise"></i>${t("refresh")}</button>`)}
+    <section class="panel audit-table"><div class="audit-table-head"><span>${state.lang === "zh" ? "目标 / 服务" : "Target / service"}</span><span>${state.lang === "zh" ? "路由节点" : "Route node"}</span><span>${state.lang === "zh" ? "真实结果" : "Real result"}</span><span>${state.lang === "zh" ? "检测时间" : "Checked"}</span></div>${rows.length ? rows.map(item => `<article class="audit-row"><div>${item.service ? serviceIconHTML(item.service) : ""}<span><strong>${escapeHTML(item.service ? displayServiceName(item.service) : item.serviceID)}</strong><small>${escapeHTML(item.config.ip)}</small></span></div><div><strong>${escapeHTML(item.proxy?.name || "-")}</strong><small>${escapeHTML(item.proxy?.country || "")}</small></div><div><span class="result-badge ${item.audit.kind}">${escapeHTML(item.audit.label)}</span><small title="${escapeHTML(item.raw)}">${escapeHTML(item.raw)}</small></div><div><strong>${escapeHTML(formatRelativeDate(item.config.service_audited_at))}</strong><small>${escapeHTML(formatDate(item.config.service_audited_at))}</small></div></article>`).join("") : `<div class="empty"><strong>${t("noTargetAudit")}</strong></div>`}</section>`;
+}
+
+function currentAlerts() {
+  const alerts = [];
+  state.nodes.forEach(node => {
+    if (!isOnline(node)) alerts.push({kind:"bad", title:`${node.name} · OFFLINE`, detail:state.lang === "zh" ? "控制通道已离线" : "Control channel is offline", tab:"nodes"});
+  });
+  state.ipConfigs.forEach(config => {
+    const node = ipConfigNode(config);
+    const health = clientState(config, node);
+    if (health.kind !== "good") alerts.push({kind:health.kind, title:`${config.ip} · ${health.label}`, detail:health.detail, tab:"ips"});
+    Object.entries(config.service_results || {}).forEach(([serviceID, raw]) => {
+      const audit = auditResultState(raw);
+      if (audit.kind === "good") return;
+      const service = state.catalog.find(item => item.id === serviceID);
+      alerts.push({kind:audit.kind, title:`${config.ip} · ${service ? displayServiceName(service) : serviceID}`, detail:audit.label, tab:"audit"});
+    });
+  });
+  return alerts;
+}
+
+function alertsHTML() {
+  const alerts = currentAlerts();
+  return `${contentHeaderHTML(state.lang === "zh" ? "告警中心" : "Alerts", state.lang === "zh" ? "异常不会自动切换解锁机，避免线路来回跳转；请在确认后手动调整。" : "Alerts never switch proxies automatically. Review and change routes manually when needed.")}
+    <section class="alert-summary"><article class="panel info-card"><span class="info-card-icon"><i class="bi bi-shield-check"></i></span><div><span>${state.lang === "zh" ? "当前异常" : "Current alerts"}</span><strong>${alerts.length}</strong><small>${alerts.length ? (state.lang === "zh" ? "需要人工确认" : "Needs review") : (state.lang === "zh" ? "运行正常" : "All clear")}</small></div></article></section>
+    <section class="panel alert-list">${alerts.length ? alerts.map((alert, index) => `<article class="alert-item ${alert.kind}"><span class="alert-symbol"><i class="bi ${alert.kind === "bad" ? "bi-x-circle" : "bi-exclamation-triangle"}"></i></span><div><strong>${escapeHTML(alert.title)}</strong><p>${escapeHTML(alert.detail)}</p></div><button class="btn small alert-open" data-alert-tab="${alert.tab}">${state.lang === "zh" ? "查看" : "View"}</button></article>`).join("") : `<div class="empty"><i class="bi bi-check-circle good-copy"></i><strong>${state.lang === "zh" ? "当前没有告警" : "No current alerts"}</strong></div>`}</section>`;
+}
+
+function settingsHTML() {
+  return `${contentHeaderHTML(state.lang === "zh" ? "设置中心" : "Settings", state.lang === "zh" ? "管理站点显示、管理员账户、服务分类和外观。" : "Manage branding, account security, categories, and appearance.")}
+    <section class="settings-grid">
+      <article class="panel settings-card"><span class="settings-icon"><i class="bi bi-window"></i></span><div><h3>${t("siteSettings")}</h3><p>${t("siteSettingsHint")}</p><button class="btn site-settings-trigger">${state.lang === "zh" ? "编辑站点信息" : "Edit branding"}</button></div></article>
+      <article class="panel settings-card"><span class="settings-icon"><i class="bi bi-person-lock"></i></span><div><h3>${t("accountSettings")}</h3><p>${t("accountHint")}</p><button class="btn account-settings-trigger">${state.lang === "zh" ? "修改账户密码" : "Update credentials"}</button></div></article>
+      <article class="panel settings-card"><span class="settings-icon"><i class="bi bi-tags"></i></span><div><h3>${t("manageCategories")}</h3><p>${t("categoryHint")}</p><button class="btn" id="manage-categories">${state.lang === "zh" ? "管理服务分类" : "Manage categories"}</button></div></article>
+      <article class="panel settings-card"><span class="settings-icon"><i class="bi bi-palette"></i></span><div><h3>${state.lang === "zh" ? "外观与语言" : "Appearance & language"}</h3><p>${state.lang === "zh" ? "切换深浅主题与中英文界面。" : "Switch theme and interface language."}</p><div class="inline-actions"><button class="btn theme-toggle-trigger">${state.theme === "light" ? (state.lang === "zh" ? "切换深色" : "Use dark") : (state.lang === "zh" ? "切换浅色" : "Use light")}</button><button class="btn lang-toggle-trigger">${t("language")}</button></div></div></article>
+    </section>`;
 }
 
 function serviceCardHTML(service) {
@@ -624,8 +776,9 @@ function routeNodeCardHTML(node, configuredServices) {
 }
 
 function nodesHTML() {
-  if (!state.nodes.length) return `<div class="panel empty"><strong>${state.lang === "zh" ? "还没有节点" : "No nodes"}</strong><button class="btn primary" id="empty-add-node">＋ ${t("addNode")}</button></div>`;
-  return `<section class="node-grid">${state.nodes.map(node => {
+  const header = contentHeaderHTML(state.lang === "zh" ? "节点管理" : "Nodes", state.lang === "zh" ? "统一管理解锁机和被解锁机；节点状态变化不会自动改写服务路由。" : "Manage proxy and target nodes. Status changes never rewrite service routes automatically.", `<button class="btn primary" id="add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button>`);
+  if (!state.nodes.length) return `${header}<div class="panel empty"><strong>${state.lang === "zh" ? "还没有节点" : "No nodes"}</strong><button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button></div>`;
+  return `${header}<section class="node-grid">${state.nodes.map(node => {
     const online = isOnline(node); const compatibility = proxyCompatibilitySummary(node.id);
     const proxyDetail = compatibility.total ? `${compatibility.passed}/${compatibility.total}` : t("noTargetAudit");
     const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail};
@@ -661,24 +814,32 @@ function nodeCheckHTML() {
 function ipConfigNode(config) { return state.nodes.find(node => nodeID(node.id) === nodeID(config.dns_node_id)); }
 
 function ipConfigsHTML() {
-  if (!state.ipConfigs.length) return `<div class="panel empty"><strong>${t("noIPConfigs")}</strong><button class="btn primary" id="empty-add-ip">＋ ${t("addIP")}</button></div>`;
+  const header = contentHeaderHTML(state.lang === "zh" ? "IP 配置" : "IP Configs", state.lang === "zh" ? "每个目标 IP 独立配置解锁服务、统计 DNS 53 与解锁 TCP 80/443 流量。" : "Configure each target independently and count only DNS 53 plus unlock TCP 80/443 traffic.", `<button class="btn primary" id="add-ip"><i class="bi bi-plus-circle"></i>${t("addIP")}</button>`);
+  if (!state.ipConfigs.length) return `${header}<div class="panel empty"><strong>${t("noIPConfigs")}</strong><button class="btn primary" id="empty-add-ip"><i class="bi bi-plus-circle"></i>${t("addIP")}</button></div>`;
   const totalTraffic = state.ipConfigs.reduce((total, config) => total + Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0), 0);
-  return `<section class="traffic-summary panel"><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small>${t("trafficHint")}</small></div><button class="btn danger" id="clear-all-traffic">${t("clearAllTraffic")}</button></section><section class="ip-list panel"><div class="ip-list-head"><span>${t("targetIP")}</span><span>${t("selectedServices")}</span><span>${t("clientTraffic")}</span><span>${t("dnsClient")}</span><span></span></div>${state.ipConfigs.map(config => {
+  return `${header}<section class="traffic-summary panel"><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small>${t("trafficHint")}</small></div><button class="btn danger" id="clear-all-traffic">${t("clearAllTraffic")}</button></section><section class="ip-list panel"><div class="ip-list-head"><span>${t("targetIP")}</span><span>${t("selectedServices")}</span><span>${t("clientTraffic")}</span><span>${t("dnsClient")}</span><span></span></div>${state.ipConfigs.map(config => {
     const node = ipConfigNode(config); const status = clientState(config, node); const count = Object.keys(config.routes || {}).length; const traffic = Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0);
     const audited = Object.values(config.service_results || {}).map(auditResultState); const passed = audited.filter(result => result.kind === "good").length;
-    const failover = latestFailover(config);
-    return `<article class="ip-row" data-ip-id="${escapeHTML(config.id)}" role="button" tabindex="0" aria-label="${escapeHTML(`${t("editIP")} ${config.ip}`)}"><div class="ip-main"><strong>${escapeHTML(config.ip)}</strong><span>${escapeHTML(config.note || config.node_name || "-")}</span>${failover ? `<small class="ip-failover ${failover.state.kind}" title="${escapeHTML(failover.state.detail)}">${escapeHTML(failover.state.label)}</small>` : ""}</div><div class="ip-selection"><span class="badge good">${count} / ${state.catalog.length}</span>${audited.length ? `<small>${t("actualAudit")} ${passed}/${audited.length}</small>` : ""}</div><div class="ip-traffic" title="RX ${formatBytes(config.traffic_rx_bytes)} · TX ${formatBytes(config.traffic_tx_bytes)}"><strong>${formatBytes(traffic)}</strong><span>${t("trafficUpdated")}: ${formatDate(config.traffic_updated_at)}</span></div><div class="ip-node-state" title="${escapeHTML(status.detail)}"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span><span>${escapeHTML(status.label)}</span></div><div class="ip-row-actions"><button class="btn small ip-script" data-ip-id="${escapeHTML(config.id)}">${t("clientScript")}</button><button class="btn small primary ip-edit" data-ip-id="${escapeHTML(config.id)}">${t("editIP")}</button><button class="btn small ip-clear-traffic" data-ip-id="${escapeHTML(config.id)}">${t("clearTraffic")}</button><button class="btn small danger ip-delete" data-ip-id="${escapeHTML(config.id)}">${t("deleteNode")}</button></div></article>`;
+    return `<article class="ip-row" data-ip-id="${escapeHTML(config.id)}" role="button" tabindex="0" aria-label="${escapeHTML(`${t("editIP")} ${config.ip}`)}"><div class="ip-main"><strong>${escapeHTML(config.ip)}</strong><span>${escapeHTML(config.note || config.node_name || "-")}</span></div><div class="ip-selection"><span class="badge good">${count} / ${state.catalog.length}</span>${audited.length ? `<small>${t("actualAudit")} ${passed}/${audited.length}</small>` : ""}</div><div class="ip-traffic" title="RX ${formatBytes(config.traffic_rx_bytes)} · TX ${formatBytes(config.traffic_tx_bytes)}"><strong>${formatBytes(traffic)}</strong><span>${t("trafficUpdated")}: ${formatDate(config.traffic_updated_at)}</span></div><div class="ip-node-state" title="${escapeHTML(status.detail)}"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span><span>${escapeHTML(status.label)}</span></div><div class="ip-row-actions"><button class="btn small ip-script" data-ip-id="${escapeHTML(config.id)}">${t("clientScript")}</button><button class="btn small primary ip-edit" data-ip-id="${escapeHTML(config.id)}">${t("editIP")}</button><button class="btn small ip-clear-traffic" data-ip-id="${escapeHTML(config.id)}">${t("clearTraffic")}</button><button class="btn small danger ip-delete" data-ip-id="${escapeHTML(config.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
 
 function bindShell() {
-  document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => { state.tab = button.dataset.tab; render(); }));
+  updateClock();
+  if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
+  document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => {
+    state.tab = button.dataset.tab;
+    state.page = 1;
+    localStorage.setItem("enhancer_tab", state.tab);
+    render();
+  }));
   document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
   document.querySelectorAll(".lang-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); }));
   document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));
   document.querySelectorAll(".account-settings-trigger").forEach(button => button.addEventListener("click", openAccountSettings));
   document.querySelectorAll(".site-settings-trigger").forEach(button => button.addEventListener("click", openBrandingSettings));
-  document.getElementById("refresh").onclick = () => loadAll();
+  document.getElementById("refresh")?.addEventListener("click", () => loadAll());
+  document.getElementById("refresh-audits")?.addEventListener("click", () => loadAll());
   document.getElementById("add-service")?.addEventListener("click", () => openServiceForm());
   document.getElementById("add-node")?.addEventListener("click", () => openNodeForm());
   document.getElementById("add-ip")?.addEventListener("click", () => openIPForm());
@@ -686,12 +847,52 @@ function bindShell() {
   document.getElementById("empty-add-node")?.addEventListener("click", () => openNodeForm());
   document.getElementById("refresh-catalog")?.addEventListener("click", refreshCatalog);
   document.getElementById("manage-categories")?.addEventListener("click", () => openCategoryManager());
-  document.getElementById("service-search")?.addEventListener("input", event => { state.search = event.target.value; filterServiceCards(); });
-  document.getElementById("category-filter")?.addEventListener("change", event => { state.category = event.target.value; render(); });
+  const search = document.getElementById("service-search");
+  search?.addEventListener("compositionstart", () => { searchComposing = true; });
+  search?.addEventListener("compositionend", event => { searchComposing = false; scheduleServiceSearch(event.target); });
+  search?.addEventListener("input", event => { if (!searchComposing) scheduleServiceSearch(event.target); });
+  document.getElementById("category-filter")?.addEventListener("change", event => { state.category = event.target.value; state.page = 1; render(); });
+  document.getElementById("status-filter")?.addEventListener("change", event => { state.statusFilter = event.target.value; state.page = 1; render(); });
+  document.getElementById("node-filter")?.addEventListener("change", event => { state.nodeFilter = event.target.value; state.page = 1; render(); });
   document.getElementById("dns-select")?.addEventListener("change", async event => { state.dnsNodeId = event.target.value; localStorage.setItem("enhancer_dns", state.dnsNodeId); await loadRoutingState(); render(); });
-  document.getElementById("clear-filter")?.addEventListener("click", () => { state.search = ""; state.category = ""; render(); });
-  document.querySelectorAll(".service-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openService(button.dataset.serviceId); }));
+  document.getElementById("clear-filter")?.addEventListener("click", () => { state.search = ""; state.category = ""; state.statusFilter = ""; state.nodeFilter = ""; state.page = 1; render(); });
+  document.getElementById("page-size")?.addEventListener("change", event => { state.pageSize = Number(event.target.value) || 20; state.page = 1; render(); });
+  document.querySelector(".page-prev")?.addEventListener("click", () => { state.page = Math.max(1, state.page - 1); render(); });
+  document.querySelector(".page-next")?.addEventListener("click", () => { state.page += 1; render(); });
+  document.getElementById("select-page-services")?.addEventListener("change", event => {
+    document.querySelectorAll(".service-select").forEach(input => {
+      input.checked = event.target.checked;
+      if (input.checked) state.selectedServiceIds.add(input.dataset.serviceId);
+      else state.selectedServiceIds.delete(input.dataset.serviceId);
+    });
+  });
+  document.getElementById("batch-action")?.addEventListener("change", event => {
+    const action = event.target.value;
+    event.target.value = "";
+    if (action === "select-page") {
+      document.querySelectorAll(".service-select").forEach(input => {
+        input.checked = true;
+        state.selectedServiceIds.add(input.dataset.serviceId);
+      });
+    } else if (action === "clear") {
+      state.selectedServiceIds.clear();
+      document.querySelectorAll(".service-select").forEach(input => { input.checked = false; });
+    } else if (action === "configure") {
+      openBulkServiceConfig();
+    }
+  });
+  document.querySelectorAll(".service-select").forEach(input => input.addEventListener("change", () => {
+    if (input.checked) state.selectedServiceIds.add(input.dataset.serviceId);
+    else state.selectedServiceIds.delete(input.dataset.serviceId);
+  }));
+  document.querySelectorAll(".alert-open").forEach(button => button.addEventListener("click", () => {
+    state.tab = button.dataset.alertTab;
+    localStorage.setItem("enhancer_tab", state.tab);
+    render();
+  }));
+  document.querySelectorAll(".service-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openServiceRoute(button.dataset.serviceId); }));
   document.querySelectorAll(".service-category-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openServiceCategory(button.dataset.serviceId); }));
+  document.querySelectorAll(".service-audit-run").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); runTableServiceAudit(button.dataset.serviceId); }));
   document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openService(card.dataset.serviceId)));
   document.querySelectorAll(".selected-service-row").forEach(row => row.addEventListener("click", () => openService(row.dataset.serviceId)));
   document.querySelectorAll(".node-test").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); triggerNodeCheck(button.dataset.nodeId); }));
@@ -709,7 +910,22 @@ function bindShell() {
   document.querySelectorAll(".ip-delete").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openIPDelete(button.dataset.ipId); }));
   document.querySelectorAll(".ip-clear-traffic").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); clearTraffic(button.dataset.ipId); }));
   document.getElementById("clear-all-traffic")?.addEventListener("click", clearAllTraffic);
-  filterServiceCards();
+  markLoadedServiceIcons();
+}
+
+function scheduleServiceSearch(input) {
+  state.search = input.value;
+  state.page = 1;
+  const caret = input.selectionStart;
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(() => {
+    render();
+    const next = document.getElementById("service-search");
+    if (next) {
+      next.focus({preventScroll:true});
+      if (Number.isInteger(caret)) next.setSelectionRange(caret, caret);
+    }
+  }, 180);
 }
 
 function filterServiceCards() {
@@ -732,11 +948,53 @@ async function refreshCatalog() {
 function openService(id) {
   const service = state.catalog.find(item => item.id === id);
   if (!service) return;
-  const current = activeNodeFor(serviceRule(service));
+  const current = routedNodeForService(service);
   const fallback = proxyNodes().find(isOnline) || proxyNodes()[0];
   state.modal = {type:"service", service, proxyId:nodeID(current?.id || fallback?.id)};
   state.testResults = null;
   renderModal();
+}
+function openServiceRoute(id) {
+  const service = state.catalog.find(item => item.id === id);
+  if (!service) return;
+  const config = configForNode(selectedDNS());
+  if (!config) {
+    openService(id);
+    return;
+  }
+  openIPForm(config, 2);
+  state.modal.serviceSearch = displayServiceName(service);
+  renderModal();
+}
+function openBulkServiceConfig() {
+  const config = configForNode(selectedDNS());
+  if (!config) {
+    toast(state.lang === "zh" ? "请先选择已纳管的目标 IP" : "Select a managed target first", "warn");
+    return;
+  }
+  if (!state.selectedServiceIds.size) {
+    toast(state.lang === "zh" ? "请先选择服务" : "Select services first", "warn");
+    return;
+  }
+  openIPForm(config, 2);
+  const fallback = nodeID(state.nodeFilter) || nodeID(Object.values(state.modal.routes)[0]) || nodeID(proxyNodes().find(isOnline)?.id || proxyNodes()[0]?.id);
+  state.selectedServiceIds.forEach(serviceId => {
+    if (!state.modal.routes[serviceId] && fallback) state.modal.routes[serviceId] = fallback;
+  });
+  state.modal.serviceSearch = "";
+  renderModal();
+}
+async function runTableServiceAudit(id) {
+  const service = state.catalog.find(item => item.id === id);
+  const config = configForNode(selectedDNS());
+  if (!service || !config?.routes?.[id]) {
+    toast(state.lang === "zh" ? "请先为当前目标配置该服务" : "Configure this service for the current target first", "warn");
+    return;
+  }
+  openIPForm(config, 2);
+  state.modal.serviceSearch = displayServiceName(service);
+  renderModal();
+  await triggerIPServiceAudit(id);
 }
 function openServiceForm(service = null) { state.modal = {type:"service-form", service}; renderModal(); }
 function openServiceCategory(id) {
@@ -904,10 +1162,9 @@ function ipFormHTML() {
   const selectedCount = Object.keys(modal.routes).length;
   return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
     const selectedProxy = modal.routes[service.id] || ""; const checked = !!selectedProxy; const audit = auditResultState(modal.config?.service_results?.[service.id]);
-    const failover = failoverState(modal.config, service.id);
     const canAudit = checked && !!modal.config?.id;
-    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small class="service-failover ${failover.kind}" title="${escapeHTML(failover.detail)}" ${failover.label ? "" : "hidden"}>${escapeHTML(failover.label)}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "立即实测" : "Test now"}</button></div></div></article>`;
-  }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 将自动同步服务增删并安全刷新 DNS" : "The Agent applies additions and removals, then safely refreshes DNS"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
+    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "立即实测" : "Test now"}</button></div></div></article>`;
+  }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 自动同步配置；实测只更新结果，不会改动您选择的节点" : "The Agent syncs configuration; audits update reports without changing your selected node"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
 }
 
 function ipScriptHTML() {
@@ -1254,23 +1511,11 @@ function updateIPServiceAuditUI(config) {
   document.querySelectorAll(".ip-service-option").forEach(option => {
     const serviceId = option.dataset.serviceId;
     const badge = option.querySelector(".service-audit .badge");
-    const failoverNotice = option.querySelector(".service-failover");
-    const proxySelect = option.querySelector(".ip-service-proxy");
     if (!badge) return;
     const audit = auditResultState(config?.service_results?.[serviceId]);
     badge.className = `badge ${audit.kind}`;
     badge.textContent = audit.label;
     badge.title = audit.detail;
-    if (proxySelect && config?.routes?.[serviceId]) {
-      proxySelect.value = nodeID(config.routes[serviceId]);
-    }
-    if (failoverNotice) {
-      const failover = failoverState(config, serviceId);
-      failoverNotice.className = `service-failover ${failover.kind}`;
-      failoverNotice.textContent = failover.label;
-      failoverNotice.title = failover.detail;
-      failoverNotice.hidden = !failover.label;
-    }
   });
 }
 
@@ -1291,17 +1536,15 @@ async function triggerIPServiceAudit(serviceId) {
     while (Date.now() - started < 180000) {
       await delay(2500);
       const configs = await api("/enhancer/api/ip-configs");
-      const nextConfigs = Array.isArray(configs) ? configs : state.ipConfigs;
-      notifyFailoverChanges(state.ipConfigs, nextConfigs);
-      state.ipConfigs = nextConfigs;
+      state.ipConfigs = Array.isArray(configs) ? configs : state.ipConfigs;
       latest = state.ipConfigs.find(config => config.id === configID) || latest;
       state.modal.config = latest;
       state.modal.routes = {...(latest.routes || state.modal.routes)};
       updateIPServiceAuditUI(latest);
       const auditedAt = new Date(latest.service_audited_at || 0).getTime();
       if (auditedAt >= requestedAt && latest.service_results?.[serviceId]) {
-        const failover = failoverState(latest, serviceId);
-        toast(failover.label || t("testDone"), failover.kind === "bad" ? "error" : failover.kind || "good");
+        const audit = auditResultState(latest.service_results[serviceId]);
+        toast(audit.label || t("testDone"), audit.kind === "bad" ? "error" : audit.kind || "good");
         return;
       }
     }
@@ -1475,6 +1718,7 @@ function toast(message, type = "") {
 }
 
 async function initialize() {
+  if (!["services", "nodes", "ips", "sync", "audit", "alerts", "settings"].includes(state.tab)) state.tab = "services";
   await loadBranding();
   render();
   if (state.token) loadAll();

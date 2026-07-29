@@ -124,11 +124,6 @@ func (app *App) handleServiceAuditReport(writer http.ResponseWriter, request *ht
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	config, err = app.reconcileAutomaticFailover(config, payload.Results)
-	if err != nil {
-		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
 	writeJSON(writer, http.StatusOK, config)
 }
 
@@ -256,6 +251,7 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 			"unlock_test":   unlockTestProvider(service),
 			"unlock_tests":  unlockTestProviders(service),
 			"probe_domains": preferredProbeDomains(service),
+			"route_domains": routingDomains(service.Domains),
 			"traffic_peers": append([]string(nil), proxyPeers[routes[serviceID]]...),
 		})
 	}
@@ -304,14 +300,14 @@ func preferredProbeDomains(service Service) []string {
 		"Abema":                           {"abema.tv"},
 		"Apple TV+":                       {"tv.apple.com"},
 		"Bilibili":                        {"bilibili.com"},
-		"ChatGPT / OpenAI":                {"chatgpt.com", "openai.com"},
-		"Claude":                          {"claude.ai", "anthropic.com"},
+		"ChatGPT / OpenAI":                {"chatgpt.com", "openai.com", "cdn.oaistatic.com", "files.oaiusercontent.com", "sora.com"},
+		"Claude":                          {"claude.ai", "claude.com", "anthropic.com"},
 		"Crunchyroll":                     {"crunchyroll.com"},
 		"DAZN":                            {"dazn.com"},
 		"Disney+":                         {"disneyplus.com", "bamgrid.com"},
 		"FR:France.tv":                    {"france.tv"},
-		"Gemini":                          {"gemini.google.com", "bard.google.com"},
-		"Google AI Studio":                {"aistudio.google.com"},
+		"Gemini":                          {"gemini.google.com", "aisandbox-pa.googleapis.com", "alkaliminer-pa.googleapis.com", "proactivebackend-pa.googleapis.com", "robinfrontend-pa.googleapis.com"},
+		"Google AI Studio":                {"aistudio.google.com", "alkalicore-pa.clients6.google.com", "alkalimakersuite-pa.clients6.google.com", "generativelanguage.googleapis.com", "waa-pa.clients6.google.com"},
 		"HBO / Max":                       {"max.com", "hbomax.com"},
 		"HOY TV":                          {"r.hoy.tv"},
 		"iQIYI":                           {"iq.com"},

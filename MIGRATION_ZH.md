@@ -121,7 +121,7 @@ journalctl -u prism-controller -u prism-enhancer --since "-10 min" --no-pager
 
 健康接口中的 `status` 应为 `ok`，`authorization_mode` 应为 `panel_allowlist`，`authorization_sync_seconds` 应为 `5`，所有已安装目标机应逐步恢复为 `READY`。
 
-增强层首次启动会自动迁移旧数据：移除持久化 Proxy IPv6，只保留受管解锁所需的 IPv4；共用父域、子域或泛域名的服务会归一到同一 Proxy。迁移会保留节点 ID、目标 IP、令牌和累计流量，但会请求目标机重新实测受影响服务。
+增强层首次启动会自动迁移旧数据：移除持久化 Proxy IPv6，只保留受管解锁所需的 IPv4；共用父域、子域或泛域名的服务会归一到同一 Proxy；`1.4.9` 还会删除旧版自动故障切换记录，但保留用户当前选择的服务路由。迁移会保留节点 ID、目标 IP、令牌和累计流量，并请求目标机重新实测受影响服务。新版实测只报告结果，不会再次自动切换节点。
 
 ## 五、切换域名或面板地址
 

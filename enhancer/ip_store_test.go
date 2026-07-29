@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -101,37 +102,6 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 	}
 }
 
-func TestUnavailableFailoverCanRecoverOnCurrentProxy(t *testing.T) {
-	store, err := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	config, err := store.Save(IPConfig{
-		IP:        "203.0.113.20",
-		DNSNodeID: "dns-a",
-		NodeName:  "Target",
-		Routes:    map[string]string{"claude": "proxy-a"},
-	}, "secret")
-	if err != nil {
-		t.Fatal(err)
-	}
-	unavailable, err := store.RecordFailoverUnavailable(config.ID, "claude", "UNSTABLE (2/3 YES; Banned (WAF))")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if unavailable.Failovers["claude"].Status != "unavailable" {
-		t.Fatalf("unavailable event was not stored: %+v", unavailable.Failovers)
-	}
-	recovered, err := store.MarkFailoverRecovered(config.ID, "claude", "YES (Region: SG)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	event := recovered.Failovers["claude"]
-	if event.Status != "recovered" || event.ToProxyID != "proxy-a" || event.RecoveredResult == "" {
-		t.Fatalf("current proxy recovery was not stored: %+v", event)
-	}
-}
-
 func TestIPConfigStoreNormalizesLegacyProxyPeersToIPv4(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ip-configs.json")
 	data, err := json.Marshal([]ipConfigRecord{{
@@ -182,5 +152,32 @@ func TestIPConfigStoreNormalizesLegacyProxyPeersToIPv4(t *testing.T) {
 	}
 	if len(persisted) != 1 || len(persisted[0].TrafficPeers) != 1 || persisted[0].TrafficPeers[0] != "198.51.100.10" {
 		t.Fatalf("normalized IPv4 peers were not persisted: %+v", persisted)
+	}
+}
+
+func TestIPConfigStoreRemovesLegacyAutomaticFailoverState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ip-configs.json")
+	legacy := `[{
+		"id":"ip-legacy",
+		"ip":"203.0.113.31",
+		"dns_node_id":"dns-a",
+		"node_name":"Legacy",
+		"enrollment_token":"token",
+		"routes":{"gemini":"proxy-a"},
+		"node_secret":"secret",
+		"failovers":{"gemini":{"status":"switched","from_proxy_id":"proxy-b","to_proxy_id":"proxy-a"}}
+	}]`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewIPConfigStore(path); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(persisted), `"failovers"`) {
+		t.Fatalf("legacy automatic failover state was not removed: %s", persisted)
 	}
 }

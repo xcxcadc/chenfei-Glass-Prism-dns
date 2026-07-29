@@ -284,7 +284,7 @@ func (app *App) fetchIconURL(ctx context.Context, candidateURL string) (serviceI
 	if err != nil {
 		return serviceIconAsset{}, false
 	}
-	request.Header.Set("User-Agent", "Prism-DNS-Enhancer/1.4.8")
+	request.Header.Set("User-Agent", "Prism-DNS-Enhancer/1.4.9")
 	allowedHost := request.URL.Hostname()
 	client := *app.client
 	client.CheckRedirect = func(next *http.Request, previous []*http.Request) error {

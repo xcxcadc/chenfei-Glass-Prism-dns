@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.4.8"
+VERSION="1.4.9"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -158,7 +158,7 @@ LOCK_FILE="/run/prismdns-report.lock"
 NFT_TABLE="prismdns_traffic"
 COUNTER_VERSION="dns-sni-ports-v7-encrypted-transport-rx-tx"
 AUDIT_INTERVAL=21600
-  AUDIT_VERSION="selected-providers-multi-domain-ipv4-service-peers-v2"
+AUDIT_VERSION="selected-providers-browser-path-ipv4-v5"
 [[ -f "$CONFIG_FILE" ]] || exit 0
 if command -v flock >/dev/null 2>&1; then
   exec 8>"$LOCK_FILE"
@@ -256,7 +256,7 @@ route_family_ready() {
 while IFS= read -r probe; do
   mapfile -t PROBE_PEERS4 < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
   mapfile -t PROBE_PEERS6 < <(jq -r '.traffic_peers[]? | select(contains(":"))' <<<"$probe" | sort -u)
-  mapfile -t PROBE_DOMAINS < <(jq -r '[(.probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
+  mapfile -t PROBE_DOMAINS < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
   for domain in "${PROBE_DOMAINS[@]}"; do
     EXPECTED_ROUTES=$((EXPECTED_ROUTES + 1))
     if route_family_ready "$domain" A "${PROBE_PEERS4[@]}" &&
@@ -285,10 +285,10 @@ reset_traffic_counters() {
 reset_traffic_counters
 
 run_service_audit() {
-  local audit_hash="$1" now="$2" output="" attempt_output plain results probe service_id service_name provider domain result matched_peer answer peer mapping_output
-  local providers_csv candidate failure test_provider probe_domain probe_pass mapped_domain
-  local attempt attempt_count pass_count youtube_pass
-  local -a provider_results test_providers matched_results probe_domains probe_peers
+  local audit_hash="$1" now="$2" output="" attempt_output plain results probe service_id service_name result matched_peer answer peer mapping_output
+  local providers_csv candidate failure test_provider probe_domain route_domain http_code
+  local attempt attempt_count pass_count youtube_pass route_total route_pass https_total https_pass https_success
+  local -a provider_results test_providers matched_results probe_domains route_domains probe_peers
   if [[ ! -x /usr/bin/ut ]]; then
     timeout 180 bash -c 'curl -sL https://raw.githubusercontent.com/oneclickvirt/UnlockTests/main/ut_install.sh -sSf | bash' >/dev/null 2>&1 || return 0
   fi
@@ -311,8 +311,6 @@ run_service_audit() {
   while IFS= read -r probe; do
     service_id=$(jq -r '.service_id // empty' <<<"$probe")
     service_name=$(jq -r '.name // empty' <<<"$probe")
-    provider=$(jq -r '.unlock_test // empty' <<<"$probe")
-    domain=$(jq -r '.domain // empty' <<<"$probe")
     [[ -n "$service_id" ]] || continue
     result=""
     if [[ "$service_name" == "YouTube" ]]; then
@@ -367,38 +365,56 @@ run_service_audit() {
         result="${provider_results[attempt_count - 1]}"
       fi
     fi
-    if [[ -z "$result" ]]; then
-      mapfile -t probe_domains < <(jq -r '[(.probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
-      mapfile -t probe_peers < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
-      probe_pass=false
-      mapped_domain=""
-      for probe_domain in "${probe_domains[@]}"; do
-        matched_peer=""
-        while IFS= read -r answer; do
-          for peer in "${probe_peers[@]}"; do
-            if [[ "$answer" == "$peer" ]]; then
-              matched_peer="$peer"
-              break 2
-            fi
-          done
-        done < <(dig @127.0.0.1 "$probe_domain" A +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
-        [[ -n "$matched_peer" ]] || continue
-        mapped_domain="$probe_domain"
-        if curl -sS -o /dev/null --resolve "$probe_domain:443:$matched_peer" --connect-timeout 5 --max-time 15 "https://$probe_domain/"; then
-          result="PASS (HTTPS reachable: ${probe_domain}) [Via DNS]"
-          probe_pass=true
-          break
-        fi
-      done
-      if ! $probe_pass; then
-        if [[ -z "$mapped_domain" ]]; then
-          result="FAIL (DNS route mismatch)"
-        else
-          result="FAIL (HTTPS unavailable across candidates)"
-        fi
+    mapfile -t route_domains < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
+    mapfile -t probe_domains < <(jq -r '[(.probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
+    mapfile -t probe_peers < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
+    route_total=${#route_domains[@]}
+    route_pass=0
+    for route_domain in "${route_domains[@]}"; do
+      if route_family_ready "$route_domain" A "${probe_peers[@]}" &&
+         route_family_ready "$route_domain" AAAA; then
+        route_pass=$((route_pass + 1))
       fi
+    done
+    https_total=${#probe_domains[@]}
+    https_pass=0
+    https_success=0
+    for probe_domain in "${probe_domains[@]}"; do
+      matched_peer=""
+      while IFS= read -r answer; do
+        for peer in "${probe_peers[@]}"; do
+          if [[ "$answer" == "$peer" ]]; then
+            matched_peer="$peer"
+            break 2
+          fi
+        done
+      done < <(dig @127.0.0.1 "$probe_domain" A +short +time=2 +tries=1 2>/dev/null | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/' | sort -u)
+      [[ -n "$matched_peer" ]] || continue
+      http_code=$(curl -4 -sS -o /dev/null -w '%{http_code}' \
+        -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' \
+        --resolve "$probe_domain:443:$matched_peer" --connect-timeout 6 --max-time 25 "https://$probe_domain/" || true)
+      if [[ "$http_code" =~ ^[1-4][0-9][0-9]$ ]]; then
+        https_pass=$((https_pass + 1))
+      fi
+      if [[ "$http_code" =~ ^[23][0-9][0-9]$ ]]; then
+        https_success=$((https_success + 1))
+      fi
+    done
+    if ((route_total == 0 || route_pass != route_total)); then
+      result="FAIL (DNS routes ${route_pass}/${route_total}; ${result:-no provider result})"
+    elif ((https_total > 0 && https_pass != https_total)); then
+      result="DEGRADED (HTTPS ${https_pass}/${https_total}; browser success ${https_success}; DNS ${route_pass}/${route_total}; ${result:-no provider result})"
+    elif [[ "$result" =~ ^YES([[:space:]]|$) ]]; then
+      result="${result} [DNS ${route_pass}/${route_total}; HTTPS ${https_pass}/${https_total}; browser success ${https_success}]"
+    elif ((https_total > 0 && https_success == 0)) && [[ -z "$result" || "$result" =~ UNSTABLE|Banned|WAF ]]; then
+      result="DEGRADED (HTTPS ${https_pass}/${https_total}; browser success ${https_success}; DNS ${route_pass}/${route_total}; ${result:-no provider result})"
+    elif [[ -z "$result" ]]; then
+      result="PASS (DNS ${route_pass}/${route_total}; HTTPS ${https_pass}/${https_total}; browser success ${https_success})"
+    elif [[ "$result" =~ UNSTABLE|Banned|WAF ]]; then
+      result="PASS (Browser path verified; provider probe limited: ${result}) [DNS ${route_pass}/${route_total}; HTTPS ${https_pass}/${https_total}; browser success ${https_success}]"
+    else
+      result="${result} [DNS ${route_pass}/${route_total}; HTTPS ${https_pass}/${https_total}; browser success ${https_success}]"
     fi
-    [[ -n "$result" ]] || result="N/A (No UnlockTests result)"
     results=$(jq -c --arg id "$service_id" --arg result "$result" '. + {($id):$result}' <<<"$results")
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
   if [[ "$(jq 'length' <<<"$results")" -gt 0 ]]; then
@@ -415,7 +431,7 @@ if [[ "${PRISM_SKIP_SERVICE_AUDIT:-0}" != "1" ]] && $DNS_READY && $SYSTEM_DNS_RE
     jq -Sc '{
       service_audit_requested_at:(.service_audit_requested_at // ""),
       traffic_peers:((.traffic_peers // []) | sort),
-      health_probes:([.health_probes[]? | {service_id,unlock_test,unlock_tests,domain,probe_domains,traffic_peers}] | sort_by(.service_id))
+      health_probes:([.health_probes[]? | {service_id,unlock_test,unlock_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
     }' <<<"$BOOTSTRAP"
   } | sha256sum | awk '{print $1}')
   LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)
@@ -435,7 +451,7 @@ CONFIG_FILE="/var/lib/prismdns/client.conf"
 HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
-AUDIT_VERSION="selected-providers-multi-domain-ipv4-service-peers-v2"
+AUDIT_VERSION="selected-providers-browser-path-ipv4-v5"
 LOCK_FILE="/run/prismdns-route-sync.lock"
 [[ -f "$CONFIG_FILE" ]] || exit 0
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
@@ -484,7 +500,7 @@ ensure_deterministic_agent
 CURRENT_HASH=$(jq -Sc '{
   mode:"deterministic-ipv4-service-peers-v2",
   traffic_peers:((.traffic_peers // []) | sort),
-  health_probes:([.health_probes[]? | {service_id,domain,probe_domains,unlock_test,unlock_tests,traffic_peers}] | sort_by(.service_id))
+  health_probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,unlock_test,unlock_tests,traffic_peers}] | sort_by(.service_id))
 }' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 LAST_HASH=$(cat "$HASH_FILE" 2>/dev/null || true)
 AUDIT_HASH=$({
@@ -492,13 +508,14 @@ AUDIT_HASH=$({
   jq -Sc '{
     service_audit_requested_at:(.service_audit_requested_at // ""),
     traffic_peers:((.traffic_peers // []) | sort),
-    health_probes:([.health_probes[]? | {service_id,unlock_test,unlock_tests,domain,probe_domains,traffic_peers}] | sort_by(.service_id))
+    health_probes:([.health_probes[]? | {service_id,unlock_test,unlock_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
   }' <<<"$BOOTSTRAP"
 } | sha256sum | awk '{print $1}')
 LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)
 trigger_service_audit() {
   [[ "$AUDIT_HASH" != "$LAST_AUDIT_HASH" ]] || return 0
   command -v systemctl >/dev/null 2>&1 || return 0
+  systemctl is-active --quiet prismdns-service-audit.service && return 0
   systemctl start --no-block prismdns-service-audit.service >/dev/null 2>&1 || true
 }
 route_family_ready() {
@@ -535,7 +552,7 @@ route_health_ok() {
   while IFS= read -r probe; do
     mapfile -t expected4 < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
     mapfile -t expected6 < <(jq -r '.traffic_peers[]? | select(contains(":"))' <<<"$probe" | sort -u)
-    mapfile -t domains < <(jq -r '[(.probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
+    mapfile -t domains < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
     for domain in "${domains[@]}"; do
       route_family_ready "$domain" A "${expected4[@]}" || return 1
       route_family_ready "$domain" AAAA "${expected6[@]}" || return 1
@@ -683,7 +700,7 @@ verify_route_probes() {
   while IFS= read -r probe; do
     mapfile -t peers4 < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
     mapfile -t peers6 < <(jq -r '.traffic_peers[]? | select(contains(":"))' <<<"$probe" | sort -u)
-    mapfile -t domains < <(jq -r '[(.probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
+    mapfile -t domains < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
     for domain in "${domains[@]}"; do
       expected=$((expected + 1))
       matched_peer="${peers4[0]:-}"

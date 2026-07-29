@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="2.2.1"
+VERSION="2.2.2"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -242,7 +242,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ssh -N -T -l prism-tunnel -p $ssh_port -i $SSH_KEY_FILE -o IdentitiesOnly=yes -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts -o HostKeyAlias=prism-$service_id -L 127.0.0.1:$local_http:127.0.0.1:80 -L 127.0.0.1:$local_https:127.0.0.1:443 $ssh_host
+ExecStart=/usr/bin/ssh -N -T -l prism-tunnel -p $ssh_port -i $SSH_KEY_FILE -o IdentitiesOnly=yes -o BatchMode=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=8 -o ConnectionAttempts=3 -o TCPKeepAlive=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none -o LogLevel=ERROR -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts -o HostKeyAlias=prism-$service_id -L 127.0.0.1:$local_http:127.0.0.1:80 -L 127.0.0.1:$local_https:127.0.0.1:443 $ssh_host
 Restart=always
 RestartSec=2
 LimitNOFILE=1048576
@@ -325,6 +325,54 @@ tunnel_port_ready() {
     prism-transport-probe "$proxy_ip" "$port" >/dev/null 2>&1
 }
 
+tunnel_https_probe() {
+  local proxy_ip="$1" domain path
+  while IFS='|' read -r domain path; do
+    if curl -4 -fsS -o /dev/null \
+      --resolve "${domain}:443:${proxy_ip}" \
+      --connect-timeout 3 --max-time 5 \
+      "https://${domain}${path}"; then
+      return 0
+    fi
+  done <<'EOF'
+www.gstatic.com|/generate_204
+www.cloudflare.com|/cdn-cgi/trace
+EOF
+  return 1
+}
+
+tunnel_functional_ready() {
+  local peer="$1" proxy_ip service_id now last_probe probe_file restart_file last_restart
+  proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
+  service_id=$(jq -r '.service_id' <<<"$peer")
+  probe_file="$STATE_DIR/health-probe-$service_id.timestamp"
+  restart_file="$STATE_DIR/health-restart-$service_id.timestamp"
+  now=$(date +%s)
+  last_probe=$(cat "$probe_file" 2>/dev/null || echo 0)
+  if ((now - last_probe < 60)); then
+    return 0
+  fi
+  if tunnel_https_probe "$proxy_ip"; then
+    printf '%s\n' "$now" >"$probe_file"
+    return 0
+  fi
+  last_restart=$(cat "$restart_file" 2>/dev/null || echo 0)
+  if ((now - last_restart >= 60)); then
+    systemctl restart "prism-transport-ssh-$service_id.service"
+    printf '%s\n' "$now" >"$restart_file"
+    for _ in $(seq 1 10); do
+      tunnel_ready "$peer" && break
+      sleep 1
+    done
+    if tunnel_https_probe "$proxy_ip"; then
+      printf '%s\n' "$now" >"$probe_file"
+      return 0
+    fi
+  fi
+  printf '%s\n' "$now" >"$probe_file"
+  return 1
+}
+
 tunnel_ready() {
   local peer="$1" proxy_ip service_id local_http local_https
   proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
@@ -367,6 +415,9 @@ sync_client() {
     [[ -n "$peer" ]] || continue
     proxy_id=$(jq -r '.proxy_id' <<<"$peer")
     if tunnel_ready "$peer"; then
+      if ! tunnel_functional_ready "$peer"; then
+        log "encrypted peer $proxy_id accepted TCP but failed HTTPS path probe; tunnel restart was requested without changing service routing"
+      fi
       ready+=("$proxy_id")
     fi
   done < <(jq -c '.[]?' <<<"$current_json")
@@ -409,7 +460,8 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=$INSTALL_PATH --sync
 EOF
-  cat >/etc/systemd/system/prism-transport.timer <<'EOF'
+  if [[ "$ROLE" == "proxy" ]]; then
+    cat >/etc/systemd/system/prism-transport.timer <<'EOF'
 [Unit]
 Description=Refresh Prism encrypted SNI transport
 
@@ -422,6 +474,21 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+  else
+    cat >/etc/systemd/system/prism-transport.timer <<'EOF'
+[Unit]
+Description=Refresh Prism encrypted SNI transport
+
+[Timer]
+OnBootSec=5s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  fi
   systemctl daemon-reload
   systemctl enable --now prism-transport.timer >/dev/null
 }

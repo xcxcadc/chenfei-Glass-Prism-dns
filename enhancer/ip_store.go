@@ -17,33 +17,32 @@ import (
 )
 
 type IPConfig struct {
-	ID                      string                   `json:"id"`
-	IP                      string                   `json:"ip"`
-	Note                    string                   `json:"note,omitempty"`
-	DNSNodeID               string                   `json:"dns_node_id"`
-	NodeName                string                   `json:"node_name"`
-	ExternalDNSNode         bool                     `json:"external_dns_node,omitempty"`
-	NodeSecret              string                   `json:"-"`
-	EnrollmentToken         string                   `json:"enrollment_token"`
-	Smart                   bool                     `json:"smart"`
-	Routes                  map[string]string        `json:"routes"`
-	TrafficPeers            []string                 `json:"traffic_peers,omitempty"`
-	TrafficRXBytes          uint64                   `json:"traffic_rx_bytes"`
-	TrafficTXBytes          uint64                   `json:"traffic_tx_bytes"`
-	TrafficUpdatedAt        *time.Time               `json:"traffic_updated_at,omitempty"`
-	DNSReady                bool                     `json:"dns_ready"`
-	SystemDNSReady          bool                     `json:"system_dns_ready"`
-	RoutesReady             bool                     `json:"routes_ready"`
-	HealthyRoutes           int                      `json:"healthy_routes"`
-	ExpectedRoutes          int                      `json:"expected_routes"`
-	HealthMessage           string                   `json:"health_message,omitempty"`
-	HealthUpdatedAt         *time.Time               `json:"health_updated_at,omitempty"`
-	ServiceResults          map[string]string        `json:"service_results,omitempty"`
-	ServiceAuditedAt        *time.Time               `json:"service_audited_at,omitempty"`
-	ServiceAuditRequestedAt *time.Time               `json:"service_audit_requested_at,omitempty"`
-	Failovers               map[string]FailoverEvent `json:"failovers,omitempty"`
-	CreatedAt               time.Time                `json:"created_at"`
-	UpdatedAt               time.Time                `json:"updated_at"`
+	ID                      string            `json:"id"`
+	IP                      string            `json:"ip"`
+	Note                    string            `json:"note,omitempty"`
+	DNSNodeID               string            `json:"dns_node_id"`
+	NodeName                string            `json:"node_name"`
+	ExternalDNSNode         bool              `json:"external_dns_node,omitempty"`
+	NodeSecret              string            `json:"-"`
+	EnrollmentToken         string            `json:"enrollment_token"`
+	Smart                   bool              `json:"smart"`
+	Routes                  map[string]string `json:"routes"`
+	TrafficPeers            []string          `json:"traffic_peers,omitempty"`
+	TrafficRXBytes          uint64            `json:"traffic_rx_bytes"`
+	TrafficTXBytes          uint64            `json:"traffic_tx_bytes"`
+	TrafficUpdatedAt        *time.Time        `json:"traffic_updated_at,omitempty"`
+	DNSReady                bool              `json:"dns_ready"`
+	SystemDNSReady          bool              `json:"system_dns_ready"`
+	RoutesReady             bool              `json:"routes_ready"`
+	HealthyRoutes           int               `json:"healthy_routes"`
+	ExpectedRoutes          int               `json:"expected_routes"`
+	HealthMessage           string            `json:"health_message,omitempty"`
+	HealthUpdatedAt         *time.Time        `json:"health_updated_at,omitempty"`
+	ServiceResults          map[string]string `json:"service_results,omitempty"`
+	ServiceAuditedAt        *time.Time        `json:"service_audited_at,omitempty"`
+	ServiceAuditRequestedAt *time.Time        `json:"service_audit_requested_at,omitempty"`
+	CreatedAt               time.Time         `json:"created_at"`
+	UpdatedAt               time.Time         `json:"updated_at"`
 }
 
 type ClientHealth struct {
@@ -153,7 +152,6 @@ func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...m
 	}
 	config.Routes = cloneStringMap(config.Routes)
 	config.TrafficPeers = ipv4Peers(config.TrafficPeers)
-	config.Failovers = cloneFailovers(config.Failovers)
 	for serviceID, proxyID := range config.Routes {
 		if strings.TrimSpace(serviceID) == "" || strings.TrimSpace(proxyID) == "" {
 			return IPConfig{}, errors.New("service routes must include a proxy node")
@@ -178,7 +176,6 @@ func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...m
 		config.CreatedAt = existing.CreatedAt
 		record.LastRXBytes = existing.LastRXBytes
 		record.LastTXBytes = existing.LastTXBytes
-		config.Failovers = retainedFailovers(existing, config)
 		if stringMapEqual(existing.Routes, config.Routes) {
 			config.ServiceResults = existing.ServiceResults
 			config.ServiceAuditedAt = existing.ServiceAuditedAt
@@ -227,36 +224,6 @@ func ipv4ProxyPeers(source map[string][]string) map[string][]string {
 		if len(filtered) > 0 {
 			result[proxyID] = filtered
 		}
-	}
-	return result
-}
-
-func cloneFailovers(source map[string]FailoverEvent) map[string]FailoverEvent {
-	if len(source) == 0 {
-		return nil
-	}
-	result := make(map[string]FailoverEvent, len(source))
-	for serviceID, event := range source {
-		event.TriedProxyIDs = append([]string(nil), event.TriedProxyIDs...)
-		result[serviceID] = event
-	}
-	return result
-}
-
-func retainedFailovers(existing ipConfigRecord, updated IPConfig) map[string]FailoverEvent {
-	source := updated.Failovers
-	if len(source) == 0 {
-		source = existing.Failovers
-	}
-	result := make(map[string]FailoverEvent)
-	for serviceID, event := range source {
-		if existing.Routes[serviceID] == updated.Routes[serviceID] && updated.Routes[serviceID] != "" {
-			event.TriedProxyIDs = append([]string(nil), event.TriedProxyIDs...)
-			result[serviceID] = event
-		}
-	}
-	if len(result) == 0 {
-		return nil
 	}
 	return result
 }
@@ -356,163 +323,6 @@ func (store *IPConfigStore) RequestServiceAudit(id string) (IPConfig, error) {
 	return record.public(), nil
 }
 
-func (store *IPConfigStore) MarkFailoverRecovered(id, serviceID, result string) (IPConfig, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	record, ok := store.configs[id]
-	if !ok {
-		return IPConfig{}, os.ErrNotExist
-	}
-	event, ok := record.Failovers[serviceID]
-	if !ok {
-		return IPConfig{}, errNoFailover
-	}
-	currentProxyID := record.Routes[serviceID]
-	switch event.Status {
-	case "switched":
-		if currentProxyID != event.ToProxyID {
-			return IPConfig{}, errNoFailover
-		}
-	case "unavailable":
-		if currentProxyID == "" || currentProxyID != event.FromProxyID {
-			return IPConfig{}, errNoFailover
-		}
-		event.ToProxyID = currentProxyID
-		event.ToProxyName = event.FromProxyName
-	default:
-		return IPConfig{}, errNoFailover
-	}
-	now := time.Now().UTC()
-	event.Status = "recovered"
-	event.RecoveredResult = strings.TrimSpace(result)
-	event.UpdatedAt = now
-	record.Failovers[serviceID] = event
-	record.UpdatedAt = now
-	store.configs[id] = record
-	if err := store.saveLocked(); err != nil {
-		return IPConfig{}, err
-	}
-	return record.public(), nil
-}
-
-func (store *IPConfigStore) RecordFailoverUnavailable(id, serviceID, reason string) (IPConfig, error) {
-	return store.RecordFailoverUnavailableGroup(id, []string{serviceID}, reason)
-}
-
-func (store *IPConfigStore) RecordFailoverUnavailableGroup(id string, serviceIDs []string, reason string) (IPConfig, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	record, ok := store.configs[id]
-	if !ok {
-		return IPConfig{}, os.ErrNotExist
-	}
-	now := time.Now().UTC()
-	if record.Failovers == nil {
-		record.Failovers = make(map[string]FailoverEvent)
-	}
-	for _, serviceID := range serviceIDs {
-		currentProxyID := record.Routes[serviceID]
-		if currentProxyID == "" {
-			continue
-		}
-		event := record.Failovers[serviceID]
-		if event.TriggeredAt.IsZero() || now.Sub(event.TriggeredAt) > failoverAttemptWindow {
-			event = FailoverEvent{TriggeredAt: now}
-		}
-		event.Status = "unavailable"
-		event.Reason = strings.TrimSpace(reason)
-		event.FromProxyID = currentProxyID
-		event.FromProxyName = ""
-		event.ToProxyID = ""
-		event.ToProxyName = ""
-		event.TriedProxyIDs = appendUniqueString(event.TriedProxyIDs, currentProxyID)
-		event.UpdatedAt = now
-		record.Failovers[serviceID] = event
-	}
-	record.UpdatedAt = now
-	store.configs[id] = record
-	if err := store.saveLocked(); err != nil {
-		return IPConfig{}, err
-	}
-	return record.public(), nil
-}
-
-func (store *IPConfigStore) ApplyAutomaticFailover(id, serviceID, proxyID, proxyName string, peers []string, reason string) (IPConfig, error) {
-	return store.ApplyAutomaticFailoverGroup(id, []string{serviceID}, proxyID, proxyName, peers, reason)
-}
-
-func (store *IPConfigStore) ApplyAutomaticFailoverGroup(id string, serviceIDs []string, proxyID, proxyName string, peers []string, reason string) (IPConfig, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	record, ok := store.configs[id]
-	if !ok {
-		return IPConfig{}, os.ErrNotExist
-	}
-	proxyID = strings.TrimSpace(proxyID)
-	peers = ipv4Peers(peers)
-	if proxyID == "" || len(peers) == 0 {
-		return IPConfig{}, errors.New("automatic failover requires an IPv4 proxy")
-	}
-	for _, serviceID := range serviceIDs {
-		if record.Routes[serviceID] == "" {
-			return IPConfig{}, errors.New("automatic failover service route does not exist")
-		}
-	}
-	now := monotonicTimestamp(time.Now().UTC(), record.ServiceAuditRequestedAt)
-	record.Routes = cloneStringMap(record.Routes)
-	record.ProxyPeers = cloneProxyPeers(record.ProxyPeers)
-	if record.ProxyPeers == nil {
-		record.ProxyPeers = make(map[string][]string)
-	}
-	record.ProxyPeers[proxyID] = peers
-	if record.Failovers == nil {
-		record.Failovers = make(map[string]FailoverEvent)
-	}
-	changed := false
-	for _, serviceID := range serviceIDs {
-		currentProxyID := record.Routes[serviceID]
-		if currentProxyID == proxyID {
-			continue
-		}
-		event := record.Failovers[serviceID]
-		if event.TriggeredAt.IsZero() || now.Sub(event.TriggeredAt) > failoverAttemptWindow {
-			event = FailoverEvent{TriggeredAt: now}
-		}
-		event.Status = "switched"
-		event.Reason = strings.TrimSpace(reason)
-		event.FromProxyID = currentProxyID
-		event.FromProxyName = ""
-		event.ToProxyID = proxyID
-		event.ToProxyName = strings.TrimSpace(proxyName)
-		event.TriedProxyIDs = appendUniqueString(event.TriedProxyIDs, currentProxyID, proxyID)
-		event.UpdatedAt = now
-		event.RecoveredResult = ""
-		record.Routes[serviceID] = proxyID
-		record.Failovers[serviceID] = event
-		changed = true
-	}
-	if !changed {
-		return record.public(), nil
-	}
-	record.ServiceResults = cloneStringMap(record.ServiceResults)
-	for _, serviceID := range serviceIDs {
-		delete(record.ServiceResults, serviceID)
-	}
-	if len(record.ServiceResults) == 0 {
-		record.ServiceResults = nil
-		record.ServiceAuditedAt = nil
-	}
-	pruneUnusedProxyPeers(&record)
-	record.TrafficPeers = flattenProxyPeers(record.ProxyPeers)
-	record.ServiceAuditRequestedAt = &now
-	record.UpdatedAt = now
-	store.configs[id] = record
-	if err := store.saveLocked(); err != nil {
-		return IPConfig{}, err
-	}
-	return record.public(), nil
-}
-
 func (store *IPConfigStore) ReplaceRoutes(id string, routes map[string]string) (IPConfig, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -557,7 +367,6 @@ func (store *IPConfigStore) NormalizeRouteConflicts(services []Service) (int, er
 func (store *IPConfigStore) applyNormalizedRoutes(record *ipConfigRecord, routes map[string]string, now time.Time) {
 	updated := record.IPConfig
 	updated.Routes = cloneStringMap(routes)
-	updated.Failovers = retainedFailovers(*record, updated)
 	updated.ServiceResults = nil
 	updated.ServiceAuditedAt = nil
 	auditRequestedAt := monotonicTimestamp(now, record.ServiceAuditRequestedAt)
@@ -609,7 +418,17 @@ func (store *IPConfigStore) load() error {
 	if err := json.Unmarshal(data, &records); err != nil {
 		return fmt.Errorf("decode IP configs: %w", err)
 	}
+	var rawRecords []map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rawRecords); err != nil {
+		return fmt.Errorf("inspect IP configs: %w", err)
+	}
 	normalized := false
+	for _, rawRecord := range rawRecords {
+		if _, exists := rawRecord["failovers"]; exists {
+			normalized = true
+			break
+		}
+	}
 	for _, record := range records {
 		originalTrafficPeers := append([]string(nil), record.TrafficPeers...)
 		originalProxyPeers := cloneProxyPeers(record.ProxyPeers)
@@ -660,7 +479,6 @@ func (record ipConfigRecord) public() IPConfig {
 	config.NodeSecret = ""
 	config.Routes = cloneStringMap(config.Routes)
 	config.TrafficPeers = append([]string(nil), config.TrafficPeers...)
-	config.Failovers = cloneFailovers(config.Failovers)
 	return config
 }
 
@@ -669,25 +487,7 @@ func cloneIPConfigRecord(record ipConfigRecord) ipConfigRecord {
 	record.ProxyPeers = cloneProxyPeers(record.ProxyPeers)
 	record.TrafficPeers = append([]string(nil), record.TrafficPeers...)
 	record.ServiceResults = cloneStringMap(record.ServiceResults)
-	record.Failovers = cloneFailovers(record.Failovers)
 	return record
-}
-
-func appendUniqueString(values []string, candidates ...string) []string {
-	seen := make(map[string]struct{}, len(values)+len(candidates))
-	result := make([]string, 0, len(values)+len(candidates))
-	for _, value := range append(append([]string(nil), values...), candidates...) {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
 }
 
 func pruneUnusedProxyPeers(record *ipConfigRecord) {
