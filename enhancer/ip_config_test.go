@@ -69,7 +69,7 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &config); err != nil {
 		t.Fatal(err)
 	}
-	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || override["proxy_node_id"] != "2" || len(config.TrafficPeers) != 1 || config.TrafficPeers[0] != "198.51.100.20" {
+	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || config.ServiceAuditRequestedAt == nil || override["proxy_node_id"] != "2" || len(config.TrafficPeers) != 1 || config.TrafficPeers[0] != "198.51.100.20" {
 		t.Fatalf("configuration was not orchestrated: config=%+v override=%+v", config, override)
 	}
 	if createdRule["target_type"] != "group" || createdRule["target_val"] != "__prism_enhancer_direct__" {
@@ -87,6 +87,23 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	}
 	if !strings.Contains(bootstrapResponse.Body.String(), `"unlock_test":"Netflix"`) {
 		t.Fatalf("bootstrap did not include UnlockTests provider: %s", bootstrapResponse.Body.String())
+	}
+	if !strings.Contains(bootstrapResponse.Body.String(), `"traffic_peers":["198.51.100.20"]`) {
+		t.Fatalf("bootstrap did not bind the service probe to its proxy IPv4: %s", bootstrapResponse.Body.String())
+	}
+	if !strings.Contains(bootstrapResponse.Body.String(), `"service_audit_requested_at"`) {
+		t.Fatalf("bootstrap did not include the service audit request: %s", bootstrapResponse.Body.String())
+	}
+	if !strings.Contains(bootstrapResponse.Body.String(), `"smart":false`) {
+		t.Fatalf("managed IP bootstrap must disable Agent smart mode for deterministic IPv4 routing: %s", bootstrapResponse.Body.String())
+	}
+
+	triggerRequest := httptest.NewRequest(http.MethodPost, "/enhancer/api/ip-configs/"+config.ID+"/audit", nil)
+	triggerRequest.Header.Set("Authorization", "Bearer valid")
+	triggerResponse := httptest.NewRecorder()
+	app.Handler().ServeHTTP(triggerResponse, triggerRequest)
+	if triggerResponse.Code != http.StatusAccepted {
+		t.Fatalf("service audit trigger failed: %d %s", triggerResponse.Code, triggerResponse.Body.String())
 	}
 
 	for _, report := range []string{
@@ -119,6 +136,83 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	stored, _ = ipStore.Get(config.ID)
 	if stored.ServiceResults[serviceID] == "" || stored.ServiceAuditedAt == nil {
 		t.Fatalf("service audit was not stored: %+v", stored)
+	}
+}
+
+func TestApplyIPRoutesLinksOverlappingDomainsBeforeControllerDelivery(t *testing.T) {
+	nextRuleID := 10
+	overrides := make(map[string]string)
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.URL.Path == "/catalog":
+			_, _ = writer.Write([]byte("# ---------- > AI Platform\n# > Claude\nnameserver /shared.example/group\n# > Gemini\nnameserver /api.shared.example/group\n"))
+		case request.URL.Path == "/api/nodes" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{
+				map[string]any{"id": "proxy-a", "role": "proxy", "public_ip": "198.51.100.10"},
+				map[string]any{"id": "proxy-b", "role": "proxy", "public_ip": "198.51.100.20, 2001:db8::20"},
+			})
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{})
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodPost:
+			nextRuleID++
+			var rule map[string]any
+			if err := json.NewDecoder(request.Body).Decode(&rule); err != nil {
+				t.Fatal(err)
+			}
+			rule["id"] = nextRuleID
+			writeJSON(writer, http.StatusCreated, rule)
+		case strings.HasPrefix(request.URL.Path, "/api/rules/") && strings.HasSuffix(request.URL.Path, "/override"):
+			var payload map[string]string
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			overrides[request.URL.Path] = payload["proxy_node_id"]
+			writeJSON(writer, http.StatusOK, map[string]bool{"ok": true})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore)
+	services := catalog.Snapshot(context.Background(), true).Services
+	serviceIDs := make(map[string]string)
+	for _, service := range services {
+		serviceIDs[service.Name] = service.ID
+	}
+	app, err := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := map[string]string{
+		serviceIDs["Claude"]: "proxy-a",
+		serviceIDs["Gemini"]: "proxy-a",
+	}
+	current := map[string]string{
+		serviceIDs["Claude"]: "proxy-a",
+		serviceIDs["Gemini"]: "proxy-b",
+	}
+	application, err := app.applyIPRoutes(context.Background(), "Bearer valid", "dns-1", previous, current, "https://panel.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for serviceName, serviceID := range serviceIDs {
+		if application.Routes[serviceID] != "proxy-b" {
+			t.Fatalf("%s did not follow the latest overlapping-domain selection: %+v", serviceName, application.Routes)
+		}
+	}
+	if len(overrides) != 2 {
+		t.Fatalf("expected two linked controller overrides, got %+v", overrides)
+	}
+	for path, proxyID := range overrides {
+		if proxyID != "proxy-b" {
+			t.Fatalf("controller override %s used conflicting proxy %s", path, proxyID)
+		}
+	}
+	if len(application.TrafficPeers) != 1 || application.TrafficPeers[0] != "198.51.100.20" {
+		t.Fatalf("linked route did not keep proxy IPv4 only: %+v", application.TrafficPeers)
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.4.5"
+const uiVersion = "1.4.8"
 
 type App struct {
 	catalog      *CatalogManager
@@ -138,13 +138,15 @@ func (app *App) handleHealth(writer http.ResponseWriter, request *http.Request) 
 	}
 	snapshot := app.catalog.Snapshot(request.Context(), false)
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"status":            "ok",
-		"catalog_updated":   snapshot.UpdatedAt,
-		"catalog_error":     snapshot.Error,
-		"service_count":     len(snapshot.Services),
-		"custom_count":      len(app.store.List()),
-		"controller_target": app.upstream.String(),
-		"ui_version":        uiVersion,
+		"status":                     "ok",
+		"catalog_updated":            snapshot.UpdatedAt,
+		"catalog_error":              snapshot.Error,
+		"service_count":              len(snapshot.Services),
+		"custom_count":               len(app.store.List()),
+		"controller_target":          app.upstream.String(),
+		"ui_version":                 uiVersion,
+		"authorization_mode":         "panel_allowlist",
+		"authorization_sync_seconds": 5,
 	})
 }
 

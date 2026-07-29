@@ -46,6 +46,7 @@ type serviceAuditRequest struct {
 type routeApplication struct {
 	TrafficPeers []string
 	ProxyPeers   map[string][]string
+	Routes       map[string]string
 }
 
 func (app *App) handleTrafficReport(writer http.ResponseWriter, request *http.Request) {
@@ -123,6 +124,11 @@ func (app *App) handleServiceAuditReport(writer http.ResponseWriter, request *ht
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	config, err = app.reconcileAutomaticFailover(config, payload.Results)
+	if err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	writeJSON(writer, http.StatusOK, config)
 }
 
@@ -146,10 +152,25 @@ func (app *App) handleIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "登录已失效"})
 		return
 	}
-	id := strings.TrimPrefix(request.URL.Path, "/enhancer/api/ip-configs/")
+	path := strings.Trim(strings.TrimPrefix(request.URL.Path, "/enhancer/api/ip-configs/"), "/")
+	auditRequest := strings.HasSuffix(path, "/audit")
+	id := strings.TrimSuffix(path, "/audit")
 	record, ok := app.ipStore.Record(id)
 	if !ok {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "IP 配置不存在"})
+		return
+	}
+	if auditRequest {
+		if request.Method != http.MethodPost {
+			methodNotAllowed(writer, http.MethodPost)
+			return
+		}
+		config, err := app.ipStore.RequestServiceAudit(record.ID)
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusAccepted, config)
 		return
 	}
 	switch request.Method {
@@ -177,17 +198,18 @@ func (app *App) handleBootstrap(writer http.ResponseWriter, request *http.Reques
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"id":                  record.ID,
-		"expected_ip":         record.IP,
-		"detected_ip":         clientIP(request),
-		"master":              publicBaseURL(request),
-		"secret":              record.NodeSecret,
-		"smart":               record.Smart,
-		"dns":                 "127.0.0.1",
-		"traffic_peers":       app.effectiveTrafficPeers(record),
-		"health_probes":       app.healthProbes(request.Context(), record),
-		"agent_installer":     "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh",
-		"transport_installer": "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prism_transport.sh",
+		"id":                         record.ID,
+		"expected_ip":                record.IP,
+		"detected_ip":                clientIP(request),
+		"master":                     publicBaseURL(request),
+		"secret":                     record.NodeSecret,
+		"smart":                      false,
+		"dns":                        "127.0.0.1",
+		"traffic_peers":              app.effectiveTrafficPeers(record),
+		"health_probes":              app.healthProbes(request.Context(), record),
+		"service_audit_requested_at": record.ServiceAuditRequestedAt,
+		"agent_installer":            "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh",
+		"transport_installer":        "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prism_transport.sh",
 	})
 }
 
@@ -210,11 +232,14 @@ func (app *App) effectiveTrafficPeers(record ipConfigRecord) []string {
 
 func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[string]any {
 	services := make(map[string]Service)
-	for _, service := range app.catalog.Snapshot(ctx, false).Services {
+	catalogServices := app.catalog.Snapshot(ctx, false).Services
+	for _, service := range catalogServices {
 		services[service.ID] = service
 	}
-	serviceIDs := make([]string, 0, len(record.Routes))
-	for serviceID := range record.Routes {
+	routes, _ := normalizeConflictingRoutes(nil, record.Routes, catalogServices)
+	proxyPeers := app.effectiveProxyPeers(record)
+	serviceIDs := make([]string, 0, len(routes))
+	for serviceID := range routes {
 		serviceIDs = append(serviceIDs, serviceID)
 	}
 	sort.Strings(serviceIDs)
@@ -231,6 +256,7 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 			"unlock_test":   unlockTestProvider(service),
 			"unlock_tests":  unlockTestProviders(service),
 			"probe_domains": preferredProbeDomains(service),
+			"traffic_peers": append([]string(nil), proxyPeers[routes[serviceID]]...),
 		})
 	}
 	return probes
@@ -371,7 +397,7 @@ func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, ExternalDNSNode: externalNode, Smart: payload.Smart, Routes: payload.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
+	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, ExternalDNSNode: externalNode, Smart: payload.Smart, Routes: application.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -452,7 +478,7 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 	}
 	record.Note = payload.Note
 	record.Smart = payload.Smart
-	record.Routes = payload.Routes
+	record.Routes = application.Routes
 	record.TrafficPeers = application.TrafficPeers
 	saved, err := app.ipStore.Save(record.IPConfig, record.NodeSecret, application.ProxyPeers)
 	if err != nil {
@@ -501,8 +527,10 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 			proxyNodes[valueString(node["id"])] = node
 		}
 	}
+	catalogServices := app.catalog.Snapshot(ctx, false).Services
+	current, _ = normalizeConflictingRoutes(previous, current, catalogServices)
 	services := make(map[string]Service)
-	for _, service := range app.catalog.Snapshot(ctx, false).Services {
+	for _, service := range catalogServices {
 		services[service.ID] = service
 	}
 	findRule := func(serviceID string) map[string]any {
@@ -607,7 +635,7 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		trafficPeers = append(trafficPeers, peer)
 	}
 	sort.Strings(trafficPeers)
-	return routeApplication{TrafficPeers: trafficPeers, ProxyPeers: proxyPeers}, nil
+	return routeApplication{TrafficPeers: trafficPeers, ProxyPeers: proxyPeers, Routes: current}, nil
 }
 
 func nodePublicIPs(node map[string]any) []string {
@@ -621,7 +649,9 @@ func nodePublicIPs(node map[string]any) []string {
 				candidate = strings.Trim(host, "[]")
 			}
 			if parsed := net.ParseIP(candidate); parsed != nil {
-				seen[parsed.String()] = struct{}{}
+				if parsed.To4() != nil {
+					seen[parsed.String()] = struct{}{}
+				}
 			}
 		}
 	}

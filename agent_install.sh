@@ -375,17 +375,16 @@ if ((fds >= MAX_FDS || close_wait >= MAX_CLOSE_WAIT)); then
     exit 0
 fi
 
-healthy=false
-for domain in www.cloudflare.com www.apple.com; do
-    if curl -4 -ksS -o /dev/null \
-        --connect-timeout 4 --max-time 8 \
-        --resolve "$domain:443:127.0.0.1" "https://$domain/"; then
-        healthy=true
+listeners_ready=true
+for port in 80 443; do
+    if ! ss -lntp 2>/dev/null | awk -v port=":$port" -v pid="$pid" \
+        '$4 ~ port "$" && index($0, "pid=" pid ",") {found=1} END {exit !found}'; then
+        listeners_ready=false
         break
     fi
 done
 
-if $healthy; then
+if $listeners_ready; then
     printf '0\n' > "$STATE_FILE"
     exit 0
 fi
@@ -396,14 +395,14 @@ failures=0
 failures=$((failures + 1))
 printf '%s\n' "$failures" > "$STATE_FILE"
 if ((failures >= 3)); then
-    restart_agent "three consecutive local TLS probes failed"
+    restart_agent "proxy listeners 80/443 were unavailable for three checks"
 fi
 EOF
     chmod 755 "$WATCHDOG_PATH"
 
     cat > /etc/systemd/system/prism-agent-watchdog.service <<EOF
 [Unit]
-Description=Prism Agent resource and TLS watchdog
+Description=Prism Agent resource and listener watchdog
 After=network-online.target $SERVICE_NAME.service
 
 [Service]
@@ -413,7 +412,7 @@ EOF
 
     cat > /etc/systemd/system/prism-agent-watchdog.timer <<'EOF'
 [Unit]
-Description=Check Prism Agent resource and TLS health
+Description=Check Prism Agent resource and listener health
 
 [Timer]
 OnBootSec=2min

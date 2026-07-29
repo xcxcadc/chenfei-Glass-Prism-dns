@@ -83,6 +83,18 @@ function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char 
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
+function markLoadedServiceIcons(root = document) {
+  root.querySelectorAll?.(".service-icon img").forEach(image => {
+    image.parentElement?.classList.toggle("loaded", image.complete && image.naturalWidth > 0);
+  });
+}
+document.addEventListener("load", event => {
+  if (event.target instanceof HTMLImageElement && event.target.matches(".service-icon img")) {
+    event.target.parentElement?.classList.add("loaded");
+  }
+}, true);
+new MutationObserver(() => requestAnimationFrame(() => markLoadedServiceIcons()))
+  .observe(document.documentElement, {childList:true, subtree:true});
 
 const scrollSelectors = [".container", ".service-grid", ".selected-service-list", ".route-node-list"];
 function captureScrollPositions() {
@@ -179,12 +191,49 @@ function serviceStatus(service, node) {
 }
 function serviceIconHTML(service) {
   const name = displayServiceName(service);
-  return `<span class="service-icon"><img src="/enhancer/icons/${encodeURIComponent(service.id)}.png" alt="" title="${escapeHTML(name)}" loading="lazy" decoding="async"></span>`;
+  const initial = Array.from(String(name || "P").trim())[0] || "P";
+  const iconDomain = serviceRouteDomains(service)[0] || service.id;
+  return `<span class="service-icon" data-initial="${escapeHTML(initial)}"><img src="/enhancer/icons/${encodeURIComponent(service.id)}.png?domain=${encodeURIComponent(iconDomain)}" alt="" title="${escapeHTML(name)}" loading="lazy" decoding="async"></span>`;
 }
 function formatDate(value) { if (!value) return "-"; try { return new Date(value).toLocaleString(state.lang === "zh" ? "zh-CN" : "en-US"); } catch { return value; } }
 function formatBytes(value) { const bytes = Number(value) || 0; if (bytes < 1024) return `${bytes} B`; const units = ["KB", "MB", "GB", "TB"]; let size = bytes; let unit = -1; do { size /= 1024; unit++; } while (size >= 1024 && unit < units.length - 1); return `${size >= 100 ? size.toFixed(0) : size.toFixed(2)} ${units[unit]}`; }
 function displayCategory(value) { return state.lang === "zh" ? categoryNames[value] || value : value; }
 function displayServiceName(service) { return state.lang === "zh" ? commonNames[service.name] || service.name : service.name; }
+function serviceRouteDomains(service) {
+  return [...new Set((service?.domains || []).flatMap(value => String(value || "").split(/[\s,]+/)).map(value => value.trim().toLowerCase().replace(/^\*\./, "")).filter(Boolean))];
+}
+function routeDomainsOverlap(left, right) {
+  return left.some(leftDomain => right.some(rightDomain => leftDomain === rightDomain || leftDomain.endsWith(`.${rightDomain}`) || rightDomain.endsWith(`.${leftDomain}`)));
+}
+function linkedRouteServiceIds(serviceId, routes) {
+  const selectedIds = new Set([...Object.keys(routes || {}).filter(id => routes[id]), serviceId]);
+  const services = new Map(state.catalog.filter(service => selectedIds.has(service.id)).map(service => [service.id, service]));
+  if (!services.has(serviceId)) return [serviceId];
+  const linked = [serviceId];
+  const seen = new Set(linked);
+  for (let index = 0; index < linked.length; index++) {
+    const currentDomains = serviceRouteDomains(services.get(linked[index]));
+    services.forEach((service, candidateId) => {
+      if (!seen.has(candidateId) && routeDomainsOverlap(currentDomains, serviceRouteDomains(service))) {
+        seen.add(candidateId);
+        linked.push(candidateId);
+      }
+    });
+  }
+  return linked.sort();
+}
+function applyLinkedRouteProxy(serviceId, proxyId, announce = false) {
+  const linkedIds = linkedRouteServiceIds(serviceId, state.modal?.routes || {});
+  linkedIds.forEach(linkedId => {
+    if (!state.modal.routes[linkedId]) return;
+    state.modal.routes[linkedId] = proxyId;
+    const select = document.querySelector(`.ip-service-proxy[data-service-id="${CSS.escape(linkedId)}"]`);
+    if (select) select.value = proxyId;
+  });
+  if (announce && linkedIds.length > 1) {
+    toast(state.lang === "zh" ? `${linkedIds.length} 个共享域名服务已联动到同一解锁机` : `${linkedIds.length} overlapping-domain services now share one proxy`, "warn");
+  }
+}
 function normalizeSearchText(value) {
   return String(value || "").normalize("NFKC").toLocaleLowerCase(state.lang === "zh" ? "zh-CN" : "en-US").replace(/\s+/g, " ").trim();
 }
@@ -237,10 +286,92 @@ function clientState(config, node) {
 }
 function auditResultState(result) {
   const value = String(result || "").trim();
-  if (!value) return {kind:"", label:t("auditPending")};
-  if (/^YES\b|^PASS\b/i.test(value)) return {kind:"good", label:value};
-  if (/UNSTABLE|Restricted|Partial|Banned|WAF|Error|Failed|N\/A/i.test(value)) return {kind:"warn", label:value};
-  return {kind:"bad", label:value};
+  if (!value) return {kind:"", label:t("auditPending"), detail:""};
+  if (/^YES\b|^PASS\b/i.test(value)) {
+    return {kind:"good", label:state.lang === "zh" ? "可用" : "Available", detail:value};
+  }
+  const ratio = value.match(/(\d+)\s*\/\s*(\d+)(?:\s*YES)?/i);
+  if (/UNSTABLE/i.test(value) && ratio) {
+    const passed = Number(ratio[1]); const total = Number(ratio[2]);
+    const wafCount = /WAF|Banned/i.test(value) ? Math.max(1, total - passed) : 0;
+    const suffix = wafCount
+      ? (state.lang === "zh" ? `，${wafCount} 次被 WAF 拒绝` : `, ${wafCount} WAF rejection${wafCount > 1 ? "s" : ""}`)
+      : "";
+    return {
+      kind:"bad",
+      label:state.lang === "zh"
+        ? `不可用（稳定性未达标：${total} 次仅 ${passed} 次成功${suffix}）`
+        : `Unavailable (stability failed: ${passed} of ${total} passed${suffix})`,
+      detail:value
+    };
+  }
+  if (/UNSTABLE/i.test(value)) return {kind:"bad", label:state.lang === "zh" ? "不可用（稳定性未达标）" : "Unavailable (stability failed)", detail:value};
+  if (/Restricted|Partial|Banned|WAF|Error|Failed|FAIL|N\/A|Unavailable|No result/i.test(value)) {
+    return {kind:"bad", label:state.lang === "zh" ? "不可用" : "Unavailable", detail:value};
+  }
+  return {kind:"bad", label:state.lang === "zh" ? "不可用" : "Unavailable", detail:value};
+}
+
+function failoverEvent(config, serviceId) {
+  return config?.failovers?.[serviceId] || null;
+}
+
+function proxyDisplayName(proxyId, fallback = "") {
+  return String(fallback || state.nodes.find(node => nodeID(node.id) === nodeID(proxyId))?.name || proxyId || "-");
+}
+
+function failoverState(config, serviceId) {
+  const event = failoverEvent(config, serviceId);
+  if (!event) return {kind:"", label:"", detail:""};
+  const from = proxyDisplayName(event.from_proxy_id, event.from_proxy_name);
+  const to = proxyDisplayName(event.to_proxy_id, event.to_proxy_name);
+  if (event.status === "recovered") {
+    const stayed = nodeID(event.from_proxy_id) && nodeID(event.from_proxy_id) === nodeID(event.to_proxy_id);
+    return {
+      kind:"good",
+      label:stayed
+        ? (state.lang === "zh" ? `${to} 已恢复，复测可用` : `${to} recovered; re-audit passed`)
+        : (state.lang === "zh" ? `已切换到 ${to}，复测可用` : `Switched to ${to}; re-audit passed`),
+      detail:event.recovered_result || event.reason || ""
+    };
+  }
+  if (event.status === "switched") {
+    return {
+      kind:"warn",
+      label:state.lang === "zh" ? `异常后已从 ${from} 自动切换到 ${to}，等待复测` : `Automatically switched from ${from} to ${to}; awaiting re-audit`,
+      detail:event.reason || ""
+    };
+  }
+  return {
+    kind:"bad",
+    label:state.lang === "zh" ? `当前服务异常，暂无其他可用 IPv4 解锁机` : "Service failed; no alternative IPv4 unlock proxy is available",
+    detail:event.reason || ""
+  };
+}
+
+function latestFailover(config) {
+  return Object.entries(config?.failovers || {})
+    .map(([serviceId, event]) => ({serviceId, event, state:failoverState(config, serviceId)}))
+    .sort((left, right) => new Date(right.event.updated_at || 0) - new Date(left.event.updated_at || 0))[0] || null;
+}
+
+function notifyFailoverChanges(previousConfigs, nextConfigs) {
+  const changes = [];
+  nextConfigs.forEach(config => {
+    const previous = previousConfigs.find(item => item.id === config.id);
+    if (!previous) return;
+    Object.entries(config.failovers || {}).forEach(([serviceId, event]) => {
+      if (!event.updated_at || previous.failovers?.[serviceId]?.updated_at === event.updated_at) return;
+      const service = state.catalog.find(item => item.id === serviceId);
+      changes.push({
+        updatedAt:new Date(event.updated_at).getTime(),
+        message:`${config.ip} · ${service ? displayServiceName(service) : serviceId}：${failoverState(config, serviceId).label}`,
+        type:event.status === "recovered" ? "good" : event.status === "unavailable" ? "error" : "warn"
+      });
+    });
+  });
+  changes.sort((left, right) => right.updatedAt - left.updatedAt);
+  if (changes[0]) toast(changes[0].message, changes[0].type);
 }
 
 function targetAuditObservations(proxyId, service) {
@@ -351,6 +482,7 @@ async function loadAll(silent = false) {
   state.loading = !silent;
   if (!silent) render();
   try {
+    const previousConfigs = state.ipConfigs;
     const [nodes, rules, catalog, ipConfigs, categoryData] = await Promise.all([api("/enhancer/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs"), api("/enhancer/api/categories")]);
     state.nodes = Array.isArray(nodes) ? nodes : [];
     state.rules = Array.isArray(rules) ? rules : [];
@@ -359,6 +491,7 @@ async function loadAll(silent = false) {
     state.customCategories = Array.isArray(categoryData?.custom_categories) ? categoryData.custom_categories : [];
     state.catalogMeta = catalog;
     state.ipConfigs = Array.isArray(ipConfigs) ? ipConfigs : [];
+    notifyFailoverChanges(previousConfigs, state.ipConfigs);
     if (!dnsNodes().some(node => nodeID(node.id) === nodeID(state.dnsNodeId))) state.dnsNodeId = dnsNodes()[0]?.id || "";
     localStorage.setItem("enhancer_dns", nodeID(state.dnsNodeId));
     await loadRoutingState();
@@ -440,7 +573,7 @@ function shellHTML() {
     <nav class="tabs" aria-label="${escapeHTML(browserTitle())}"><button class="tab ${state.tab === "services" ? "active" : ""}" data-tab="services">${t("services")}</button><button class="tab ${state.tab === "nodes" ? "active" : ""}" data-tab="nodes">${t("nodes")}</button><button class="tab ${state.tab === "ips" ? "active" : ""}" data-tab="ips">${t("ipConfigs")}</button></nav>
     <div class="sidebar-footer"><button class="user-button account-settings-trigger" id="account-settings" title="${t("accountSettings")}"><strong>${escapeHTML(state.user.username || "admin")}</strong><span>${state.lang === "zh" ? "管理员账户" : "Administrator"}</span></button>
     <button class="btn small site-settings-trigger">${t("siteSettings")}</button><div class="sidebar-tools"><button class="btn small theme-toggle-trigger" id="theme-toggle">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger" id="lang-toggle">${t("language")}</button><button class="btn small danger logout-trigger" id="logout">${t("logout")}</button></div></div></aside>
-    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(pageTitle)}</h1><p>${escapeHTML(pageHint)}</p></div><div class="toolbar-right"><span class="live-state"><span class="status-dot"></span>${escapeHTML(t("online"))}</span>${toolbarActionsHTML()}<button class="btn" id="refresh">${t("refresh")}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small site-settings-trigger">${t("siteSettings")}</button><button class="btn small theme-toggle-trigger">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger">${t("language")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
+    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(pageTitle)}</h1><p>${escapeHTML(pageHint)}</p></div><div class="toolbar-right"><span class="live-state"><span class="status-dot"></span>${escapeHTML(t("online"))}</span><span class="live-state authorization-state"><span class="status-dot"></span>${state.lang === "zh" ? "授权白名单 5 秒同步" : "Allowlist sync 5s"}</span>${toolbarActionsHTML()}<button class="btn" id="refresh">${t("refresh")}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small site-settings-trigger">${t("siteSettings")}</button><button class="btn small theme-toggle-trigger">${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</button><button class="btn small lang-toggle-trigger">${t("language")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
     <main class="container" data-view="${escapeHTML(state.tab)}">${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main></section></div>`;
 }
 
@@ -516,7 +649,10 @@ function nodeCheckHTML() {
   const problems = actual.filter(item => item.compatibility.kind !== "good");
   const reference = rowsData.filter(item => !item.compatibility.observations.length);
   const rows = rowsData.map(({name, value, compatibility}) => {
-    const targetLines = compatibility.observations.map(item => `<span>${escapeHTML(item.ip)} · ${escapeHTML(item.result || t("auditPending"))}</span>`).join("");
+    const targetLines = compatibility.observations.map(item => {
+      const audit = auditResultState(item.result);
+      return `<span title="${escapeHTML(audit.detail)}">${escapeHTML(item.ip)} · ${escapeHTML(audit.label)}</span>`;
+    }).join("");
     return `<div class="unlock-result-row"><div><strong>${escapeHTML(name)}</strong><span>${t("agentReference")} · ${escapeHTML(value)}</span>${targetLines}</div><span class="badge ${compatibility.kind}">${escapeHTML(compatibility.label)}</span></div>`;
   }).join("");
   return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("unlockResults")} · ${escapeHTML(node?.name || "-")}</h2><p>${t("unlockSourceHint")}</p></div><button class="btn icon modal-close">×</button></header><div class="modal-body"><div class="unlock-summary"><div><span>${t("actualAvailable")}</span><strong>${available.length}</strong></div><div><span>${t("actualProblem")}</span><strong>${problems.length}</strong></div><div><span>${t("referenceOnly")}</span><strong>${reference.length}</strong></div></div>${state.modal.running ? `<div class="unlock-wait"><div class="spinner"></div><span>${t("waitingResults")}</span></div>` : ""}<div class="unlock-results">${rows || `<div class="empty"><strong>${t("unknown")}</strong></div>`}</div>${state.modal.error ? `<div class="form-error">${escapeHTML(state.modal.error)}</div>` : ""}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close">${t("close")}</button><button class="btn primary" id="node-check-retry" ${state.modal.running ? "disabled" : ""}>${t("checkAgain")}</button></div></footer></section></div>`;
@@ -530,7 +666,8 @@ function ipConfigsHTML() {
   return `<section class="traffic-summary panel"><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small>${t("trafficHint")}</small></div><button class="btn danger" id="clear-all-traffic">${t("clearAllTraffic")}</button></section><section class="ip-list panel"><div class="ip-list-head"><span>${t("targetIP")}</span><span>${t("selectedServices")}</span><span>${t("clientTraffic")}</span><span>${t("dnsClient")}</span><span></span></div>${state.ipConfigs.map(config => {
     const node = ipConfigNode(config); const status = clientState(config, node); const count = Object.keys(config.routes || {}).length; const traffic = Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0);
     const audited = Object.values(config.service_results || {}).map(auditResultState); const passed = audited.filter(result => result.kind === "good").length;
-    return `<article class="ip-row" data-ip-id="${escapeHTML(config.id)}" role="button" tabindex="0" aria-label="${escapeHTML(`${t("editIP")} ${config.ip}`)}"><div class="ip-main"><strong>${escapeHTML(config.ip)}</strong><span>${escapeHTML(config.note || config.node_name || "-")}</span></div><div class="ip-selection"><span class="badge good">${count} / ${state.catalog.length}</span>${audited.length ? `<small>${t("actualAudit")} ${passed}/${audited.length}</small>` : ""}</div><div class="ip-traffic" title="RX ${formatBytes(config.traffic_rx_bytes)} · TX ${formatBytes(config.traffic_tx_bytes)}"><strong>${formatBytes(traffic)}</strong><span>${t("trafficUpdated")}: ${formatDate(config.traffic_updated_at)}</span></div><div class="ip-node-state" title="${escapeHTML(status.detail)}"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span><span>${escapeHTML(status.label)}</span></div><div class="ip-row-actions"><button class="btn small ip-script" data-ip-id="${escapeHTML(config.id)}">${t("clientScript")}</button><button class="btn small primary ip-edit" data-ip-id="${escapeHTML(config.id)}">${t("editIP")}</button><button class="btn small ip-clear-traffic" data-ip-id="${escapeHTML(config.id)}">${t("clearTraffic")}</button><button class="btn small danger ip-delete" data-ip-id="${escapeHTML(config.id)}">${t("deleteNode")}</button></div></article>`;
+    const failover = latestFailover(config);
+    return `<article class="ip-row" data-ip-id="${escapeHTML(config.id)}" role="button" tabindex="0" aria-label="${escapeHTML(`${t("editIP")} ${config.ip}`)}"><div class="ip-main"><strong>${escapeHTML(config.ip)}</strong><span>${escapeHTML(config.note || config.node_name || "-")}</span>${failover ? `<small class="ip-failover ${failover.state.kind}" title="${escapeHTML(failover.state.detail)}">${escapeHTML(failover.state.label)}</small>` : ""}</div><div class="ip-selection"><span class="badge good">${count} / ${state.catalog.length}</span>${audited.length ? `<small>${t("actualAudit")} ${passed}/${audited.length}</small>` : ""}</div><div class="ip-traffic" title="RX ${formatBytes(config.traffic_rx_bytes)} · TX ${formatBytes(config.traffic_tx_bytes)}"><strong>${formatBytes(traffic)}</strong><span>${t("trafficUpdated")}: ${formatDate(config.traffic_updated_at)}</span></div><div class="ip-node-state" title="${escapeHTML(status.detail)}"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span><span>${escapeHTML(status.label)}</span></div><div class="ip-row-actions"><button class="btn small ip-script" data-ip-id="${escapeHTML(config.id)}">${t("clientScript")}</button><button class="btn small primary ip-edit" data-ip-id="${escapeHTML(config.id)}">${t("editIP")}</button><button class="btn small ip-clear-traffic" data-ip-id="${escapeHTML(config.id)}">${t("clearTraffic")}</button><button class="btn small danger ip-delete" data-ip-id="${escapeHTML(config.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
 
@@ -767,7 +904,9 @@ function ipFormHTML() {
   const selectedCount = Object.keys(modal.routes).length;
   return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
     const selectedProxy = modal.routes[service.id] || ""; const checked = !!selectedProxy; const audit = auditResultState(modal.config?.service_results?.[service.id]);
-    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><span>${t("actualAudit")}</span><span class="badge ${audit.kind}" title="${escapeHTML(audit.label)}">${escapeHTML(audit.label)}</span></div></article>`;
+    const failover = failoverState(modal.config, service.id);
+    const canAudit = checked && !!modal.config?.id;
+    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small class="service-failover ${failover.kind}" title="${escapeHTML(failover.detail)}" ${failover.label ? "" : "hidden"}>${escapeHTML(failover.label)}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "立即实测" : "Test now"}</button></div></div></article>`;
   }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 将自动同步服务增删并安全刷新 DNS" : "The Agent applies additions and removals, then safely refreshes DNS"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
 }
 
@@ -821,7 +960,12 @@ function bindModal() {
     const select = option?.querySelector(".ip-service-proxy");
     const audit = option?.querySelector(".service-audit");
     if (input.checked) {
-      state.modal.routes[input.dataset.serviceId] = select?.value || state.modal.defaultProxy;
+      const linkedProxy = linkedRouteServiceIds(input.dataset.serviceId, state.modal.routes)
+        .map(serviceId => state.modal.routes[serviceId])
+        .find(Boolean);
+      state.modal.routes[input.dataset.serviceId] = linkedProxy || select?.value || state.modal.defaultProxy;
+      if (select) select.value = state.modal.routes[input.dataset.serviceId];
+      applyLinkedRouteProxy(input.dataset.serviceId, state.modal.routes[input.dataset.serviceId]);
     } else {
       delete state.modal.routes[input.dataset.serviceId];
     }
@@ -835,8 +979,12 @@ function bindModal() {
     if (save) save.disabled = selectedCount === 0;
   }));
   document.querySelectorAll(".ip-service-proxy").forEach(select => select.addEventListener("change", () => {
-    if (select.closest(".ip-service-option")?.querySelector(".ip-service-check")?.checked) state.modal.routes[select.dataset.serviceId] = select.value;
+    if (select.closest(".ip-service-option")?.querySelector(".ip-service-check")?.checked) {
+      state.modal.routes[select.dataset.serviceId] = select.value;
+      applyLinkedRouteProxy(select.dataset.serviceId, select.value, true);
+    }
   }));
+  document.querySelectorAll(".ip-service-audit").forEach(button => button.addEventListener("click", () => triggerIPServiceAudit(button.dataset.serviceId)));
   document.getElementById("confirm-delete-ip")?.addEventListener("click", deleteIPConfig);
   document.getElementById("account-form")?.addEventListener("submit", updateAccount);
   const brandingForm = document.getElementById("branding-form");
@@ -1094,11 +1242,78 @@ async function saveIPConfig() {
     const editing = !!modal.config;
     const path = editing ? `/enhancer/api/ip-configs/${encodeURIComponent(modal.config.id)}` : "/enhancer/api/ip-configs";
     const config = await api(path, {method:editing ? "PUT" : "POST", body:JSON.stringify(payload)});
+    const linkedRoutes = Object.keys(config.routes || {}).filter(serviceId => payload.routes?.[serviceId] && nodeID(payload.routes[serviceId]) !== nodeID(config.routes[serviceId])).length;
     state.modal = editing ? null : {type:"ip-script", config, command:ipScriptCommand(config)};
     await loadAll(true);
     renderModal();
-    toast(t("saved"), "good");
+    toast(linkedRoutes ? (state.lang === "zh" ? `保存成功；${linkedRoutes} 个共享域名服务已自动联动到同一解锁机` : `Saved; ${linkedRoutes} overlapping-domain services were linked to one proxy`) : t("saved"), "good");
   } catch (error) { state.modal.error = error.message; renderModal(); }
+}
+
+function updateIPServiceAuditUI(config) {
+  document.querySelectorAll(".ip-service-option").forEach(option => {
+    const serviceId = option.dataset.serviceId;
+    const badge = option.querySelector(".service-audit .badge");
+    const failoverNotice = option.querySelector(".service-failover");
+    const proxySelect = option.querySelector(".ip-service-proxy");
+    if (!badge) return;
+    const audit = auditResultState(config?.service_results?.[serviceId]);
+    badge.className = `badge ${audit.kind}`;
+    badge.textContent = audit.label;
+    badge.title = audit.detail;
+    if (proxySelect && config?.routes?.[serviceId]) {
+      proxySelect.value = nodeID(config.routes[serviceId]);
+    }
+    if (failoverNotice) {
+      const failover = failoverState(config, serviceId);
+      failoverNotice.className = `service-failover ${failover.kind}`;
+      failoverNotice.textContent = failover.label;
+      failoverNotice.title = failover.detail;
+      failoverNotice.hidden = !failover.label;
+    }
+  });
+}
+
+async function triggerIPServiceAudit(serviceId) {
+  const modal = state.modal;
+  const configID = modal?.config?.id;
+  if (!configID) return;
+  const buttons = [...document.querySelectorAll(".ip-service-audit")];
+  buttons.forEach(button => {
+    button.disabled = true;
+    if (button.dataset.serviceId === serviceId) button.textContent = state.lang === "zh" ? "实测中..." : "Testing...";
+  });
+  try {
+    const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(configID)}/audit`, {method:"POST"});
+    const requestedAt = new Date(requested.service_audit_requested_at || Date.now()).getTime();
+    const started = Date.now();
+    let latest = requested;
+    while (Date.now() - started < 180000) {
+      await delay(2500);
+      const configs = await api("/enhancer/api/ip-configs");
+      const nextConfigs = Array.isArray(configs) ? configs : state.ipConfigs;
+      notifyFailoverChanges(state.ipConfigs, nextConfigs);
+      state.ipConfigs = nextConfigs;
+      latest = state.ipConfigs.find(config => config.id === configID) || latest;
+      state.modal.config = latest;
+      state.modal.routes = {...(latest.routes || state.modal.routes)};
+      updateIPServiceAuditUI(latest);
+      const auditedAt = new Date(latest.service_audited_at || 0).getTime();
+      if (auditedAt >= requestedAt && latest.service_results?.[serviceId]) {
+        const failover = failoverState(latest, serviceId);
+        toast(failover.label || t("testDone"), failover.kind === "bad" ? "error" : failover.kind || "good");
+        return;
+      }
+    }
+    throw new Error(state.lang === "zh" ? "目标机尚未返回实测结果，请检查客户端在线状态" : "The target did not return an audit result");
+  } catch (error) {
+    toast(error.message, "error");
+  } finally {
+    document.querySelectorAll(".ip-service-audit").forEach(button => {
+      button.disabled = false;
+      button.textContent = state.lang === "zh" ? "立即实测" : "Test now";
+    });
+  }
 }
 
 async function deleteIPConfig() {
@@ -1178,6 +1393,8 @@ async function saveNode(draft) {
 }
 
 function installCommand(node, smartMode) {
+  const managedConfig = state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(node.id));
+  if (node.role === "dns" && managedConfig) return ipScriptCommand(managedConfig);
   const smart = node.role === "dns" && smartMode === "smart" ? " --smart" : "";
   const ip = node.role === "proxy" && node.public_ip ? ` --ip "${node.public_ip.replace(/"/g, "")}"` : "";
   return `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master ${location.origin} --secret ${node.secret || "<secret>"}${smart}${ip}`;

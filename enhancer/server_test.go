@@ -116,6 +116,12 @@ func TestServiceIconHandlerCachesFetchedIcon(t *testing.T) {
 		if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/png" || response.Body.String() != "png" {
 			t.Fatalf("unexpected icon response: %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
 		}
+		if !strings.Contains(response.Header().Get("Cache-Control"), "immutable") {
+			t.Fatalf("fetched icon should be immutable: %q", response.Header().Get("Cache-Control"))
+		}
+		if response.Header().Get("X-Prism-Icon-Source") != "remote" {
+			t.Fatalf("fetched icon source is missing: %q", response.Header().Get("X-Prism-Icon-Source"))
+		}
 	}
 	if requests != 1 {
 		t.Fatalf("icon should be fetched once, got %d requests", requests)
@@ -137,6 +143,82 @@ func TestServiceIconHandlerFallsBackToSVG(t *testing.T) {
 	app.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "image/svg+xml") || !strings.Contains(response.Body.String(), "<svg") {
 		t.Fatalf("unexpected fallback icon: %d %q %q", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+	}
+	if !strings.Contains(response.Header().Get("Cache-Control"), "no-store") {
+		t.Fatalf("fallback icon must not be cached by browsers: %q", response.Header().Get("Cache-Control"))
+	}
+	if response.Header().Get("X-Prism-Icon-Source") != "fallback" {
+		t.Fatalf("fallback icon source is missing: %q", response.Header().Get("X-Prism-Icon-Source"))
+	}
+}
+
+func TestServiceIconHandlerDoesNotFetchCustomDomainsDirectly(t *testing.T) {
+	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	service, _ := store.Upsert(Service{Name: "Internal", Domains: []string{"internal.example"}})
+	var requestedHosts []string
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requestedHosts = append(requestedHosts, request.URL.Hostname())
+		return nil, errors.New("offline")
+	})}
+	catalog := NewCatalogManager("https://catalog.invalid/list", client, store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, _ := NewApp("http://127.0.0.1:1", catalog, store, ipStore, client)
+
+	request := httptest.NewRequest(http.MethodGet, "/enhancer/icons/"+service.ID+".png", nil)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected icon response: %d", response.Code)
+	}
+	if len(requestedHosts) == 0 {
+		t.Fatal("expected the favicon proxy to be queried")
+	}
+	for _, host := range requestedHosts {
+		if host != "www.google.com" {
+			t.Fatalf("custom service triggered a direct request to %q", host)
+		}
+	}
+}
+
+func TestServiceIconHandlerReusesPersistentCache(t *testing.T) {
+	dataDir := t.TempDir()
+	store, _ := NewCustomServiceStore(filepath.Join(dataDir, "services.json"))
+	service, _ := store.Upsert(Service{Name: "Example", Domains: []string{"example.com"}})
+	requests := 0
+	fetchingClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"image/png"}},
+			Body:       io.NopCloser(strings.NewReader("persisted-png")),
+			Request:    request,
+		}, nil
+	})}
+	catalog := NewCatalogManager("https://catalog.invalid/list", fetchingClient, store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(dataDir, "ip-configs.json"))
+	first, _ := NewApp("http://127.0.0.1:1", catalog, store, ipStore, fetchingClient)
+	first.icons = newServiceIconCache(filepath.Join(dataDir, "icon-cache"))
+
+	path := "/enhancer/icons/" + service.ID + ".png"
+	response := httptest.NewRecorder()
+	first.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	if response.Code != http.StatusOK || response.Body.String() != "persisted-png" {
+		t.Fatalf("unexpected first icon response: %d %q", response.Code, response.Body.String())
+	}
+
+	offlineClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("offline")
+	})}
+	restartedCatalog := NewCatalogManager("https://catalog.invalid/list", offlineClient, store)
+	restarted, _ := NewApp("http://127.0.0.1:1", restartedCatalog, store, ipStore, offlineClient)
+	restarted.icons = newServiceIconCache(filepath.Join(dataDir, "icon-cache"))
+	response = httptest.NewRecorder()
+	restarted.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+	if response.Code != http.StatusOK || response.Body.String() != "persisted-png" {
+		t.Fatalf("persistent icon was not reused: %d %q", response.Code, response.Body.String())
+	}
+	if requests != 1 {
+		t.Fatalf("expected one remote icon request across restart, got %d", requests)
 	}
 }
 

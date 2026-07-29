@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="2.1.0"
+VERSION="2.2.1"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -171,12 +171,47 @@ apply_authorized_keys() {
   sshd -t
 }
 
+apply_proxy_authorization() {
+  local response="$1" temporary
+  local -a clients4=()
+  while IFS= read -r address; do
+    [[ -n "$address" ]] || continue
+    if [[ "$address" != *:* ]]; then
+      clients4+=("$address")
+    fi
+  done < <(jq -r '.authorized_ips[]?' <<<"$response" | sort -u)
+  join_csv() { local IFS=,; printf '%s' "$*"; }
+  temporary=$(mktemp)
+  {
+    echo 'table inet prism_authorization {'
+    printf '  set clients4 { type ipv4_addr; flags timeout; timeout 30s;'
+    ((${#clients4[@]} > 0)) && printf ' elements = { %s };' "$(join_csv "${clients4[@]}")"
+    echo ' }'
+    echo '  chain input {'
+    echo '    type filter hook input priority -25; policy accept;'
+    echo '    iifname "lo" tcp dport { 53, 80, 443 } accept'
+    echo '    iifname "lo" udp dport 53 accept'
+    echo '    ip saddr @clients4 tcp dport { 53, 80, 443 } accept'
+    echo '    ip saddr @clients4 udp dport 53 accept'
+    echo '    meta nfproto ipv4 tcp dport { 53, 80, 443 } drop'
+    echo '    meta nfproto ipv4 udp dport 53 drop'
+    echo '    meta nfproto ipv6 tcp dport { 53, 80, 443 } drop'
+    echo '    meta nfproto ipv6 udp dport 53 drop'
+    echo '  }'
+    echo '}'
+  } >"$temporary"
+  nft delete table inet prism_authorization >/dev/null 2>&1 || true
+  nft -f "$temporary"
+  rm -f "$temporary"
+}
+
 sync_proxy() {
   local response
   response=$(proxy_registration)
-  jq -e '.role == "proxy" and (.peers | type == "array")' <<<"$response" >/dev/null
+  jq -e '.role == "proxy" and (.peers | type == "array") and (.authorized_ips | type == "array")' <<<"$response" >/dev/null
   apply_authorized_keys "$response"
-  log "proxy transport synchronized: $(jq '.peers | length' <<<"$response") authorized clients"
+  apply_proxy_authorization "$response"
+  log "proxy transport synchronized: $(jq '.authorized_ips | length' <<<"$response") authorized IPs, $(jq '.peers | length' <<<"$response") encrypted clients"
 }
 
 service_id_for_proxy() {
@@ -283,20 +318,28 @@ apply_redirect_rules() {
   rm -f "$temporary"
 }
 
+tunnel_port_ready() {
+  local proxy_ip="$1" port="$2"
+  timeout 4 bash -c \
+    'exec 3<>"/dev/tcp/$1/$2"; exec 3>&-; exec 3<&-' \
+    prism-transport-probe "$proxy_ip" "$port" >/dev/null 2>&1
+}
+
 tunnel_ready() {
-  local proxy_ip="$1" domain
-  for domain in www.cloudflare.com www.apple.com www.youtube.com; do
-    if curl -4 -ksS -o /dev/null \
-      --connect-timeout 4 --max-time 8 \
-      --resolve "$domain:443:$proxy_ip" "https://$domain/"; then
-      return 0
-    fi
-  done
-  return 1
+  local peer="$1" proxy_ip service_id local_http local_https
+  proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
+  service_id=$(jq -r '.service_id' <<<"$peer")
+  local_http=$(jq -r '.local_http' <<<"$peer")
+  local_https=$(jq -r '.local_https' <<<"$peer")
+  systemctl is-active --quiet "prism-transport-ssh-$service_id.service" &&
+    ss -lnt 2>/dev/null | awk -v port=":$local_http" '$4 ~ port "$" {found=1} END {exit !found}' &&
+    ss -lnt 2>/dev/null | awk -v port=":$local_https" '$4 ~ port "$" {found=1} END {exit !found}' &&
+    tunnel_port_ready "$proxy_ip" 80 &&
+    tunnel_port_ready "$proxy_ip" 443
 }
 
 sync_client() {
-  local response peer proxy_id proxy_ip ready_json old_ready="[]" old_current="[]" current_json changed_ready=false changed_current=false
+  local response peer proxy_id ready_json old_ready="[]" old_current="[]" current_json changed_ready=false changed_current=false
   local -a ready=() current=()
   response=$(client_registration)
   jq -e '.role == "client" and (.peers | type == "array")' <<<"$response" >/dev/null
@@ -323,11 +366,10 @@ sync_client() {
   while IFS= read -r peer; do
     [[ -n "$peer" ]] || continue
     proxy_id=$(jq -r '.proxy_id' <<<"$peer")
-    proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
-    if tunnel_ready "$proxy_ip"; then
+    if tunnel_ready "$peer"; then
       ready+=("$proxy_id")
     fi
-  done < <(jq -c '.peers[]?' <<<"$response")
+  done < <(jq -c '.[]?' <<<"$current_json")
   ready_json=$(printf '%s\n' "${ready[@]}" | jq -Rsc 'split("\n") | map(select(length > 0)) | unique | sort')
   [[ -f "$READY_FILE" ]] && old_ready=$(jq -c 'sort' "$READY_FILE" 2>/dev/null || echo '[]')
   [[ "$(jq -c 'sort' <<<"$ready_json")" != "$old_ready" ]] && changed_ready=true
@@ -373,8 +415,8 @@ Description=Refresh Prism encrypted SNI transport
 
 [Timer]
 OnBootSec=5s
-OnUnitActiveSec=20s
-AccuracySec=2s
+OnUnitActiveSec=5s
+AccuracySec=1s
 Persistent=true
 
 [Install]
@@ -420,6 +462,7 @@ uninstall_transport() {
   rm -f /etc/systemd/system/prism-transport.service /etc/systemd/system/prism-transport.timer
   rm -f /etc/wireguard/prismwg0.conf "$ENV_FILE"
   nft delete table inet prism_transport >/dev/null 2>&1 || true
+  nft delete table inet prism_authorization >/dev/null 2>&1 || true
   systemctl daemon-reload
   log "encrypted transport removed"
 }

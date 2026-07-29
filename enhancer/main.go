@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"net/http"
@@ -52,6 +53,19 @@ func main() {
 	app.nodeLabels = nodeLabels
 	app.branding = branding
 	app.transport = transport
+	app.icons = newServiceIconCache(filepath.Join(*dataDir, "icon-cache"))
+	catalogSnapshot := catalog.Snapshot(context.Background(), false)
+	if normalized, normalizeErr := ipStore.NormalizeRouteConflicts(catalogSnapshot.Services); normalizeErr != nil {
+		log.Fatalf("normalize overlapping service routes: %v", normalizeErr)
+	} else if normalized > 0 {
+		log.Printf("normalized overlapping service routes for %d managed targets", normalized)
+	}
+	go func(services []Service) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		app.prewarmServiceIcons(ctx, services)
+		log.Printf("service icon cache prewarm finished")
+	}(catalogSnapshot.Services)
 
 	server := &http.Server{
 		Addr:              *listen,

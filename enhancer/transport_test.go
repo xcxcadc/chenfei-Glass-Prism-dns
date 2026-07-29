@@ -25,7 +25,7 @@ func TestTransportStoreBuildsReadyPair(t *testing.T) {
 	if err := store.RegisterClient("ip-a", clientKey, nil); err != nil {
 		t.Fatal(err)
 	}
-	record := ipConfigRecord{IPConfig: IPConfig{ID: "ip-a", Routes: map[string]string{"youtube": "proxy-a"}}}
+	record := ipConfigRecord{IPConfig: IPConfig{ID: "ip-a", IP: "198.51.100.30", Routes: map[string]string{"youtube": "proxy-a"}}}
 	clientConfig := store.ClientConfig(record)
 	if len(clientConfig.Peers) != 1 || clientConfig.Peers[0].SSHHost != "203.0.113.10" || clientConfig.Peers[0].SSHPort != 22 {
 		t.Fatalf("unexpected client config: %#v", clientConfig)
@@ -33,6 +33,9 @@ func TestTransportStoreBuildsReadyPair(t *testing.T) {
 	proxyConfig := store.ProxyConfig("proxy-a", []ipConfigRecord{record})
 	if len(proxyConfig.Peers) != 1 || !strings.HasPrefix(proxyConfig.Peers[0].SSHPublicKey, "ssh-ed25519 ") {
 		t.Fatalf("unexpected proxy config: %#v", proxyConfig)
+	}
+	if len(proxyConfig.AuthorizedIPs) != 1 || proxyConfig.AuthorizedIPs[0] != "198.51.100.30" {
+		t.Fatalf("panel-managed target IP was not authorized: %#v", proxyConfig)
 	}
 	if _, ready := store.EffectiveProxyIP("ip-a", "proxy-a"); ready {
 		t.Fatal("transport must not replace DNS before the client reports readiness")
@@ -92,8 +95,23 @@ func TestControllerNodeBySecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node.ID != "node-a" || node.Role != "proxy" || firstNodeIP(node) != "203.0.113.20" {
+	if node.ID != "node-a" || node.Role != "proxy" || firstNodeIPv4(node) != "203.0.113.20" {
 		t.Fatalf("unexpected node: %#v", node)
+	}
+}
+
+func TestFirstNodeIPv4NeverSelectsIPv6(t *testing.T) {
+	node := controllerNode{
+		PublicIP: "2001:db8::20, 203.0.113.20",
+		Address:  "[2001:db8::21]:22 198.51.100.21:22",
+	}
+	if result := firstNodeIPv4(node); result != "203.0.113.20" {
+		t.Fatalf("expected proxy IPv4 preference, got %q", result)
+	}
+	node.PublicIP = "2001:db8::20"
+	node.Address = "[2001:db8::21]:22"
+	if result := firstNodeIPv4(node); result != "" {
+		t.Fatalf("IPv6-only proxy must not be registered for unlock traffic: %q", result)
 	}
 }
 

@@ -73,9 +73,10 @@ type transportPeer struct {
 }
 
 type transportConfig struct {
-	Role      string          `json:"role"`
-	Interface string          `json:"interface"`
-	Peers     []transportPeer `json:"peers"`
+	Role          string          `json:"role"`
+	Interface     string          `json:"interface"`
+	Peers         []transportPeer `json:"peers"`
+	AuthorizedIPs []string        `json:"authorized_ips,omitempty"`
 }
 
 type controllerNode struct {
@@ -177,13 +178,17 @@ func (store *TransportStore) ClientConfig(record ipConfigRecord) transportConfig
 func (store *TransportStore) ProxyConfig(proxyID string, records []ipConfigRecord) transportConfig {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	config := transportConfig{Role: "proxy", Interface: "openssh", Peers: []transportPeer{}}
+	config := transportConfig{Role: "proxy", Interface: "openssh", Peers: []transportPeer{}, AuthorizedIPs: []string{}}
 	if _, exists := store.proxies[proxyID]; !exists {
 		return config
 	}
+	authorized := make(map[string]struct{})
 	for _, record := range records {
 		if !routesUseProxy(record.Routes, proxyID) {
 			continue
+		}
+		if parsed := net.ParseIP(strings.TrimSpace(record.IP)); parsed != nil {
+			authorized[parsed.String()] = struct{}{}
 		}
 		client, ok := store.clients[record.ID]
 		if !ok || !transportRecordFresh(client.UpdatedAt) {
@@ -197,6 +202,19 @@ func (store *TransportStore) ProxyConfig(proxyID string, records []ipConfigRecor
 			ClientIP:     clientIP,
 		})
 	}
+	for ip := range authorized {
+		config.AuthorizedIPs = append(config.AuthorizedIPs, ip)
+	}
+	sort.Slice(config.AuthorizedIPs, func(i, j int) bool {
+		left := net.ParseIP(config.AuthorizedIPs[i])
+		right := net.ParseIP(config.AuthorizedIPs[j])
+		leftV4 := left.To4() != nil
+		rightV4 := right.To4() != nil
+		if leftV4 != rightV4 {
+			return leftV4
+		}
+		return config.AuthorizedIPs[i] < config.AuthorizedIPs[j]
+	})
 	sort.Slice(config.Peers, func(i, j int) bool { return config.Peers[i].ConfigID < config.Peers[j].ConfigID })
 	return config
 }
@@ -278,9 +296,15 @@ func (app *App) handleProxyTransport(writer http.ResponseWriter, request *http.R
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	endpoint := firstNodeIP(node)
+	endpoint := firstNodeIPv4(node)
 	if endpoint == "" {
-		endpoint = clientIP(request)
+		if detected := net.ParseIP(clientIP(request)); detected != nil && detected.To4() != nil {
+			endpoint = detected.String()
+		}
+	}
+	if endpoint == "" {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "proxy node requires a reachable IPv4 address"})
+		return
 	}
 	if err := app.transport.RegisterProxy(node.ID, endpoint, payload.SSHHostKey); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -377,7 +401,7 @@ func uniqueProxyIDs(routes map[string]string) []string {
 	return result
 }
 
-func firstNodeIP(node controllerNode) string {
+func firstNodeIPv4(node controllerNode) string {
 	for _, value := range []string{node.PublicIP, node.Address} {
 		for _, candidate := range strings.FieldsFunc(value, func(character rune) bool {
 			return character == ',' || character == ';' || character == ' ' || character == '\t'
@@ -386,7 +410,7 @@ func firstNodeIP(node controllerNode) string {
 			if host, _, err := net.SplitHostPort(candidate); err == nil {
 				candidate = strings.Trim(host, "[]")
 			}
-			if parsed := net.ParseIP(candidate); parsed != nil {
+			if parsed := net.ParseIP(candidate); parsed != nil && parsed.To4() != nil {
 				return parsed.String()
 			}
 		}

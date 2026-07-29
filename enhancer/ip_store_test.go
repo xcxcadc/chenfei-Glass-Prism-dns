@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -23,6 +25,13 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 	}
 	if config.EnrollmentToken == "" {
 		t.Fatal("expected enrollment token")
+	}
+	if config.ServiceAuditRequestedAt == nil {
+		t.Fatal("new route configuration should request a service audit")
+	}
+	requested, err := store.RequestServiceAudit(config.ID)
+	if err != nil || requested.ServiceAuditRequestedAt == nil {
+		t.Fatalf("service audit request was not persisted: config=%+v err=%v", requested, err)
 	}
 
 	if _, err := store.UpdateClientReport(config.EnrollmentToken, 0, 0, ClientHealth{
@@ -83,11 +92,95 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, ok := reloaded.Record(config.ID)
-	if !ok || record.NodeSecret != "node-secret" || record.TrafficRXBytes != 10 || record.ProxyPeers["2"][0] != "198.51.100.20" {
+	if !ok || record.NodeSecret != "node-secret" || record.TrafficRXBytes != 10 || record.ProxyPeers["2"][0] != "198.51.100.20" || record.ServiceAuditRequestedAt == nil {
 		t.Fatalf("persisted record mismatch: %+v", record)
 	}
 	bySecret, ok := reloaded.GetByNodeSecret("node-secret")
 	if !ok || bySecret.ID != config.ID {
 		t.Fatalf("node secret lookup failed: %+v", bySecret)
+	}
+}
+
+func TestUnavailableFailoverCanRecoverOnCurrentProxy(t *testing.T) {
+	store, err := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := store.Save(IPConfig{
+		IP:        "203.0.113.20",
+		DNSNodeID: "dns-a",
+		NodeName:  "Target",
+		Routes:    map[string]string{"claude": "proxy-a"},
+	}, "secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unavailable, err := store.RecordFailoverUnavailable(config.ID, "claude", "UNSTABLE (2/3 YES; Banned (WAF))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unavailable.Failovers["claude"].Status != "unavailable" {
+		t.Fatalf("unavailable event was not stored: %+v", unavailable.Failovers)
+	}
+	recovered, err := store.MarkFailoverRecovered(config.ID, "claude", "YES (Region: SG)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := recovered.Failovers["claude"]
+	if event.Status != "recovered" || event.ToProxyID != "proxy-a" || event.RecoveredResult == "" {
+		t.Fatalf("current proxy recovery was not stored: %+v", event)
+	}
+}
+
+func TestIPConfigStoreNormalizesLegacyProxyPeersToIPv4(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ip-configs.json")
+	data, err := json.Marshal([]ipConfigRecord{{
+		IPConfig: IPConfig{
+			ID:              "ip-legacy",
+			IP:              "203.0.113.30",
+			DNSNodeID:       "dns-a",
+			NodeName:        "Legacy",
+			EnrollmentToken: "token",
+			Routes:          map[string]string{"gemini": "proxy-a"},
+			TrafficPeers:    []string{"198.51.100.10", "2001:db8::10"},
+		},
+		NodeSecret: "secret",
+		ProxyPeers: map[string][]string{
+			"proxy-a": {"2001:db8::10", "198.51.100.10"},
+			"unused":  {"198.51.100.20"},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewIPConfigStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, ok := store.Record("ip-legacy")
+	if !ok {
+		t.Fatal("legacy record was not loaded")
+	}
+	if len(record.ProxyPeers) != 1 || len(record.ProxyPeers["proxy-a"]) != 1 || record.ProxyPeers["proxy-a"][0] != "198.51.100.10" {
+		t.Fatalf("legacy proxy peers were not normalized to the assigned IPv4 proxy: %+v", record.ProxyPeers)
+	}
+	if len(record.TrafficPeers) != 1 || record.TrafficPeers[0] != "198.51.100.10" {
+		t.Fatalf("legacy traffic peers were not normalized to IPv4: %+v", record.TrafficPeers)
+	}
+
+	persistedData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted []ipConfigRecord
+	if err := json.Unmarshal(persistedData, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if len(persisted) != 1 || len(persisted[0].TrafficPeers) != 1 || persisted[0].TrafficPeers[0] != "198.51.100.10" {
+		t.Fatalf("normalized IPv4 peers were not persisted: %+v", persisted)
 	}
 }

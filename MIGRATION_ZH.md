@@ -6,7 +6,7 @@
 |---|---|---|
 | Controller 数据库 | `/opt/prism/data.db` | 管理员账号、节点、密钥、规则和运行状态 |
 | Controller 环境 | `/opt/prism/.env` | JWT 密钥与 Controller 环境配置 |
-| Enhancer 数据目录 | `/var/lib/prism-enhancer` | 自定义服务与分类、IP 配置、路由、流量、节点中文名称/地区、品牌设置和传输信息 |
+| Enhancer 数据目录 | `/var/lib/prism-enhancer` | 自定义服务与分类、IP 配置、路由、流量、节点中文名称/地区、品牌设置、传输信息和服务图标缓存 |
 
 迁移面板时必须同时迁移这三项。只复制 `data.db` 会丢失 IP 配置、流量、服务分类、中文名称、地区和站点标题。
 
@@ -119,7 +119,9 @@ journalctl -u prism-controller -u prism-enhancer --since "-10 min" --no-pager
 6. 随机选择一个目标 IP，执行 Gemini、Claude、Disney+ 或 YouTube 的真实解锁测试。
 7. 等待 1 分钟，确认目标 IP 流量继续上报。
 
-健康接口中的 `status` 应为 `ok`，所有已安装目标机应逐步恢复为 `READY`。
+健康接口中的 `status` 应为 `ok`，`authorization_mode` 应为 `panel_allowlist`，`authorization_sync_seconds` 应为 `5`，所有已安装目标机应逐步恢复为 `READY`。
+
+增强层首次启动会自动迁移旧数据：移除持久化 Proxy IPv6，只保留受管解锁所需的 IPv4；共用父域、子域或泛域名的服务会归一到同一 Proxy。迁移会保留节点 ID、目标 IP、令牌和累计流量，但会请求目标机重新实测受影响服务。
 
 ## 五、切换域名或面板地址
 
@@ -132,7 +134,7 @@ journalctl -u prism-controller -u prism-enhancer --since "-10 min" --no-pager
 3. 不要删除并重建原节点或 IP 配置，否则会生成新的节点密钥和专属令牌。
 4. 确认新地址可访问后，再关闭旧面板。
 
-重新执行安装命令只更新 Prism Agent、面板地址和守卫配置，不会修改 MTProxy、XrayR 或 V2bX。
+重新执行安装命令只更新 Prism Agent、面板地址和守卫配置，不会修改 MTProxy、XrayR 或 V2bX。Proxy 的 IPv4 DNS/SNI 授权白名单会在新面板恢复后 5 秒刷新；IPv6 仅拒绝 Prism 的 53/80/443，MTProxy 等其他端口不受影响。
 
 ## 六、失败回滚
 

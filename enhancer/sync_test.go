@@ -27,8 +27,8 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
 	_, err = ipStore.Save(IPConfig{
 		IP: "203.0.113.10", DNSNodeID: "dns-1", NodeName: "Target", Smart: true,
-		Routes: map[string]string{service.ID: "proxy-1"}, TrafficPeers: []string{"198.51.100.20"},
-	}, "node-secret", map[string][]string{"proxy-1": {"198.51.100.20"}})
+		Routes: map[string]string{service.ID: "proxy-1"}, TrafficPeers: []string{"198.51.100.20", "2001:db8::20"},
+	}, "node-secret", map[string][]string{"proxy-1": {"198.51.100.20", "2001:db8::20"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,8 +49,11 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.RuleOverrides["example.com"] != "proxy-1" || payload.RuleOverrides["cdn.example.com"] != "proxy-1" {
-		t.Fatalf("persistent overrides were not restored: %+v", payload.RuleOverrides)
+	if _, exists := payload.RuleOverrides["example.com"]; exists {
+		t.Fatalf("managed exact override must be removed: %+v", payload.RuleOverrides)
+	}
+	if _, exists := payload.RuleOverrides["cdn.example.com"]; exists {
+		t.Fatalf("managed wildcard override must be removed: %+v", payload.RuleOverrides)
 	}
 	if _, exists := payload.RuleOverrides["*.example.com"]; exists {
 		t.Fatalf("wildcard leaked into agent overrides: %+v", payload.RuleOverrides)
@@ -61,6 +64,10 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	rule := payload.Rules["enhancer:"+service.ID+":example.com"]
 	if rule == nil || rule["pattern"] != "example.com" {
 		t.Fatalf("persistent rule missing: %+v", payload.Rules)
+	}
+	ips, _ := rule["ips"].([]any)
+	if len(ips) != 1 || ips[0] != "198.51.100.20" {
+		t.Fatalf("managed rules must use only the proxy IPv4 address: %+v", rule)
 	}
 	if _, exists := payload.Rules["https://panel/enhancer/rules/stale.list:stale.example"]; exists {
 		t.Fatal("stale enhancer rule was not removed")
@@ -95,7 +102,7 @@ func TestEffectiveProxyPeersMigratesSingleProxyConfig(t *testing.T) {
 		TrafficPeers: []string{"198.51.100.20", "2001:db8::20"},
 	}}
 	peers := effectiveProxyPeers(record)
-	if len(peers) != 1 || len(peers["proxy-1"]) != 2 {
+	if len(peers) != 1 || len(peers["proxy-1"]) != 1 || peers["proxy-1"][0] != "198.51.100.20" {
 		t.Fatalf("legacy single-proxy config was not migrated: %+v", peers)
 	}
 	record.Routes["service-b"] = "proxy-2"
