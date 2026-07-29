@@ -177,6 +177,36 @@ nameserver /youtubei.googleapis.com/group
 	}
 }
 
+func TestParseSmartDNSSupplementsGeminiApplicationDependencies(t *testing.T) {
+	input := `# ---------- > AI Platform
+# > Google Gemini
+nameserver /gemini.google.com/group
+nameserver /proactivebackend-pa.googleapis.com/group
+`
+	services, err := ParseSmartDNS(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(services) != 1 {
+		t.Fatalf("expected one service, got %d", len(services))
+	}
+	for _, domain := range []string{
+		"accounts.google.com",
+		"firebaseinstallations.googleapis.com",
+		"lh3.googleusercontent.com",
+		"oauthaccountmanager.googleapis.com",
+		"people-pa.googleapis.com",
+		"play.googleapis.com",
+		"signaler-pa.googleapis.com",
+		"subscriptionsfirstparty-pa.googleapis.com",
+		"www.gstatic.com",
+	} {
+		if !contains(services[0].Domains, domain) {
+			t.Fatalf("Gemini application dependency %q missing from %#v", domain, services[0].Domains)
+		}
+	}
+}
+
 func TestParseSmartDNSSupplementsCurrentViuDomains(t *testing.T) {
 	input := `# ---------- > Global Platform
 # > Viu.TV

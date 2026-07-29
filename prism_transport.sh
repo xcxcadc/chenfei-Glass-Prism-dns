@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="2.2.2"
+VERSION="2.2.3"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -481,7 +481,7 @@ Description=Refresh Prism encrypted SNI transport
 
 [Timer]
 OnBootSec=5s
-OnUnitInactiveSec=15s
+OnUnitInactiveSec=60s
 AccuracySec=1s
 Persistent=true
 

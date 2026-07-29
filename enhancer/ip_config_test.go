@@ -403,13 +403,7 @@ func TestPreferredProbeDomainsCompilesWildcardPatterns(t *testing.T) {
 }
 
 func TestPreferredProbeDomainsIncludesGeminiApplicationDependencies(t *testing.T) {
-	service := Service{Name: "Gemini", Domains: []string{
-		"gemini.google.com",
-		"aisandbox-pa.googleapis.com",
-		"alkaliminer-pa.googleapis.com",
-		"proactivebackend-pa.googleapis.com",
-		"robinfrontend-pa.googleapis.com",
-	}}
+	service := Service{Name: "Gemini", Domains: append([]string(nil), geminiApplicationDomains...)}
 	domains := preferredProbeDomains(service)
 	if len(domains) != len(service.Domains) {
 		t.Fatalf("expected every Gemini application dependency, got %#v", domains)
@@ -439,5 +433,15 @@ func TestPreferredProbeDomainsUsesReachableOpenAIDependencyHosts(t *testing.T) {
 		if contains(domains, rootOnly) {
 			t.Fatalf("non-serving root %q should not be used as an HTTPS dependency: %#v", rootOnly, domains)
 		}
+	}
+}
+
+func TestCopilotImageCreatorUsesItsOwnPathChecks(t *testing.T) {
+	service := Service{Name: "Microsoft Copilot Image Creator", Domains: []string{"copilot.microsoft.com"}}
+	if providers := unlockTestProviders(service); len(providers) != 0 {
+		t.Fatalf("unsupported shared provider must not override path checks: %#v", providers)
+	}
+	if domains := preferredProbeDomains(service); len(domains) != 1 || domains[0] != "copilot.microsoft.com" {
+		t.Fatalf("expected the Copilot page probe, got %#v", domains)
 	}
 }

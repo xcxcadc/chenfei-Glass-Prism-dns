@@ -45,6 +45,7 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	var payload struct {
 		Rules         map[string]map[string]any `json:"rules"`
 		RuleOverrides map[string]string         `json:"rule_overrides"`
+		Smart         bool                      `json:"smart"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
@@ -74,6 +75,12 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	}
 	if _, exists := payload.Rules["public:example.net"]; !exists {
 		t.Fatal("unmanaged rule was removed")
+	}
+	if payload.Smart {
+		t.Fatal("managed DNS sync must disable Agent smart mode")
+	}
+	if check, _ := rule["check"].(bool); check {
+		t.Fatalf("managed DNS rule must not enable Agent circuit-breaker probes: %+v", rule)
 	}
 }
 

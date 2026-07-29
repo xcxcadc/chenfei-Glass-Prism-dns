@@ -4,6 +4,7 @@ set -e
 
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 REPO="${PRISM_AGENT_REPO:-mslxi/Liquid-Glass-Prism-dns}"
+PINNED_STABLE_TAG="${PRISM_AGENT_TAG:-v1.2.1}"
 BINARY_NAME="prism-agent"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"
@@ -118,6 +119,7 @@ uninstall_agent() {
     fi
     
     if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
+        chattr -i "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
         rm "$INSTALL_DIR/$BINARY_NAME"
     fi
     rm -f /etc/systemd/system/prism-agent-watchdog.service
@@ -154,9 +156,8 @@ download_binary() {
         info "Mode: ${GREEN}Stable Channel (Official)${NC}"
     fi
     
-    RESP=$(curl -s --connect-timeout 10 "$API_URL")
-
     if [ "$BETA_MODE" = true ]; then
+        RESP=$(curl -s --connect-timeout 10 "$API_URL")
         # Beta: find the beta release with largest timestamp (format: beta-YYYYMMDDHHMMSS)
         DOWNLOAD_URL=$(echo "$RESP" | awk -v asset="$ASSET_NAME" '
             BEGIN { latest_ts = ""; latest_url = "" }
@@ -181,17 +182,8 @@ download_binary() {
         ')
         VERSION=$(echo "$DOWNLOAD_URL" | grep -oE 'beta-[0-9]+' | head -1)
     else
-        # Stable: find first non-prerelease with agent asset
-        DOWNLOAD_URL=$(echo "$RESP" | grep -E '"tag_name"|"prerelease"|"browser_download_url".*prism-agent' | \
-            awk -v asset="$ASSET_NAME" '
-                /"tag_name":/ { tag=$0; gsub(/.*"tag_name": *"|".*/, "", tag) }
-                /"prerelease":/ { prerelease=$0; gsub(/.*"prerelease": *|,.*/, "", prerelease) }
-                /"browser_download_url":/ && index($0, asset) { 
-                    url=$0; gsub(/.*"browser_download_url": *"|".*/, "", url)
-                    if (prerelease == "false") { print url; exit }
-                }
-            ')
-        VERSION=$(echo "$DOWNLOAD_URL" | grep -oE 'v[0-9]+\.[0-9]+[^/]*' | head -1)
+        DOWNLOAD_URL="https://github.com/$REPO/releases/download/$PINNED_STABLE_TAG/$ASSET_NAME"
+        VERSION="$PINNED_STABLE_TAG"
     fi
 
     if [ -z "$DOWNLOAD_URL" ]; then
@@ -210,6 +202,18 @@ download_binary() {
         error "Download failed. Please check network or GitHub access."
     fi
 
+    if [ "$BETA_MODE" = false ] && [ "$PINNED_STABLE_TAG" = "v1.2.1" ] && [ "$OS" = "linux" ]; then
+        case "$ARCH_SUFFIX" in
+            amd64) EXPECTED_SHA256="0c2fb5c6e7b95af356ba78663d7279e8ecce2b9e05e3991426096044fffc1f42" ;;
+            arm64) EXPECTED_SHA256="5b8511e5385680a59a58acb1db27d4a7366f69d2dccff27275d180eabfe5da92" ;;
+            *) EXPECTED_SHA256="" ;;
+        esac
+        if [ -n "$EXPECTED_SHA256" ]; then
+            ACTUAL_SHA256=$(sha256sum "/tmp/$BINARY_NAME" | awk '{print $1}')
+            [ "$ACTUAL_SHA256" = "$EXPECTED_SHA256" ] || error "Agent checksum verification failed."
+        fi
+    fi
+
     chmod +x "/tmp/$BINARY_NAME"
     
     if systemctl is-active --quiet "$SERVICE_NAME"; then
@@ -217,14 +221,22 @@ download_binary() {
         systemctl stop "$SERVICE_NAME"
     fi
 
+    chattr -i "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || true
     mv "/tmp/$BINARY_NAME" "$INSTALL_DIR/$BINARY_NAME"
+    if [ "${PRISM_AGENT_ALLOW_SELF_UPDATE:-0}" != "1" ]; then
+        chattr +i "$INSTALL_DIR/$BINARY_NAME" 2>/dev/null || warn "Unable to lock the compatible Agent binary; its built-in updater may restore passive circuit breaking."
+    fi
 }
 
 configure_service() {
     step "Configuring systemd service..."
     SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+    READ_ONLY_AGENT=""
 
     EXEC_ARGS="--master \"$MASTER_ADDR\" --secret \"$SECRET_TOKEN\""
+    if [ "${PRISM_AGENT_ALLOW_SELF_UPDATE:-0}" != "1" ]; then
+        READ_ONLY_AGENT="ReadOnlyPaths=$INSTALL_DIR/$BINARY_NAME"
+    fi
     
     if [ "$SMART_MODE" = true ]; then
         EXEC_ARGS="$EXEC_ARGS --smart"
@@ -246,6 +258,7 @@ Restart=always
 RestartSec=5s
 ExecStart=$INSTALL_DIR/$BINARY_NAME $EXEC_ARGS
 LimitNOFILE=65535
+$READ_ONLY_AGENT
 
 [Install]
 WantedBy=multi-user.target

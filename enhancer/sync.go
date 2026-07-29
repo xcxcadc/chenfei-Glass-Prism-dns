@@ -62,6 +62,7 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 	for domain := range managedDomains {
 		delete(overrides, domain)
 	}
+	payload["smart"] = false
 
 	routes, _ := normalizeConflictingRoutes(nil, record.Routes, services)
 	proxyPeers := app.effectiveProxyPeers(record)
@@ -85,12 +86,11 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 			"pattern": metaKey, "ips": peers, "strategy": "", "name": "", "type": "meta",
 			"priority": 100, "check": false, "node_id": proxyID,
 		}
-		probeDomain := preferredProbeDomain(service)
 		for _, domain := range routingDomains(service.Domains) {
 			name := "enhancer:" + service.ID
 			rules[name+":"+domain] = map[string]any{
 				"pattern": domain, "ips": peers, "strategy": "", "name": name, "type": "DOMAIN-SUFFIX",
-				"priority": 100, "check": domain == probeDomain, "node_id": "",
+				"priority": 100, "check": false, "node_id": "",
 			}
 			delete(overrides, domain)
 		}

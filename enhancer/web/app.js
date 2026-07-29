@@ -82,6 +82,8 @@ const state = {
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
+const iconAssetVersion = "1.4.10-final";
+
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
 function markLoadedServiceIcons(root = document) {
@@ -205,7 +207,7 @@ function serviceIconHTML(service) {
   const name = displayServiceName(service);
   const initial = Array.from(String(name || "P").trim())[0] || "P";
   const iconDomain = serviceRouteDomains(service)[0] || service.id;
-  return `<span class="service-icon" data-initial="${escapeHTML(initial)}"><span class="service-icon-fallback" aria-hidden="true">${escapeHTML(initial)}</span><img src="/enhancer/icons/${encodeURIComponent(service.id)}.png?domain=${encodeURIComponent(iconDomain)}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="eager" decoding="async" fetchpriority="high"></span>`;
+  return `<span class="service-icon" data-initial="${escapeHTML(initial)}"><span class="service-icon-fallback" aria-hidden="true">${escapeHTML(initial)}</span><img src="/enhancer/icons/${encodeURIComponent(service.id)}.png?domain=${encodeURIComponent(iconDomain)}&v=${iconAssetVersion}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="eager" decoding="async" fetchpriority="high"></span>`;
 }
 function formatDate(value) { if (!value) return "-"; try { return new Date(value).toLocaleString(state.lang === "zh" ? "zh-CN" : "en-US"); } catch { return value; } }
 function formatRelativeDate(value) {
@@ -351,7 +353,7 @@ function auditResultState(result) {
   const value = String(result || "").trim();
   if (!value) return {kind:"", label:t("auditPending"), detail:""};
   if (/^YES\b|^PASS\b/i.test(value)) {
-    return {kind:"good", label:state.lang === "zh" ? "可用" : "Available", detail:value};
+    return {kind:"good", label:state.lang === "zh" ? "DNS/SNI 实测通过" : "DNS/SNI verified", detail:value};
   }
   const ratio = value.match(/(\d+)\s*\/\s*(\d+)(?:\s*YES)?/i);
   if (/INCONCLUSIVE|DEGRADED|UNSTABLE|Banned|WAF/i.test(value) && ratio) {
@@ -1156,7 +1158,7 @@ function nodeDeleteHTML() {
 function ipFormHTML() {
   const modal = state.modal; const draft = modal.draft; const editing = !!modal.config; const proxies = proxyNodes();
   if (modal.step === 1) {
-    return `<div class="modal-backdrop"><form class="modal medium panel" id="ip-form"><header class="modal-head"><div><h2>${editing ? t("editIP") : t("addIP")}</h2><p>${t("targetIP")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("targetIP")}</label><input class="input" name="ip" value="${escapeHTML(draft.ip)}" placeholder="203.0.113.10" ${editing ? "disabled" : ""} required></div><div class="field"><label>${t("note")}</label><input class="input" name="note" value="${escapeHTML(draft.note)}" maxlength="80"></div><div class="field"><label>${t("defaultProxy")}</label><select class="select" name="default_proxy" required><option value="">${t("noProxy")}</option>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)} · ${escapeHTML(node.country || node.public_ip || node.address || "-")}</option>`).join("")}</select></div><label class="toggle-row"><input type="checkbox" name="smart" ${draft.smart ? "checked" : ""}><span><strong>${t("smartMode")}</strong><small>DNS Client Agent</small></span></label><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${!proxies.length ? "disabled" : ""}>${t("nextStep")}</button></div></footer></form></div>`;
+    return `<div class="modal-backdrop"><form class="modal medium panel" id="ip-form"><header class="modal-head"><div><h2>${editing ? t("editIP") : t("addIP")}</h2><p>${t("targetIP")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("targetIP")}</label><input class="input" name="ip" value="${escapeHTML(draft.ip)}" placeholder="203.0.113.10" ${editing ? "disabled" : ""} required></div><div class="field"><label>${t("note")}</label><input class="input" name="note" value="${escapeHTML(draft.note)}" maxlength="80"></div><div class="field"><label>${t("defaultProxy")}</label><select class="select" name="default_proxy" required><option value="">${t("noProxy")}</option>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)} · ${escapeHTML(node.country || node.public_ip || node.address || "-")}</option>`).join("")}</select></div><p class="hint">${state.lang === "zh" ? "托管目标固定使用您选择的 IPv4 解锁机，不启用 Agent 自动切换或熔断改路。" : "Managed targets stay on the selected IPv4 proxy; Agent auto-switching and circuit-breaker rerouting are disabled."}</p><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${!proxies.length ? "disabled" : ""}>${t("nextStep")}</button></div></footer></form></div>`;
   }
   const services = state.catalog;
   const selectedCount = Object.keys(modal.routes).length;
@@ -1484,7 +1486,7 @@ function submitIPForm(event) {
   const defaultProxy = String(form.get("default_proxy") || "");
   if (!ip) { state.modal.error = t("addressInvalid"); renderModal(); return; }
   if (!defaultProxy) { state.modal.error = t("noProxy"); renderModal(); return; }
-  state.modal.draft = {ip, note:String(form.get("note") || "").trim(), smart:form.get("smart") === "on", existing_dns_node_id:nodeID(state.modal.existingNode?.id)};
+  state.modal.draft = {ip, note:String(form.get("note") || "").trim(), smart:false, existing_dns_node_id:nodeID(state.modal.existingNode?.id)};
   state.modal.defaultProxy = defaultProxy;
   state.modal.step = 2;
   state.modal.error = "";
@@ -1493,6 +1495,7 @@ function submitIPForm(event) {
 
 async function saveIPConfig() {
   const modal = state.modal;
+  if (!modal || modal.type !== "ip-form") return;
   if (!Object.keys(modal.routes).length) return;
   const payload = {...modal.draft, routes:modal.routes};
   try {
@@ -1504,7 +1507,14 @@ async function saveIPConfig() {
     await loadAll(true);
     renderModal();
     toast(linkedRoutes ? (state.lang === "zh" ? `保存成功；${linkedRoutes} 个共享域名服务已自动联动到同一解锁机` : `Saved; ${linkedRoutes} overlapping-domain services were linked to one proxy`) : t("saved"), "good");
-  } catch (error) { state.modal.error = error.message; renderModal(); }
+  } catch (error) {
+    if (state.modal === modal) {
+      modal.error = error.message;
+      renderModal();
+    } else {
+      toast(error.message, "error");
+    }
+  }
 }
 
 function updateIPServiceAuditUI(config) {
@@ -1533,13 +1543,15 @@ async function triggerIPServiceAudit(serviceId) {
     const requestedAt = new Date(requested.service_audit_requested_at || Date.now()).getTime();
     const started = Date.now();
     let latest = requested;
-    while (Date.now() - started < 180000) {
+    while (Date.now() - started < 600000) {
       await delay(2500);
       const configs = await api("/enhancer/api/ip-configs");
       state.ipConfigs = Array.isArray(configs) ? configs : state.ipConfigs;
       latest = state.ipConfigs.find(config => config.id === configID) || latest;
-      state.modal.config = latest;
-      state.modal.routes = {...(latest.routes || state.modal.routes)};
+      const activeModal = state.modal;
+      if (activeModal?.type !== "ip-form" || activeModal.config?.id !== configID) return;
+      activeModal.config = latest;
+      activeModal.routes = {...(latest.routes || activeModal.routes)};
       updateIPServiceAuditUI(latest);
       const auditedAt = new Date(latest.service_audited_at || 0).getTime();
       if (auditedAt >= requestedAt && latest.service_results?.[serviceId]) {

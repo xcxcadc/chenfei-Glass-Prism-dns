@@ -284,7 +284,7 @@ func (app *App) fetchIconURL(ctx context.Context, candidateURL string) (serviceI
 	if err != nil {
 		return serviceIconAsset{}, false
 	}
-	request.Header.Set("User-Agent", "Prism-DNS-Enhancer/1.4.9")
+	request.Header.Set("User-Agent", "Prism-DNS-Enhancer/1.4.10")
 	allowedHost := request.URL.Hostname()
 	client := *app.client
 	client.CheckRedirect = func(next *http.Request, previous []*http.Request) error {
@@ -319,39 +319,58 @@ func (app *App) fetchIconURL(ctx context.Context, candidateURL string) (serviceI
 
 func preferredIconDomain(service Service) string {
 	preferred := map[string]string{
-		"AU:9 now":            "9now.com.au",
-		"AU:ABC iView":        "abc.net.au",
-		"AU:Optus":            "optus.com.au",
-		"AU:SBS on Demand":    "sbs.com.au",
-		"Amazon Prime Video":  "primevideo.com",
-		"AnimeFesta":          "animefesta.iowl.jp",
-		"Bilibili":            "bilibili.com",
-		"Directv Stream":      "directv.com",
-		"DirecTV":             "directv.com",
-		"Discovery+":          "discoveryplus.com",
-		"EU:SkyShowtime":      "skyshowtime.com",
-		"Fuji TV":             "www.fujitv.co.jp",
-		"GB:BBC":              "bbc.co.uk",
-		"GB:Discovery+":       "discoveryplus.com",
-		"Games":               "umamusume.jp",
-		"Hami Video":          "hamivideo.hinet.net",
-		"ID:Vidio":            "vidio.com",
-		"IN:Jio Cinema":       "jiohotstar.com",
-		"IT:RaiPlay":          "raiplay.it",
-		"KKTV":                "kktv.me",
-		"Music.jp":            "music-book.jp",
-		"NZ:SkyGO NZ":         "sky.co.nz",
-		"NetEase Cloud Music": "music.163.com",
-		"NicoNico":            "nicovideo.jp",
-		"Reads":               "magazine.rakuten.co.jp",
-		"Setanta Sports":      "setantasports.com",
-		"TH:AIS Play":         "ais.th",
-		"U-NEXT":              "video.unext.jp",
-		"UA:MEGOGO":           "megogo.net",
-		"VN:K+":               "www.kplus.vn",
-		"Viaplay":             "viaplay.com",
-		"Wavve":               "wavve.com",
-		"Youku":               "youku.com",
+		"AU:9 now":                        "9now.com.au",
+		"AU:ABC iView":                    "abc.net.au",
+		"AU:Optus":                        "optus.com.au",
+		"AU:SBS on Demand":                "sbs.com.au",
+		"Amazon Prime Video":              "primevideo.com",
+		"AnimeFesta":                      "animefesta.iowl.jp",
+		"Apple TV+":                       "tv.apple.com",
+		"Bilibili":                        "bilibili.com",
+		"CBC Gem":                         "gem.cbc.ca",
+		"ChatGPT / OpenAI":                "chatgpt.com",
+		"Claude":                          "claude.ai",
+		"Crave TV":                        "crave.ca",
+		"DAZN":                            "dazn.com",
+		"Directv Stream":                  "directv.com",
+		"DirecTV":                         "directv.com",
+		"Discovery+":                      "discoveryplus.com",
+		"Disney+":                         "disneyplus.com",
+		"EU:SkyShowtime":                  "skyshowtime.com",
+		"Fuji TV":                         "www.fujitv.co.jp",
+		"GB:BBC":                          "bbc.co.uk",
+		"GB:Discovery+":                   "discoveryplus.com",
+		"Games":                           "umamusume.jp",
+		"Gemini":                          "gemini.google.com",
+		"Google AI Studio":                "aistudio.google.com",
+		"Grok":                            "grok.com",
+		"Hami Video":                      "hamivideo.hinet.net",
+		"HBO / Max":                       "max.com",
+		"ID:Vidio":                        "vidio.com",
+		"IN:Jio Cinema":                   "jiohotstar.com",
+		"IT:RaiPlay":                      "raiplay.it",
+		"KKTV":                            "kktv.me",
+		"Microsoft Copilot Image Creator": "copilot.microsoft.com",
+		"Music.jp":                        "music-book.jp",
+		"NZ:SkyGO NZ":                     "sky.co.nz",
+		"NetEase Cloud Music":             "music.163.com",
+		"Netflix":                         "netflix.com",
+		"NicoNico":                        "nicovideo.jp",
+		"Reads":                           "magazine.rakuten.co.jp",
+		"Setanta Sports":                  "setantasports.com",
+		"Spotify":                         "spotify.com",
+		"Suno":                            "suno.com",
+		"TH:AIS Play":                     "ais.th",
+		"TikTok":                          "tiktok.com",
+		"U-NEXT":                          "video.unext.jp",
+		"UA:MEGOGO":                       "megogo.net",
+		"VN:K+":                           "www.kplus.vn",
+		"Viaplay":                         "viaplay.com",
+		"Viu":                             "viu.com",
+		"Wavve":                           "wavve.com",
+		"X":                               "x.com",
+		"YouTube":                         "youtube.com",
+		"Youku":                           "youku.com",
 	}
 	if domain := preferred[service.Name]; domain != "" {
 		return domain
@@ -361,7 +380,10 @@ func preferredIconDomain(service Service) string {
 
 func preferredIconURLs(service Service) []string {
 	preferred := map[string][]string{
-		"VN:K+": {"https://www.kplus.vn/logo-kplus.svg"},
+		"CBC Gem": {"https://gem.cbc.ca/favicon.ico"},
+		"Grok":    {"https://x.ai/favicon.ico"},
+		"VN:K+":   {"https://www.kplus.vn/logo-kplus.svg"},
+		"X":       {"https://x.com/favicon.ico"},
 	}
 	return append([]string(nil), preferred[service.Name]...)
 }

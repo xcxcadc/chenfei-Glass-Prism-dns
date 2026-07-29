@@ -347,11 +347,19 @@ func (store *IPConfigStore) NormalizeRouteConflicts(services []Service) (int, er
 	normalizedCount := 0
 	now := time.Now().UTC()
 	for id, record := range store.configs {
-		routes, changed := normalizeConflictingRoutes(nil, record.Routes, services)
+		routes, routeChanged := normalizeConflictingRoutes(nil, record.Routes, services)
+		smartChanged := record.Smart
+		changed := routeChanged || smartChanged
 		if !changed {
 			continue
 		}
-		store.applyNormalizedRoutes(&record, routes, now)
+		if routeChanged {
+			store.applyNormalizedRoutes(&record, routes, now)
+		}
+		if smartChanged {
+			record.Smart = false
+			record.UpdatedAt = now
+		}
 		store.configs[id] = record
 		normalizedCount++
 	}
@@ -386,9 +394,6 @@ func (store *IPConfigStore) ClearTraffic(id string) (IPConfig, error) {
 	}
 	record.TrafficRXBytes = 0
 	record.TrafficTXBytes = 0
-	record.LastRXBytes = 0
-	record.LastTXBytes = 0
-	record.TrafficUpdatedAt = nil
 	store.configs[id] = record
 	if err := store.saveLocked(); err != nil {
 		return IPConfig{}, err

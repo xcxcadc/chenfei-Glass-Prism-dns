@@ -16,13 +16,39 @@ var (
 	categoryPattern          = regexp.MustCompile(`^#\s*-+\s*>\s*(.+?)\s*$`)
 	servicePattern           = regexp.MustCompile(`^#\s*>\s*(.+?)\s*$`)
 	domainPattern            = regexp.MustCompile(`^nameserver\s+/([^/]+)/`)
+	geminiApplicationDomains = []string{
+		"accounts.google.com",
+		"aisandbox-pa.googleapis.com",
+		"alkaliminer-pa.googleapis.com",
+		"android-context-data.googleapis.com",
+		"android.googleapis.com",
+		"app-measurement.com",
+		"clients3.google.com",
+		"firebaseinstallations.googleapis.com",
+		"firebaseremoteconfig.googleapis.com",
+		"gemini.google.com",
+		"growth-pa.googleapis.com",
+		"lh3.googleusercontent.com",
+		"notifications-pa.googleapis.com",
+		"oauth2.googleapis.com",
+		"oauthaccountmanager.googleapis.com",
+		"people-pa.googleapis.com",
+		"play.google.com",
+		"play.googleapis.com",
+		"proactivebackend-pa.googleapis.com",
+		"robinfrontend-pa.googleapis.com",
+		"signaler-pa.clients6.google.com",
+		"signaler-pa.googleapis.com",
+		"subscriptionsfirstparty-pa.googleapis.com",
+		"voilatile-pa.googleapis.com",
+		"www.googleapis.com",
+		"www.gstatic.com",
+	}
 	serviceDomainSupplements = map[string][]string{
 		"FR:France.tv": {
 			"france.tv",
 		},
-		"Gemini": {
-			"alkaliminer-pa.googleapis.com",
-		},
+		"Gemini": geminiApplicationDomains,
 		"iQIYI": {
 			"iq.com",
 			"iqiyi.com",

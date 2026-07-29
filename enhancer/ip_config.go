@@ -277,7 +277,6 @@ func unlockTestProviders(service Service) []string {
 		"Disney+":                         {"Disney+"},
 		"Gemini":                          {"Gemini"},
 		"HBO / Max":                       {"HBO Max"},
-		"Microsoft Copilot Image Creator": {"Microsoft Copilot"},
 		"Netflix":                         {"Netflix"},
 		"Paramount+":                      {"ParamountPlus"},
 		"Spotify":                         {"Spotify Registration"},
@@ -306,7 +305,7 @@ func preferredProbeDomains(service Service) []string {
 		"DAZN":                            {"dazn.com"},
 		"Disney+":                         {"disneyplus.com", "bamgrid.com"},
 		"FR:France.tv":                    {"france.tv"},
-		"Gemini":                          {"gemini.google.com", "aisandbox-pa.googleapis.com", "alkaliminer-pa.googleapis.com", "proactivebackend-pa.googleapis.com", "robinfrontend-pa.googleapis.com"},
+		"Gemini":                          geminiApplicationDomains,
 		"Google AI Studio":                {"aistudio.google.com", "alkalicore-pa.clients6.google.com", "alkalimakersuite-pa.clients6.google.com", "generativelanguage.googleapis.com", "waa-pa.clients6.google.com"},
 		"HBO / Max":                       {"max.com", "hbomax.com"},
 		"HOY TV":                          {"r.hoy.tv"},
@@ -393,7 +392,7 @@ func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, ExternalDNSNode: externalNode, Smart: payload.Smart, Routes: application.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
+	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, ExternalDNSNode: externalNode, Smart: false, Routes: application.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -473,7 +472,7 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	record.Note = payload.Note
-	record.Smart = payload.Smart
+	record.Smart = false
 	record.Routes = application.Routes
 	record.TrafficPeers = application.TrafficPeers
 	saved, err := app.ipStore.Save(record.IPConfig, record.NodeSecret, application.ProxyPeers)

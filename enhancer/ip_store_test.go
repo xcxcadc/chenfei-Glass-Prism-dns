@@ -77,14 +77,14 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.TrafficRXBytes != 0 || updated.TrafficTXBytes != 0 {
-		t.Fatalf("first traffic report after clear should only establish a baseline: %+v", updated)
+	if updated.TrafficRXBytes != 10 || updated.TrafficTXBytes != 10 {
+		t.Fatalf("traffic after clear did not continue from the preserved counter baseline: %+v", updated)
 	}
 	updated, err = store.UpdateTraffic(config.EnrollmentToken, 30, 45)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.TrafficRXBytes != 10 || updated.TrafficTXBytes != 15 {
+	if updated.TrafficRXBytes != 20 || updated.TrafficTXBytes != 25 {
 		t.Fatalf("traffic after the new baseline was not accumulated: %+v", updated)
 	}
 
@@ -93,7 +93,7 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	record, ok := reloaded.Record(config.ID)
-	if !ok || record.NodeSecret != "node-secret" || record.TrafficRXBytes != 10 || record.ProxyPeers["2"][0] != "198.51.100.20" || record.ServiceAuditRequestedAt == nil {
+	if !ok || record.NodeSecret != "node-secret" || record.TrafficRXBytes != 20 || record.ProxyPeers["2"][0] != "198.51.100.20" || record.ServiceAuditRequestedAt == nil {
 		t.Fatalf("persisted record mismatch: %+v", record)
 	}
 	bySecret, ok := reloaded.GetByNodeSecret("node-secret")
@@ -179,5 +179,42 @@ func TestIPConfigStoreRemovesLegacyAutomaticFailoverState(t *testing.T) {
 	}
 	if strings.Contains(string(persisted), `"failovers"`) {
 		t.Fatalf("legacy automatic failover state was not removed: %s", persisted)
+	}
+}
+
+func TestNormalizeRouteConflictsDisablesManagedSmartMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ip-configs.json")
+	store, err := NewIPConfigStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := store.Save(IPConfig{
+		IP:        "203.0.113.45",
+		DNSNodeID: "dns-45",
+		NodeName:  "Target",
+		Smart:     true,
+		Routes:    map[string]string{"service-a": "proxy-a"},
+	}, "secret", map[string][]string{"proxy-a": {"198.51.100.45"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalized, err := store.NormalizeRouteConflicts([]Service{{ID: "service-a", Domains: []string{"example.com"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized != 1 {
+		t.Fatalf("normalized count = %d, want 1", normalized)
+	}
+	updated, ok := store.Get(config.ID)
+	if !ok || updated.Smart {
+		t.Fatalf("managed smart mode was not disabled: %+v", updated)
+	}
+	reloaded, err := NewIPConfigStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, ok := reloaded.Get(config.ID)
+	if !ok || persisted.Smart {
+		t.Fatalf("managed smart-mode migration was not persisted: %+v", persisted)
 	}
 }
