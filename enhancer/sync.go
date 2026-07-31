@@ -63,7 +63,7 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 		delete(overrides, domain)
 	}
 
-	routes, _ := normalizeConflictingRoutes(nil, record.Routes, services)
+	routes := cloneStringMap(record.Routes)
 	proxyPeers := app.effectiveProxyPeers(record)
 	serviceIDs := make([]string, 0, len(routes))
 	for serviceID := range routes {

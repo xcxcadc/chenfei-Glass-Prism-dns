@@ -82,7 +82,7 @@ const state = {
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
-const iconAssetVersion = "1.5.6-final";
+const iconAssetVersion = "1.5.7-final";
 
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }

@@ -158,6 +158,59 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	}
 }
 
+func TestHealthProbesPreservePersistedOverlappingSelections(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/catalog" {
+			_, _ = writer.Write([]byte("# ---------- > Test\n# > Alpha\nnameserver /shared.example/group\n# > Beta\nnameserver /api.shared.example/group\n"))
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	defer upstream.Close()
+
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore)
+	services := catalog.Snapshot(context.Background(), true).Services
+	if len(services) != 2 {
+		t.Fatalf("unexpected catalog: %+v", services)
+	}
+	routes := map[string]string{services[0].ID: "proxy-a", services[1].ID: "proxy-b"}
+	config, err := ipStore.Save(IPConfig{
+		IP:         "203.0.113.20",
+		DNSNodeID:  "dns-1",
+		Routes:     routes,
+	}, "secret", map[string][]string{
+		"proxy-a": {"198.51.100.10"},
+		"proxy-b": {"198.51.100.20"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, ok := ipStore.Record(config.ID)
+	if !ok {
+		t.Fatal("saved IP configuration was not found")
+	}
+	probes := app.healthProbes(context.Background(), record)
+	if len(probes) != 2 {
+		t.Fatalf("expected two health probes, got %+v", probes)
+	}
+	for _, probe := range probes {
+		serviceID := probe["service_id"].(string)
+		peers := probe["traffic_peers"].([]string)
+		if serviceID == services[0].ID && (len(peers) != 1 || peers[0] != "198.51.100.10") {
+			t.Fatalf("alpha route was silently changed: %+v", probe)
+		}
+		if serviceID == services[1].ID && (len(peers) != 1 || peers[0] != "198.51.100.20") {
+			t.Fatalf("beta route was silently changed: %+v", probe)
+		}
+	}
+}
+
 func TestApplyIPRoutesLinksOverlappingDomainsBeforeControllerDelivery(t *testing.T) {
 	nextRuleID := 10
 	overrides := make(map[string]string)

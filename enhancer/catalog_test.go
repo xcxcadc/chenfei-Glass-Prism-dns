@@ -170,7 +170,7 @@ nameserver /youtubei.googleapis.com/group
 	if services[0].Category != "Global Platform" {
 		t.Fatalf("YouTube should be categorized as a global service: %+v", services[0])
 	}
-	for _, domain := range []string{"accounts.youtube.com", "googlevideo.com", "ggpht.com", "gstatic.com", "gvt1.com", "gvt2.com", "i.ytimg.com", "music.youtube.com", "ytimg.com", "youtube.com", "youtube.googleapis.com", "youtubei.googleapis.com", "s.youtube.com"} {
+	for _, domain := range []string{"accounts.youtube.com", "googlevideo.com", "ggpht.com", "gvt1.com", "gvt2.com", "i.ytimg.com", "music.youtube.com", "ytimg.com", "youtube.com", "youtube.googleapis.com", "youtubei.googleapis.com", "s.youtube.com"} {
 		if !contains(services[0].Domains, domain) {
 			t.Fatalf("YouTube traffic domain %q missing from %#v", domain, services[0].Domains)
 		}

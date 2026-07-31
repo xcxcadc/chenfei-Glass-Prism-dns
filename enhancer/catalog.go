@@ -84,7 +84,6 @@ var (
 			"accounts.youtube.com",
 			"ggpht.com",
 			"googlevideo.com",
-			"gstatic.com",
 			"gvt1.com",
 			"gvt2.com",
 			"i.ytimg.com",

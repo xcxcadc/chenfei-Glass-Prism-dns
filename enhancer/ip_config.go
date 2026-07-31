@@ -231,7 +231,7 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 	for _, service := range catalogServices {
 		services[service.ID] = service
 	}
-	routes, _ := normalizeConflictingRoutes(nil, record.Routes, catalogServices)
+	routes := cloneStringMap(record.Routes)
 	proxyPeers := app.effectiveProxyPeers(record)
 	serviceIDs := make([]string, 0, len(routes))
 	for serviceID := range routes {
