@@ -1605,9 +1605,18 @@ async function saveIPConfig() {
   const modal = state.modal;
   if (!modal || modal.type !== "ip-form") return;
   if (!Object.keys(modal.routes).length) return;
+  const editing = !!modal.config;
   const payload = {...modal.draft, routes:modal.routes};
   try {
-    const editing = !!modal.config;
+    if (!editing) {
+      const existing = (Array.isArray(state.ipConfigs) ? state.ipConfigs : [])
+        .find(config => normalizeIP(config.ip) === normalizeIP(modal.draft.ip));
+      if (existing) {
+        modal.config = existing;
+        modal.routes = {...(existing.routes || {}), ...modal.routes};
+        return saveIPConfig();
+      }
+    }
     const path = editing ? `/enhancer/api/ip-configs/${encodeURIComponent(modal.config.id)}` : "/enhancer/api/ip-configs";
     const config = await api(path, {method:editing ? "PUT" : "POST", body:JSON.stringify(payload)});
     const linkedRoutes = Object.keys(config.routes || {}).filter(serviceId => payload.routes?.[serviceId] && nodeID(payload.routes[serviceId]) !== nodeID(config.routes[serviceId])).length;
