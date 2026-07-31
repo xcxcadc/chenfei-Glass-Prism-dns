@@ -356,6 +356,9 @@ func TestWebAssetsExposeVersionAndDisableCaching(t *testing.T) {
 		if response.Header().Get("X-Prism-UI-Version") != uiVersion {
 			t.Fatalf("%s is missing UI version header", path)
 		}
+		if path != "/" && (!strings.Contains(response.Body.String(), "service-custom-edit") || !strings.Contains(response.Body.String(), "service-custom-delete")) {
+			t.Fatalf("%s is missing direct custom service management controls", path)
+		}
 	}
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)

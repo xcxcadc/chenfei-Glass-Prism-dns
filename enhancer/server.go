@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.7"
+const uiVersion = "1.5.8"
 
 type App struct {
 	catalog      *CatalogManager
@@ -244,6 +244,10 @@ func (app *App) handleCustomService(writer http.ResponseWriter, request *http.Re
 			}
 		}
 		if err := app.preferences.ClearServiceCategory(saved.ID); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := app.preferences.ClearServiceDomains(saved.ID); err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}

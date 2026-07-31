@@ -118,6 +118,9 @@ func mergeServices(base, custom []Service) []Service {
 		if index, exists := indexes[key]; exists {
 			merged := &result[index]
 			merged.Domains = normalizeDomains(append(merged.Domains, service.Domains...))
+			if service.Custom {
+				merged.Custom = true
+			}
 			if service.ID != "" && service.ID != merged.ID && !contains(merged.Aliases, service.ID) {
 				merged.Aliases = append(merged.Aliases, service.ID)
 				sort.Strings(merged.Aliases)

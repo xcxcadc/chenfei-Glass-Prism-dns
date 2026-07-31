@@ -177,9 +177,9 @@ func TestHealthProbesPreservePersistedOverlappingSelections(t *testing.T) {
 	}
 	routes := map[string]string{services[0].ID: "proxy-a", services[1].ID: "proxy-b"}
 	config, err := ipStore.Save(IPConfig{
-		IP:         "203.0.113.20",
-		DNSNodeID:  "dns-1",
-		Routes:     routes,
+		IP:        "203.0.113.20",
+		DNSNodeID: "dns-1",
+		Routes:    routes,
 	}, "secret", map[string][]string{
 		"proxy-a": {"198.51.100.10"},
 		"proxy-b": {"198.51.100.20"},
@@ -349,6 +349,69 @@ func TestIPConfigAdoptsExistingDNSNode(t *testing.T) {
 	record, ok := ipStore.Record(config.ID)
 	if !ok || record.NodeSecret != "existing-secret" {
 		t.Fatalf("existing node secret was not retained: %+v", record)
+	}
+}
+
+func TestIPConfigUpdateRecreatesMissingDNSNode(t *testing.T) {
+	createdNode := false
+	var override map[string]string
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/catalog" {
+			_, _ = writer.Write([]byte("# ---------- > Global Platform\n# > Netflix\nnameserver /netflix.com/group\n"))
+			return
+		}
+		if request.Header.Get("Authorization") != "Bearer valid" {
+			writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			return
+		}
+		switch {
+		case request.URL.Path == "/api/nodes" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": "proxy-1", "role": "proxy", "public_ip": "198.51.100.20"}})
+		case request.URL.Path == "/api/nodes" && request.Method == http.MethodPost:
+			createdNode = true
+			writeJSON(writer, http.StatusCreated, map[string]any{"id": "dns-recreated", "name": "RU", "secret": "new-secret"})
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{})
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodPost:
+			writeJSON(writer, http.StatusCreated, map[string]any{"id": "rule-1"})
+		case request.URL.Path == "/api/rules/rule-1/override" && request.Method == http.MethodPost:
+			_ = json.NewDecoder(request.Body).Decode(&override)
+			writeJSON(writer, http.StatusOK, map[string]bool{"ok": true})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore)
+	serviceID := catalog.Snapshot(context.Background(), true).Services[0].ID
+	config, err := ipStore.Save(IPConfig{IP: "203.0.113.40", Note: "RU", DNSNodeID: "missing-dns", NodeName: "RU", ExternalDNSNode: true, Routes: map[string]string{serviceID: "proxy-1"}}, "old-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPut, "/enhancer/api/ip-configs/"+config.ID, strings.NewReader(`{"ip":"203.0.113.40","note":"RU","smart":true,"routes":{"`+serviceID+`":"proxy-1"}}`))
+	request.Header.Set("Authorization", "Bearer valid")
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("missing DNS node update returned %d: %s", response.Code, response.Body.String())
+	}
+	var updated IPConfig
+	if err := json.Unmarshal(response.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if !createdNode || updated.DNSNodeID != "dns-recreated" || updated.ExternalDNSNode || override["dns_node_id"] != "dns-recreated" || override["proxy_node_id"] != "proxy-1" {
+		t.Fatalf("missing DNS node was not recreated and rebound: config=%+v override=%+v created=%v", updated, override, createdNode)
+	}
+	record, ok := ipStore.Record(config.ID)
+	if !ok || record.NodeSecret != "new-secret" {
+		t.Fatalf("recreated DNS credentials were not persisted: %+v", record)
 	}
 }
 

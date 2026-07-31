@@ -466,6 +466,12 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	var err error
+	record, err = app.reconcileIPConfigNode(request.Context(), request.Header.Get("Authorization"), record)
+	if err != nil {
+		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
 	application, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), record.DNSNodeID, record.Routes, payload.Routes, publicBaseURL(request))
 	if err != nil {
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -503,6 +509,92 @@ func (app *App) deleteIPConfig(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (app *App) reconcileIPConfigNode(ctx context.Context, authorization string, record ipConfigRecord) (ipConfigRecord, error) {
+	var nodes []map[string]any
+	if err := app.upstreamJSON(ctx, authorization, http.MethodGet, "/api/nodes", nil, &nodes); err != nil {
+		return record, err
+	}
+	for _, node := range nodes {
+		if valueString(node["id"]) != record.DNSNodeID {
+			continue
+		}
+		if valueString(node["role"]) != "dns" {
+			return record, errors.New("configured node is not a DNS client")
+		}
+		if nodeIP := nodeAddress(node); nodeIP != "" && nodeIP != record.IP {
+			return record, errors.New("configured DNS node address does not match the target IP")
+		}
+		return record, nil
+	}
+
+	for _, node := range nodes {
+		if valueString(node["role"]) != "dns" || nodeAddress(node) != record.IP {
+			continue
+		}
+		candidateID := valueString(node["id"])
+		usedByAnotherConfig := false
+		for _, existing := range app.ipStore.Records() {
+			if existing.ID != record.ID && existing.DNSNodeID == candidateID {
+				usedByAnotherConfig = true
+				break
+			}
+		}
+		if usedByAnotherConfig {
+			continue
+		}
+		record.DNSNodeID = candidateID
+		record.NodeName = valueString(node["name"])
+		record.ExternalDNSNode = true
+		if secret := valueString(node["secret"]); secret != "" {
+			record.NodeSecret = secret
+		}
+		return record, nil
+	}
+
+	nodeName := strings.TrimSpace(record.NodeName)
+	if nodeName == "" {
+		nodeName = safeNodeName(record.IP)
+	}
+	payload := map[string]any{
+		"name": nodeName, "role": "dns", "public_ip": record.IP,
+		"country": "", "group": "ip clients", "priority": 1, "secret": record.NodeSecret,
+	}
+	var created map[string]any
+	if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/nodes", payload, &created); err != nil {
+		return record, fmt.Errorf("recreate DNS node: %w", err)
+	}
+	createdID := valueString(created["id"])
+	if createdID == "" {
+		return record, errors.New("Controller did not return a recreated DNS node ID")
+	}
+	record.DNSNodeID = createdID
+	record.NodeName = valueString(created["name"])
+	if record.NodeName == "" {
+		record.NodeName = nodeName
+	}
+	record.ExternalDNSNode = false
+	if secret := valueString(created["secret"]); secret != "" {
+		record.NodeSecret = secret
+	}
+	return record, nil
+}
+
+func nodeAddress(node map[string]any) string {
+	for _, field := range []string{"public_ip", "ip", "ipv4", "address"} {
+		value := strings.TrimSpace(valueString(node[field]))
+		if value == "" {
+			continue
+		}
+		if strings.Contains(value, ",") {
+			value = strings.TrimSpace(strings.Split(value, ",")[0])
+		}
+		if net.ParseIP(strings.Trim(value, "[]")) != nil {
+			return strings.Trim(value, "[]")
+		}
+	}
+	return ""
 }
 
 func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID string, previous, current map[string]string, baseURL string) (routeApplication, error) {

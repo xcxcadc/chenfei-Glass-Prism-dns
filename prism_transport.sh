@@ -557,8 +557,8 @@ EOF
 Description=Refresh Prism encrypted SNI transport
 
 [Timer]
-OnBootSec=5s
-OnUnitActiveSec=5s
+OnActiveSec=5s
+OnUnitInactiveSec=5s
 AccuracySec=1s
 Persistent=true
 
@@ -571,7 +571,7 @@ EOF
 Description=Refresh Prism encrypted SNI transport
 
 [Timer]
-OnBootSec=5s
+OnActiveSec=5s
 OnUnitInactiveSec=60s
 AccuracySec=1s
 Persistent=true
@@ -581,7 +581,8 @@ WantedBy=timers.target
 EOF
   fi
   systemctl daemon-reload
-  systemctl enable --now prism-transport.timer >/dev/null
+  systemctl enable prism-transport.timer >/dev/null
+  systemctl restart prism-transport.timer
 }
 
 install_transport() {

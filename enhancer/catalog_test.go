@@ -170,7 +170,7 @@ nameserver /youtubei.googleapis.com/group
 	if services[0].Category != "Global Platform" {
 		t.Fatalf("YouTube should be categorized as a global service: %+v", services[0])
 	}
-	for _, domain := range []string{"accounts.youtube.com", "googlevideo.com", "ggpht.com", "gvt1.com", "gvt2.com", "i.ytimg.com", "music.youtube.com", "ytimg.com", "youtube.com", "youtube.googleapis.com", "youtubei.googleapis.com", "s.youtube.com"} {
+	for _, domain := range []string{"accounts.youtube.com", "ggpht.com", "googlevideo.com", "gvt1.com", "gvt2.com", "i.ytimg.com", "music.youtube.com", "s.youtube.com", "ytimg.com", "youtube.com", "youtube.googleapis.com", "youtubei.googleapis.com"} {
 		if !contains(services[0].Domains, domain) {
 			t.Fatalf("YouTube traffic domain %q missing from %#v", domain, services[0].Domains)
 		}
@@ -306,7 +306,7 @@ func TestMergeServicesDeduplicatesNamesAndKeepsLegacyIDs(t *testing.T) {
 		t.Fatalf("expected one service after merge, got %d: %#v", len(merged), merged)
 	}
 	service := merged[0]
-	if service.ID != "youtube-old" || !contains(service.Aliases, "youtube-new") {
+	if service.ID != "youtube-old" || !service.Custom || !contains(service.Aliases, "youtube-new") {
 		t.Fatalf("canonical and legacy IDs were not preserved: %#v", service)
 	}
 	if len(service.Domains) != 2 || !contains(service.Domains, "youtube.com") || !contains(service.Domains, "googlevideo.com") {

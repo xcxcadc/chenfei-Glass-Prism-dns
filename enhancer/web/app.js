@@ -82,7 +82,7 @@ const state = {
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
-const iconAssetVersion = "1.5.7-final";
+const iconAssetVersion = "1.5.8-final";
 
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
@@ -161,6 +161,9 @@ function serviceRule(service) {
 }
 function serviceIDs(service) {
   return [...new Set([service?.id, ...(service?.aliases || [])].filter(Boolean))];
+}
+function customServiceID(service) {
+  return serviceIDs(service).find(id => String(id).startsWith("custom-")) || "";
 }
 function serviceRouteEntry(config, service) {
   if (!config?.routes || !service) return null;
@@ -754,7 +757,8 @@ function serviceTableRowHTML(service) {
   const statusClass = !configured ? "neutral" : status.kind === "warn" ? "warn" : status.kind === "bad" ? "bad" : "";
   const statusLabel = configured ? (status.kind === "bad" ? (state.lang === "zh" ? "异常" : "Issue") : (state.lang === "zh" ? "已配置" : "Configured")) : t("notConfigured");
   const auditLabel = status.kind === "good" ? (state.lang === "zh" ? "成功" : "Passed") : status.kind === "warn" ? (state.lang === "zh" ? "待确认" : "Review") : status.kind === "bad" ? (state.lang === "zh" ? "失败" : "Failed") : t("auditPending");
-  return `<tr class="${configured ? "configured" : ""}" data-service-id="${escapeHTML(service.id)}"><td><input class="service-select" type="checkbox" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}></td><td><button class="service-identity service-open" data-service-id="${escapeHTML(service.id)}">${serviceIconHTML(service)}<span><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</small></span></button></td><td><span class="table-status"><i class="status-dot ${statusClass}"></i>${escapeHTML(statusLabel)}</span></td><td><span class="result-badge ${status.kind || "neutral"}" title="${escapeHTML(result || status.raw || status.label)}">${escapeHTML(auditLabel)}</span></td><td>${node ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.country || node.public_ip || node.address || "-")}</small></span></div>` : `<span class="muted-cell">${t("notConfigured")}</span>`}</td><td><span class="last-audit" title="${escapeHTML(formatDate(targetConfig?.service_audited_at))}">${result ? escapeHTML(formatRelativeDate(targetConfig?.service_audited_at)) : t("auditPending")}</span></td><td><div class="table-actions">${configured ? `<button class="btn small icon service-audit-run" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "立即实测" : "Test now"}"><i class="bi bi-play-circle"></i></button>` : ""}<button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button><button class="btn small icon service-category-open" data-service-id="${escapeHTML(service.id)}" title="${t("editCategory")}"><i class="bi bi-three-dots"></i></button></div></td></tr>`;
+  const customActions = service.custom ? `<button class="btn small icon service-custom-edit" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("customEdit"))}"><i class="bi bi-pencil"></i></button><button class="btn small icon danger service-custom-delete" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("customDelete"))}"><i class="bi bi-trash3"></i></button>` : "";
+  return `<tr class="${configured ? "configured" : ""}" data-service-id="${escapeHTML(service.id)}"><td><input class="service-select" type="checkbox" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}></td><td><button class="service-identity service-open" data-service-id="${escapeHTML(service.id)}">${serviceIconHTML(service)}<span><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</small></span></button></td><td><span class="table-status"><i class="status-dot ${statusClass}"></i>${escapeHTML(statusLabel)}</span></td><td><span class="result-badge ${status.kind || "neutral"}" title="${escapeHTML(result || status.raw || status.label)}">${escapeHTML(auditLabel)}</span></td><td>${node ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.country || node.public_ip || node.address || "-")}</small></span></div>` : `<span class="muted-cell">${t("notConfigured")}</span>`}</td><td><span class="last-audit" title="${escapeHTML(formatDate(targetConfig?.service_audited_at))}">${result ? escapeHTML(formatRelativeDate(targetConfig?.service_audited_at)) : t("auditPending")}</span></td><td><div class="table-actions">${configured ? `<button class="btn small icon service-audit-run" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "立即实测" : "Test now"}"><i class="bi bi-play-circle"></i></button>` : ""}<button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button><button class="btn small icon service-category-open" data-service-id="${escapeHTML(service.id)}" title="${t("editCategory")}"><i class="bi bi-three-dots"></i></button>${customActions}</div></td></tr>`;
 }
 
 function contentHeaderHTML(title, hint, actions = "") {
@@ -962,6 +966,8 @@ function bindShell() {
     const button = event.target.closest?.("button");
     if (button && container.contains(button)) {
       const node = state.nodes.find(item => nodeID(item.id) === nodeID(button.dataset.nodeId));
+      if (button.matches(".service-custom-edit")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) openServiceForm(service); return; }
+      if (button.matches(".service-custom-delete")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) deleteCustomService(service); return; }
       if (button.matches(".node-test")) { event.preventDefault(); triggerNodeCheck(button.dataset.nodeId); return; }
       if (button.matches(".node-install")) { event.preventDefault(); openInstallCommand(button.dataset.nodeId); return; }
       if (button.matches(".node-manage-ip")) { event.preventDefault(); const existing = configForNode(node); openIPForm(existing, existing ? 2 : 1, node); return; }
@@ -1593,7 +1599,8 @@ async function saveCustomService(event) {
   event.preventDefault(); const form = new FormData(event.currentTarget); const existing = state.modal.service;
   const payload = {name:form.get("name"), category:form.get("category"), domains:String(form.get("domains")).split(/\r?\n|,|;/)};
   try {
-    const path = existing ? `/enhancer/api/custom-services/${existing.id}` : "/enhancer/api/custom-services";
+    const existingID = customServiceID(existing);
+    const path = existingID ? `/enhancer/api/custom-services/${existingID}` : "/enhancer/api/custom-services";
     await api(path, {method:existing ? "PUT" : "POST", body:JSON.stringify(payload)});
     const rule = existing ? serviceRule(existing) : null;
     if (rule) await api(`/api/rules/${rule.id}`, {method:"PUT", body:JSON.stringify({...rule, name:`Stream · ${payload.name}`})});
@@ -1601,12 +1608,13 @@ async function saveCustomService(event) {
   } catch (error) { toast(error.message, "error"); }
 }
 
-async function deleteCustomService() {
-  const service = state.modal.service; if (!confirm(t("deleteConfirm"))) return;
+async function deleteCustomService(service = state.modal?.service) {
+  const serviceID = customServiceID(service);
+  if (!service || !serviceID || !confirm(t("deleteConfirm"))) return;
   try {
     const rule = serviceRule(service);
-    if (rule) await api(`/api/rules/${rule.id}`, {method:"DELETE"});
-    await api(`/enhancer/api/custom-services/${service.id}`, {method:"DELETE"}); toast(t("deleted"), "good"); closeModal(); await loadAll(true);
+    if (rule && serviceID === service.id) await api(`/api/rules/${rule.id}`, {method:"DELETE"});
+    await api(`/enhancer/api/custom-services/${serviceID}`, {method:"DELETE"}); toast(t("deleted"), "good"); closeModal(); await loadAll(true);
   }
   catch (error) { toast(error.message, "error"); }
 }

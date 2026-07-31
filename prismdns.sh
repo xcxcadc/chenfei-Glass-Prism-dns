@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.7"
+VERSION="1.5.8"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -247,6 +247,9 @@ route_ready() {
   done
   if ((${#expected4[@]} > 0)); then
     mapfile -t answers < <(dig @127.0.0.1 "$domain" A +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
+    if dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1 2>/dev/null | awk '/:/{found=1} END {exit found ? 0 : 1}'; then
+      return 1
+    fi
   else
     mapfile -t answers < <(dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
   fi
@@ -322,9 +325,9 @@ reset_traffic_counters() {
 run_service_audit() {
   local audit_hash="$1" now="$2" output="" attempt_output attempt_block plain="" results probe service_id service_name result provider_summary matched_peer answer peer mapping_output
   local providers_csv candidate failure test_provider probe_domain route_domain http_code resolve_peer
-  local attempt attempt_count pass_count youtube_pass route_total route_pass https_total https_pass https_success
+  local attempt attempt_count pass_count youtube_pass youtube_tls_pass youtube_tls_total route_total route_pass https_total https_pass https_success mobile_domain http_code
   local probe_attempt tls_attempt_pass page_ok
-  local -a provider_results test_providers matched_results probe_domains route_domains probe_peers
+  local -a provider_results test_providers matched_results probe_domains route_domains probe_peers youtube_mobile_domains
   ut_supports_selected() {
     local help_output
     help_output=$(/usr/bin/ut -h 2>&1 || true)
@@ -360,19 +363,29 @@ run_service_audit() {
     result=""
     if [[ "$service_name" == "YouTube" ]]; then
       youtube_pass=0
+      youtube_tls_pass=0
+      youtube_tls_total=0
+      youtube_mobile_domains=("www.youtube.com" "youtubei.googleapis.com" "redirector.googlevideo.com" "i.ytimg.com" "yt3.ggpht.com")
       for attempt in 1 2 3; do
         mapping_output=$(curl -4 -fsSL --connect-timeout 6 --max-time 20 "https://redirector.googlevideo.com/report_mapping" || true)
         if curl -4 -fsSL --connect-timeout 6 --max-time 20 -o /dev/null "https://www.youtube.com/" &&
           grep -q '=> ' <<<"$mapping_output"; then
           youtube_pass=$((youtube_pass + 1))
         fi
+        for mobile_domain in "${youtube_mobile_domains[@]}"; do
+          youtube_tls_total=$((youtube_tls_total + 1))
+          http_code=$(curl -4 -sS --connect-timeout 6 --max-time 20 -o /dev/null -w '%{http_code}' "https://${mobile_domain}/" 2>/dev/null || true)
+          if [[ "$http_code" != "000" ]]; then
+            youtube_tls_pass=$((youtube_tls_pass + 1))
+          fi
+        done
       done
-      if ((youtube_pass == 3)); then
-        result="YES (Playback + CDN 3/3; Premium region is informational)"
-      elif ((youtube_pass > 0)); then
-        result="UNSTABLE (Playback + CDN ${youtube_pass}/3)"
+      if ((youtube_pass == 3 && youtube_tls_pass == youtube_tls_total)); then
+        result="YES (Desktop + mobile TLS ${youtube_tls_pass}/${youtube_tls_total}; CDN 3/3; Premium region is informational)"
+      elif ((youtube_pass > 0 || youtube_tls_pass > 0)); then
+        result="UNSTABLE (Desktop/CDN ${youtube_pass}/3; mobile TLS ${youtube_tls_pass}/${youtube_tls_total})"
       else
-        result="FAIL (Playback CDN unavailable)"
+        result="FAIL (Desktop, mobile, and playback CDN unavailable)"
       fi
     fi
     mapfile -t test_providers < <(jq -r '[(.unlock_tests[]?, .unlock_test // empty) | select(length > 0)] | unique[]' <<<"$probe")
@@ -794,6 +807,9 @@ route_ready() {
   done
   if ((${#expected4[@]} > 0)); then
     mapfile -t answers < <(dig @127.0.0.1 "$domain" A +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
+    if dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1 2>/dev/null | awk '/:/{found=1} END {exit found ? 0 : 1}'; then
+      return 1
+    fi
   else
     mapfile -t answers < <(dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
   fi
