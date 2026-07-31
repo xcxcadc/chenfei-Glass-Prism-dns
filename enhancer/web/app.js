@@ -320,7 +320,19 @@ function catalogCategories() {
     .sort((left, right) => displayCategory(left).localeCompare(displayCategory(right), state.lang === "zh" ? "zh-CN" : "en"));
 }
 function isOnline(node) { if (!node.last_heartbeat) return false; return Date.now() - new Date(node.last_heartbeat).getTime() < 90000; }
-function configForNode(node) { return state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(node?.id)); }
+function normalizeIP(value) {
+  let candidate = String(value || "").split(",")[0].trim();
+  if (candidate.startsWith("[")) candidate = candidate.slice(1, candidate.indexOf("]"));
+  if ((candidate.match(/:/g) || []).length === 1 && candidate.includes(".")) candidate = candidate.split(":")[0];
+  return candidate.toLowerCase();
+}
+function configForNode(node) {
+  if (!node) return null;
+  const byNode = state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(node.id));
+  if (byNode) return byNode;
+  const address = normalizeIP(node.public_ip || node.address);
+  return address ? state.ipConfigs.find(config => normalizeIP(config.ip) === address) || null : null;
+}
 function clientState(config, node) {
   if (!isOnline(node)) return {kind:"bad", label:"OFFLINE", detail:state.lang === "zh" ? "控制通道离线" : "Control channel offline"};
   if (!config) return {kind:"warn", label:state.lang === "zh" ? "未纳管" : "UNMANAGED", detail:state.lang === "zh" ? "Agent 已在线，尚未配置解锁服务" : "Agent connected; unlock services are not configured"};
@@ -928,7 +940,7 @@ function bindShell() {
       const node = state.nodes.find(item => nodeID(item.id) === nodeID(button.dataset.nodeId));
       if (button.matches(".node-test")) { event.preventDefault(); triggerNodeCheck(button.dataset.nodeId); return; }
       if (button.matches(".node-install")) { event.preventDefault(); openInstallCommand(button.dataset.nodeId); return; }
-      if (button.matches(".node-manage-ip")) { event.preventDefault(); openIPForm(null, 1, node); return; }
+      if (button.matches(".node-manage-ip")) { event.preventDefault(); const existing = configForNode(node); openIPForm(existing, existing ? 2 : 1, node); return; }
       if (button.matches(".node-edit")) { event.preventDefault(); openNodeForm(node); return; }
       if (button.matches(".node-delete")) { event.preventDefault(); openDeleteNode(button.dataset.nodeId); return; }
       if (button.matches(".ip-edit")) { event.preventDefault(); openIPForm(state.ipConfigs.find(config => nodeID(config.id) === nodeID(button.dataset.ipId)), 2); return; }
@@ -1604,6 +1616,19 @@ async function saveIPConfig() {
     renderModal();
     toast(linkedRoutes ? (state.lang === "zh" ? `保存成功；${linkedRoutes} 个共享域名服务已自动联动到同一解锁机` : `Saved; ${linkedRoutes} overlapping-domain services were linked to one proxy`) : t("saved"), "good");
   } catch (error) {
+    if (!editing && /IP.*存在|already exists/i.test(error.message || "")) {
+      try {
+        const configs = await api("/enhancer/api/ip-configs");
+        const existing = (Array.isArray(configs) ? configs : []).find(config => normalizeIP(config.ip) === normalizeIP(modal.draft.ip));
+        if (existing) {
+          modal.config = existing;
+          modal.routes = {...(existing.routes || {}), ...modal.routes};
+          return saveIPConfig();
+        }
+      } catch (recoveryError) {
+        error = recoveryError;
+      }
+    }
     if (state.modal === modal) {
       modal.error = error.message;
       renderModal();

@@ -76,6 +76,22 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 		t.Fatalf("IP rule must use the direct baseline group: %+v", createdRule)
 	}
 
+	updateBody := `{"ip":"203.0.113.10","note":"updated","smart":true,"routes":{"` + serviceID + `":"2"}}`
+	updateRequest := httptest.NewRequest(http.MethodPut, "/enhancer/api/ip-configs/"+config.ID, strings.NewReader(updateBody))
+	updateRequest.Header.Set("Authorization", "Bearer valid")
+	updateResponse := httptest.NewRecorder()
+	app.Handler().ServeHTTP(updateResponse, updateRequest)
+	if updateResponse.Code != http.StatusOK {
+		t.Fatalf("existing IP update returned %d: %s", updateResponse.Code, updateResponse.Body.String())
+	}
+	var updated IPConfig
+	if err := json.Unmarshal(updateResponse.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != config.ID || updated.IP != config.IP || updated.Note != "updated" {
+		t.Fatalf("existing IP update did not preserve identity: before=%+v after=%+v", config, updated)
+	}
+
 	bootstrap := httptest.NewRequest(http.MethodGet, "/enhancer/api/bootstrap/"+config.EnrollmentToken, nil)
 	bootstrapResponse := httptest.NewRecorder()
 	app.Handler().ServeHTTP(bootstrapResponse, bootstrap)
