@@ -52,11 +52,20 @@ var (
 		"www.google.com.hk",
 		"www.gstatic.com",
 	}
+	grokDomains = []string{
+		"grok.com",
+		"www.grok.com",
+		"x.ai",
+		"api.x.ai",
+		"grok.x.com",
+		"accounts.x.com",
+	}
 	serviceDomainSupplements = map[string][]string{
 		"FR:France.tv": {
 			"france.tv",
 		},
 		"Gemini": geminiApplicationDomains,
+		"Grok":   grokDomains,
 		"iQIYI": {
 			"iq.com",
 			"iqiyi.com",
@@ -193,6 +202,29 @@ func ParseSmartDNS(reader io.Reader) ([]Service, error) {
 		result = append(result, *service)
 	}
 	return result, nil
+}
+
+func ensureBuiltInServices(services []Service) []Service {
+	for _, service := range []Service{
+		{
+			ID:       stableServiceID("AI Platform", "Grok"),
+			Name:     "Grok",
+			Category: "AI Platform",
+			Domains:  normalizeDomains(grokDomains),
+		},
+	} {
+		present := false
+		for _, existing := range services {
+			if serviceIdentityKey(existing.Name) == serviceIdentityKey(service.Name) {
+				present = true
+				break
+			}
+		}
+		if !present {
+			services = append(services, service)
+		}
+	}
+	return services
 }
 
 func canonicalServiceName(name, category string) string {

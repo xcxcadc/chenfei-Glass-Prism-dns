@@ -307,6 +307,7 @@ func preferredProbeDomains(service Service) []string {
 		"FR:France.tv":                    {"france.tv"},
 		"Gemini":                          geminiApplicationDomains,
 		"Google AI Studio":                {"aistudio.google.com", "alkalicore-pa.clients6.google.com", "alkalimakersuite-pa.clients6.google.com", "generativelanguage.googleapis.com", "waa-pa.clients6.google.com"},
+		"Grok":                            {"grok.com", "x.ai", "api.x.ai", "grok.x.com", "accounts.x.com"},
 		"HBO / Max":                       {"max.com", "hbomax.com"},
 		"HOY TV":                          {"r.hoy.tv"},
 		"iQIYI":                           {"iq.com"},

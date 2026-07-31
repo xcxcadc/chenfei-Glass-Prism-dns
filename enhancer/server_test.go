@@ -264,6 +264,24 @@ func TestServiceIconHandlerFallsBackToSVG(t *testing.T) {
 	}
 }
 
+func TestServiceIconHandlerCanSkipFallbackPlaceholder(t *testing.T) {
+	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	service, _ := store.Upsert(Service{Name: "Fallback Skip", Domains: []string{"fallback-skip.example"}})
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("offline")
+	})}
+	catalog := NewCatalogManager("https://catalog.invalid/list", client, store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, _ := NewApp("http://127.0.0.1:1", catalog, store, ipStore, client)
+
+	request := httptest.NewRequest(http.MethodGet, "/enhancer/icons/"+service.ID+".png?fallback=0", nil)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected placeholder-skipping request to return 404, got %d", response.Code)
+	}
+}
+
 func TestServiceIconHandlerDoesNotFetchCustomDomainsDirectly(t *testing.T) {
 	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
 	service, _ := store.Upsert(Service{Name: "Internal", Domains: []string{"internal.example"}})
@@ -286,7 +304,7 @@ func TestServiceIconHandlerDoesNotFetchCustomDomainsDirectly(t *testing.T) {
 		t.Fatal("expected the favicon proxy to be queried")
 	}
 	for _, host := range requestedHosts {
-		if host != "www.google.com" {
+		if host != "www.google.com" && host != "icons.duckduckgo.com" {
 			t.Fatalf("custom service triggered a direct request to %q", host)
 		}
 	}
@@ -366,5 +384,8 @@ func TestWebAssetsExposeVersionAndDisableCaching(t *testing.T) {
 	app.Handler().ServeHTTP(response, request)
 	if !strings.Contains(response.Body.String(), "/assets/app.js?v="+uiVersion) {
 		t.Fatalf("index does not reference versioned UI assets: %s", response.Body.String())
+	}
+	if csp := response.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "img-src 'self' data: https:") {
+		t.Fatalf("CSP blocks external service icon fallbacks: %q", csp)
 	}
 }

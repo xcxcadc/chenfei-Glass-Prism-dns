@@ -32,6 +32,32 @@ invalid line
 	}
 }
 
+func TestEnsureBuiltInServicesAddsGrokOnce(t *testing.T) {
+	services := ensureBuiltInServices([]Service{{Name: "Existing", Category: "Other", Domains: []string{"example.com"}}})
+	count := 0
+	for _, service := range services {
+		if service.Name == "Grok" {
+			count++
+			if service.Category != "AI Platform" || !contains(service.Domains, "grok.com") || !contains(service.Domains, "api.x.ai") {
+				t.Fatalf("unexpected Grok service: %#v", service)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected one built-in Grok service, got %d", count)
+	}
+	services = ensureBuiltInServices(services)
+	count = 0
+	for _, service := range services {
+		if service.Name == "Grok" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("built-in Grok service was duplicated: %d", count)
+	}
+}
+
 func TestCustomServiceStorePersists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services.json")
 	store, err := NewCustomServiceStore(path)

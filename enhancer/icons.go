@@ -146,7 +146,11 @@ func (app *App) handleServiceIcon(writer http.ResponseWriter, request *http.Requ
 		http.NotFound(writer, request)
 		return
 	}
-	asset := app.serviceIcon(request.Context(), service, false)
+	asset := app.serviceIconForDomain(request.Context(), service, request.URL.Query().Get("domain"), false)
+	if asset.fallback && request.URL.Query().Get("fallback") == "0" {
+		http.NotFound(writer, request)
+		return
+	}
 	if asset.fallback {
 		writer.Header().Set("Cache-Control", "no-store, max-age=0")
 		writer.Header().Set("X-Prism-Icon-Source", "fallback")
@@ -160,7 +164,12 @@ func (app *App) handleServiceIcon(writer http.ResponseWriter, request *http.Requ
 }
 
 func (app *App) serviceIcon(ctx context.Context, service Service, requireAccurate bool) serviceIconAsset {
-	key := serviceIconCacheKey(service)
+	return app.serviceIconForDomain(ctx, service, "", requireAccurate)
+}
+
+func (app *App) serviceIconForDomain(ctx context.Context, service Service, requestedDomain string, requireAccurate bool) serviceIconAsset {
+	domain := iconDomainOverride(service, requestedDomain)
+	key := serviceIconCacheKey(service, domain)
 	if asset, ok := app.icons.get(key); ok && (!requireAccurate || !asset.fallback) {
 		return asset
 	}
@@ -169,13 +178,17 @@ func (app *App) serviceIcon(ctx context.Context, service Service, requireAccurat
 	if asset, ok := app.icons.get(key); ok && (!requireAccurate || !asset.fallback) {
 		return asset
 	}
-	asset := app.fetchServiceIcon(ctx, service)
+	asset := app.fetchServiceIcon(ctx, service, domain)
 	app.icons.put(key, asset)
 	return asset
 }
 
-func serviceIconCacheKey(service Service) string {
-	return service.ID + "\x00" + preferredIconDomain(service)
+func serviceIconCacheKey(service Service, domain ...string) string {
+	iconDomain := preferredIconDomain(service)
+	if len(domain) > 0 && strings.TrimSpace(domain[0]) != "" {
+		iconDomain = domain[0]
+	}
+	return service.ID + "\x00" + iconDomain
 }
 
 func (app *App) prewarmServiceIcons(ctx context.Context, services []Service) {
@@ -244,8 +257,12 @@ func (app *App) prewarmServiceIcons(ctx context.Context, services []Service) {
 	}
 }
 
-func (app *App) fetchServiceIcon(ctx context.Context, service Service) serviceIconAsset {
-	domains := []string{preferredIconDomain(service), preferredProbeDomain(service)}
+func (app *App) fetchServiceIcon(ctx context.Context, service Service, requestedDomain ...string) serviceIconAsset {
+	domains := make([]string, 0, 2)
+	if len(requestedDomain) > 0 && strings.TrimSpace(requestedDomain[0]) != "" {
+		domains = append(domains, requestedDomain[0])
+	}
+	domains = append(domains, preferredIconDomain(service), preferredProbeDomain(service))
 	seen := make(map[string]struct{}, len(domains))
 	for _, domain := range domains {
 		domain = strings.TrimSpace(domain)
@@ -262,7 +279,13 @@ func (app *App) fetchServiceIcon(ctx context.Context, service Service) serviceIc
 		query.Set("sz", "64")
 		iconURL.RawQuery = query.Encode()
 		candidateURLs := append([]string(nil), preferredIconURLs(service)...)
-		candidateURLs = append(candidateURLs, iconURL.String())
+		candidateURLs = append(candidateURLs,
+			iconURL.String(),
+			"https://icons.duckduckgo.com/ip3/"+url.PathEscape(domain)+".ico",
+		)
+		if !service.Custom {
+			candidateURLs = append(candidateURLs, "https://"+domain+"/favicon.ico")
+		}
 		for _, candidateURL := range candidateURLs {
 			if asset, ok := app.fetchIconURL(ctx, candidateURL); ok {
 				return asset
@@ -284,13 +307,13 @@ func (app *App) fetchIconURL(ctx context.Context, candidateURL string) (serviceI
 	if err != nil {
 		return serviceIconAsset{}, false
 	}
-	request.Header.Set("User-Agent", "Prism-DNS-Enhancer/1.5.8")
+	request.Header.Set("User-Agent", "Prism-DNS-Enhancer/1.5.9")
 	allowedHost := request.URL.Hostname()
 	client := *app.client
 	client.CheckRedirect = func(next *http.Request, previous []*http.Request) error {
 		if len(previous) >= 3 ||
 			next.URL.Scheme != "https" ||
-			!strings.EqualFold(next.URL.Hostname(), allowedHost) {
+			(!strings.EqualFold(next.URL.Hostname(), allowedHost) && !isAllowedIconRedirect(allowedHost, next.URL.Hostname())) {
 			return http.ErrUseLastResponse
 		}
 		return nil
@@ -315,6 +338,11 @@ func (app *App) fetchIconURL(ctx context.Context, candidateURL string) (serviceI
 		return serviceIconAsset{}, false
 	}
 	return serviceIconAsset{contentType: contentType, body: body}, true
+}
+
+func isAllowedIconRedirect(sourceHost, targetHost string) bool {
+	return strings.EqualFold(sourceHost, "www.google.com") &&
+		(strings.EqualFold(targetHost, "gstatic.com") || strings.HasSuffix(strings.ToLower(targetHost), ".gstatic.com"))
 }
 
 func preferredIconDomain(service Service) string {
@@ -380,12 +408,38 @@ func preferredIconDomain(service Service) string {
 
 func preferredIconURLs(service Service) []string {
 	preferred := map[string][]string{
-		"CBC Gem": {"https://gem.cbc.ca/favicon.ico"},
-		"Grok":    {"https://x.ai/favicon.ico"},
-		"VN:K+":   {"https://www.kplus.vn/logo-kplus.svg"},
-		"X":       {"https://x.com/favicon.ico"},
+		"CBC Gem":                         {"https://gem.cbc.ca/favicon.ico", "https://cdn.simpleicons.org/cbc"},
+		"CH:Sky":                          {"https://sky.ch/favicon.ico", "https://cdn.simpleicons.org/sky"},
+		"ChatGPT / OpenAI":                {"https://chatgpt.com/favicon.ico", "https://cdn.simpleicons.org/openai"},
+		"Claude":                          {"https://claude.ai/favicon.ico", "https://cdn.simpleicons.org/anthropic"},
+		"Crave TV":                        {"https://crave.ca/favicon.ico", "https://cdn.simpleicons.org/crave"},
+		"DE:Joyn":                         {"https://joyn.de/favicon.ico", "https://cdn.simpleicons.org/joyn"},
+		"DE:Sky":                          {"https://sky.de/favicon.ico", "https://cdn.simpleicons.org/sky"},
+		"DE:ZDF":                          {"https://zdf.de/favicon.ico", "https://cdn.simpleicons.org/zdf"},
+		"EU:Funimation":                   {"https://www.funimation.com/favicon.ico", "https://cdn.simpleicons.org/funimation"},
+		"Gemini":                          {"https://gemini.google.com/favicon.ico", "https://cdn.simpleicons.org/googlegemini"},
+		"Google AI Studio":                {"https://aistudio.google.com/favicon.ico", "https://cdn.simpleicons.org/google"},
+		"Grok":                            {"https://grok.com/favicon.ico", "https://x.ai/favicon.ico"},
+		"Microsoft Copilot Image Creator": {"https://copilot.microsoft.com/favicon.ico", "https://cdn.simpleicons.org/microsoft"},
+		"NetEase Cloud Music":             {"https://music.163.com/favicon.ico", "https://cdn.simpleicons.org/neteasecloudmusic"},
+		"VN:K+":                           {"https://www.kplus.vn/logo-kplus.svg"},
+		"X":                               {"https://x.com/favicon.ico", "https://cdn.simpleicons.org/x"},
+		"Youku":                           {"https://youku.com/favicon.ico"},
 	}
 	return append([]string(nil), preferred[service.Name]...)
+}
+
+func iconDomainOverride(service Service, requested string) string {
+	requested = routingDomain(requested)
+	if requested == "" {
+		return ""
+	}
+	for _, domain := range routingDomains(service.Domains) {
+		if requested == domain {
+			return requested
+		}
+	}
+	return ""
 }
 
 func fallbackServiceIcon(service Service) []byte {

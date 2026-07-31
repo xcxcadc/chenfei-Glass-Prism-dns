@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -93,6 +94,9 @@ func (manager *CatalogManager) refresh(ctx context.Context) error {
 	services, err := ParseSmartDNS(response.Body)
 	if err != nil {
 		return err
+	}
+	if strings.Contains(manager.sourceURL, "1-stream/1stream-public-utils/main/stream.smartdns.list") {
+		services = ensureBuiltInServices(services)
 	}
 	if len(services) == 0 {
 		return fmt.Errorf("download catalog: no services found")

@@ -82,14 +82,28 @@ const state = {
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
-const iconAssetVersion = "1.5.8-final";
+const iconAssetVersion = "1.5.9-grok-icons";
 
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
 function markLoadedServiceIcons(root = document) {
   root.querySelectorAll?.(".service-icon img").forEach(image => {
-    image.parentElement?.classList.toggle("loaded", image.complete && image.naturalWidth > 0);
+    if (image.complete && image.naturalWidth > 0) {
+      image.parentElement?.classList.add("loaded");
+    } else if (image.complete) {
+      nextServiceIcon(image);
+    }
   });
+}
+function nextServiceIcon(image) {
+  let fallbacks = [];
+  try { fallbacks = JSON.parse(image.dataset.iconFallbacks || "[]"); } catch { fallbacks = []; }
+  const next = fallbacks.shift();
+  image.dataset.iconFallbacks = JSON.stringify(fallbacks);
+  image.parentElement?.classList.remove("loaded");
+  if (!next) return false;
+  image.src = next;
+  return true;
 }
 document.addEventListener("load", event => {
   if (event.target instanceof HTMLImageElement && event.target.matches(".service-icon img")) {
@@ -98,7 +112,7 @@ document.addEventListener("load", event => {
 }, true);
 document.addEventListener("error", event => {
   if (event.target instanceof HTMLImageElement && event.target.matches(".service-icon img")) {
-    event.target.parentElement?.classList.remove("loaded");
+    nextServiceIcon(event.target);
   }
 }, true);
 new MutationObserver(() => requestAnimationFrame(() => markLoadedServiceIcons()))
@@ -224,11 +238,32 @@ function serviceStatus(service, node) {
   if (value) return {kind:"warn", label:t("referenceOnly"), raw:value};
   return {kind:"", label:t("unknown"), raw:""};
 }
+const serviceIconDomains = {
+  "Amazon Prime Video": "primevideo.com", "Apple TV+": "tv.apple.com", "Bilibili": "bilibili.com",
+  "CBC Gem": "gem.cbc.ca", "ChatGPT / OpenAI": "chatgpt.com", "Claude": "claude.ai", "Crave TV": "crave.ca",
+  "DAZN": "dazn.com", "Directv Stream": "directv.com", "DirecTV": "directv.com", "Discovery+": "discoveryplus.com",
+  "Disney+": "disneyplus.com", "EU:SkyShowtime": "skyshowtime.com", "Fuji TV": "www.fujitv.co.jp", "GB:BBC": "bbc.co.uk",
+  "Gemini": "gemini.google.com", "Google AI Studio": "aistudio.google.com", "Grok": "grok.com", "Hami Video": "hamivideo.hinet.net",
+  "HBO / Max": "max.com", "ID:Vidio": "vidio.com", "IN:Jio Cinema": "jiohotstar.com", "IT:RaiPlay": "raiplay.it",
+  "KKTV": "kktv.me", "Microsoft Copilot Image Creator": "copilot.microsoft.com", "Music.jp": "music-book.jp",
+  "NetEase Cloud Music": "music.163.com", "Netflix": "netflix.com", "NicoNico": "nicovideo.jp", "Spotify": "spotify.com",
+  "Suno": "suno.com", "TikTok": "tiktok.com", "U-NEXT": "video.unext.jp", "UA:MEGOGO": "megogo.net",
+  "Viaplay": "viaplay.com", "Viu": "viu.com", "Wavve": "wavve.com", "X": "x.com", "YouTube": "youtube.com", "Youku": "youku.com",
+};
+function serviceIconDomain(service) {
+  return serviceIconDomains[displayServiceName(service)] || serviceRouteDomains(service)[0] || service.id;
+}
 function serviceIconHTML(service) {
   const name = displayServiceName(service);
   const initial = Array.from(String(name || "P").trim())[0] || "P";
-  const iconDomain = serviceRouteDomains(service)[0] || service.id;
-  return `<span class="service-icon" data-initial="${escapeHTML(initial)}"><span class="service-icon-fallback" aria-hidden="true">${escapeHTML(initial)}</span><img src="/enhancer/icons/${encodeURIComponent(service.id)}.png?domain=${encodeURIComponent(iconDomain)}&v=${iconAssetVersion}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="eager" decoding="async" fetchpriority="high"></span>`;
+  const iconDomain = serviceIconDomain(service);
+  const candidates = [
+    `/enhancer/icons/${encodeURIComponent(service.id)}.png?domain=${encodeURIComponent(iconDomain)}&fallback=0&v=${iconAssetVersion}`,
+    `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(`https://${iconDomain}`)}&sz=64`,
+    `https://icons.duckduckgo.com/ip3/${encodeURIComponent(iconDomain)}.ico`,
+    `https://${iconDomain}/favicon.ico`,
+  ];
+  return `<span class="service-icon" data-initial="${escapeHTML(initial)}"><span class="service-icon-fallback" aria-hidden="true">${escapeHTML(initial)}</span><img src="${escapeHTML(candidates[0])}" data-icon-fallbacks="${escapeHTML(JSON.stringify(candidates.slice(1)))}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="eager" decoding="async" fetchpriority="high" referrerpolicy="no-referrer"></span>`;
 }
 function formatDate(value) { if (!value) return "-"; try { return new Date(value).toLocaleString(state.lang === "zh" ? "zh-CN" : "en-US"); } catch { return value; } }
 function formatRelativeDate(value) {

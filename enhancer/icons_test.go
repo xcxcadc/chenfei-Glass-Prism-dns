@@ -11,6 +11,7 @@ func TestPreferredIconDomainUsesServiceHomepage(t *testing.T) {
 		{name: "Google AI Studio", domain: "aistudio.google.com"},
 		{name: "ChatGPT / OpenAI", domain: "chatgpt.com"},
 		{name: "Claude", domain: "claude.ai"},
+		{name: "Grok", domain: "grok.com"},
 		{name: "Disney+", domain: "disneyplus.com"},
 		{name: "HBO / Max", domain: "max.com"},
 		{name: "Microsoft Copilot Image Creator", domain: "copilot.microsoft.com"},
@@ -32,7 +33,7 @@ func TestPreferredIconURLsUseOfficialAssets(t *testing.T) {
 		url  string
 	}{
 		{name: "CBC Gem", url: "https://gem.cbc.ca/favicon.ico"},
-		{name: "Grok", url: "https://x.ai/favicon.ico"},
+		{name: "Grok", url: "https://grok.com/favicon.ico"},
 		{name: "X", url: "https://x.com/favicon.ico"},
 	}
 	for _, test := range tests {
@@ -42,5 +43,23 @@ func TestPreferredIconURLsUseOfficialAssets(t *testing.T) {
 				t.Fatalf("preferredIconURLs(%q) = %v, want first URL %q", test.name, urls, test.url)
 			}
 		})
+	}
+}
+
+func TestIsAllowedIconRedirectOnlyAllowsGoogleStaticAssets(t *testing.T) {
+	tests := []struct {
+		source string
+		target string
+		want   bool
+	}{
+		{source: "www.google.com", target: "t2.gstatic.com", want: true},
+		{source: "www.google.com", target: "gstatic.com", want: true},
+		{source: "www.google.com", target: "evil.gstatic.com.example", want: false},
+		{source: "example.com", target: "cdn.example.com", want: false},
+	}
+	for _, test := range tests {
+		if got := isAllowedIconRedirect(test.source, test.target); got != test.want {
+			t.Fatalf("isAllowedIconRedirect(%q, %q) = %v, want %v", test.source, test.target, got, test.want)
+		}
 	}
 }
