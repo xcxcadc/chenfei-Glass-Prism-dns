@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.2"
+const uiVersion = "1.5.3"
 
 type App struct {
 	catalog      *CatalogManager

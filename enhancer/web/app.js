@@ -647,6 +647,14 @@ function navigationHTML() {
   ];
   return items.map(([id, icon, label]) => `<button type="button" class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}"><i class="bi ${icon}" aria-hidden="true"></i><span>${escapeHTML(label)}</span></button>`).join("");
 }
+function selectTab(tab) {
+  if (!["services", "nodes", "ips", "sync", "audit", "alerts", "settings"].includes(tab)) return;
+  if (state.tab === tab) return;
+  state.tab = tab;
+  state.page = 1;
+  localStorage.setItem("enhancer_tab", state.tab);
+  render();
+}
 
 function shellHTML() {
   const meta = pageMeta();
@@ -862,15 +870,10 @@ function ipConfigsHTML() {
 function bindShell() {
   updateClock();
   if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
-  document.querySelector(".tabs")?.addEventListener("click", event => {
-    const button = event.target.closest("[data-tab]");
-    if (!button) return;
+  document.querySelectorAll(".tab[data-tab]").forEach(button => button.addEventListener("click", event => {
     event.preventDefault();
-    state.tab = button.dataset.tab;
-    state.page = 1;
-    localStorage.setItem("enhancer_tab", state.tab);
-    render();
-  });
+    selectTab(button.dataset.tab);
+  }));
   document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
   document.querySelectorAll(".lang-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); }));
   document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));
