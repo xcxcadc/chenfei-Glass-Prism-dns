@@ -3,7 +3,7 @@
 本 Fork 在原 Controller 前增加一个独立、可审计的增强层。原 Controller 和 Agent 仍使用上游发布的二进制，增强层负责简体中文界面、服务级路由、自定义域名与分类、动态规则集、UnlockTests 结果展示、账户安全和解锁链路统计。
 
 - 仓库：[xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns)
-- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.5)
+- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.6)
 
 ## 主要能力
 
@@ -15,6 +15,7 @@
 - 共用父域、子域或泛域名的服务自动联动到同一 Proxy，最后一次手动选择优先，避免 DNS 规则互相覆盖。
 - 目标机实测只更新报告，WAF、超时或第三方检测波动都不会自动切换 Proxy；每项服务始终使用用户最后一次保存的 IPv4 节点。
 - Proxy 每 5 秒同步面板已纳管目标 IPv4 白名单，仅放行这些地址访问 IPv4 DNS 53 与 SNI 80/443，并拒绝 IPv6 访问这些 Prism 端口；其他 IPv6 端口不受影响，同机 MTProxy 可继续使用。
+- 目标机如果 XrayR、V2bX、sing-box、Hysteria、TUIC 等代理进程自行把客户端 DNS 发往 `8.8.8.8:53` 或 `1.1.1.1:53`，路由守卫会按 systemd cgroup 将这些 DNS 请求转交给本机 Prism Agent；只增加 Prism 自有 nftables 表，不改动代理程序配置或 Docker。
 - 前端新增、编辑和删除自定义服务，支持任意名称、分类和域名列表；普通域名使用 `example.com`，泛域名使用 `*.example.com`，保存、重新打开和迁移后均保留原格式。
 - 服务库与 IP 服务选择器共用统一搜索，可按名称、中文别名、分类、服务 ID 或域名进行精确和模糊匹配，并忽略大小写及常见分隔符。
 - 服务库可新建自定义分类，并把任意内置或自定义服务移动到任意分类；移动只覆盖显示分类，不改变稳定服务 ID、域名规则、IP 路由或客户端配置，可一键恢复原分类。
@@ -55,7 +56,7 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 
 ## 路由自动应用
 
-`prismdns.sh 1.4.5` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer` 和专用 `prismdns-local-dns.service`。增强层把服务到用户所选 Proxy IPv4 的映射持久化，动态生成 `/etc/prismdns/dnsmasq-routes.conf`；专用 dnsmasq 仅监听 `127.0.0.1:5353`，nftables 把本机 53 请求重定向到该端口，精确返回所选 IPv4 并抑制对应 AAAA。它不依赖 Agent 的 Smart/Fallback 或熔断状态，Agent 保留用于面板同步、授权和报告。稳定安装器固定使用上游 Agent `v1.2.1` 并校验 SHA-256、锁定可执行文件；配置变化优先原子替换规则并重启专用 dnsmasq，只有健康恢复失败才重启 Agent。受限网络链路会通过 `prism_transport.sh 2.2.3` 建立加密 TCP SNI 传输；客户端每 60 秒同步并用双站点 HTTPS 探针识别“SSH/TCP 仍在线但业务转发卡死”的假健康，SSH 本身继续按 15 秒保活、连续 3 次失联判定；修复时只重建对应隧道，不改服务路由。守卫每 10 秒检查配置哈希和本地 DNS 监听，每 300 秒抽测每项服务一个代表域名；配置变化、30 分钟健康缓存刷新和服务审计仍会全量验证所有域名。发往已选解锁机的 UDP/443 会被明确拒绝，促使支持 QUIC 的应用回落到 SNIproxy 可处理的 TCP/TLS。每分钟定时器只负责流量上报，耗时的四阶段检测由独立 `prismdns-service-audit.service` 执行。守卫只操作 Prism 服务，不触碰 MTProxy、XrayR、V2bX；面板或网络瞬时不可达时任务会正常退出并等待下一轮。
+`prismdns.sh 1.5.6` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、Prism 专用 dnsmasq 和 DNS 守卫。增强层把服务到用户所选 Proxy IPv4 的映射持久化并生成 `127.0.0.1:5353` 的确定性路由；路由守卫每 10 秒刷新配置哈希，并为活动的 XrayR、V2bX、sing-box、Hysteria、TUIC、Trojan 等代理进程建立独立 nftables cgroup 规则，把代理内置的外部 DNS 请求转交到该端口，已选服务只返回 IPv4 路由并抑制 AAAA，不覆盖代理、MTProxy 或 Docker 配置。Agent 保留用于面板同步、授权和报告。配置变化、30 分钟健康缓存刷新和服务审计仍会全量验证所有域名；健康上报会把 DNS 守卫或专用 DNS 缺失明确标为异常。受限网络链路会通过 `prism_transport.sh 2.2.3` 建立加密 TCP SNI 传输；客户端每 60 秒同步并用双站点 HTTPS 探针识别“SSH/TCP 仍在线但业务转发卡死”的假健康，SSH 本身继续按 15 秒保活、连续 3 次失联判定；修复时只重建对应隧道，不改服务路由。发往已选解锁机的 UDP/443 会被明确拒绝，促使支持 QUIC 的应用回落到 SNIproxy 可处理的 TCP/TLS。每分钟定时器只负责流量上报，耗时的四阶段检测由独立 `prismdns-service-audit.service` 执行。面板或网络瞬时不可达时任务会正常退出并等待下一轮。
 
 目标机只检测该 IP 已选择的服务。每项服务必须依次通过：全部路由域名精确解析到用户所选 Proxy IPv4、AAAA 为空、TLS/SNI 连续三次至少两次成功、代表页面或对应 UnlockTests 服务方项目可用。Gemini 会覆盖 26 个网页与移动端依赖，而不是只检查首页。服务方明确返回 `NO`、`Banned`、WAF 或稳定性不足时直接显示失败；没有专属 UnlockTests 项目的自定义服务则按自己的 DNS、TLS/SNI 和代表页面判定，不会因检测器没有输出而误报。任何实测结果都不会修改路由或自动跳转节点，用户需要切换线路时必须手动选择并保存。长时间审计会被守卫识别并去重，不会每 10 秒重复排队。节点页只把解锁机 Agent 自检保留为参考，目标机四阶段结果才是最终结论。
 

@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.1"
+VERSION="1.5.6"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -60,17 +60,18 @@ ensure_dependencies() {
   command -v jq >/dev/null 2>&1 || missing+=(jq)
   command -v dig >/dev/null 2>&1 || missing+=(dig)
   command -v nft >/dev/null 2>&1 || missing+=(nftables)
+  command -v dnsmasq >/dev/null 2>&1 || missing+=(dnsmasq)
   ((${#missing[@]} == 0)) && return 0
   require_root
   local manager
   manager=$(detect_package_manager)
   info "安装依赖: ${missing[*]}"
   case "$manager" in
-    apt) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq dnsutils nftables ;;
-    dnf) dnf install -y curl jq bind-utils nftables ;;
-    yum) yum install -y curl jq bind-utils nftables ;;
-    apk) apk add --no-cache curl jq bind-tools nftables ;;
-    *) fail "无法识别包管理器，请手动安装 curl、jq、dig 和 nftables。" ;;
+    apt) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq dnsutils nftables dnsmasq ;;
+    dnf) dnf install -y curl jq bind-utils nftables dnsmasq ;;
+    yum) yum install -y curl jq bind-utils nftables dnsmasq ;;
+    apk) apk add --no-cache curl jq bind-tools nftables dnsmasq ;;
+    *) fail "无法识别包管理器，请手动安装 curl、jq、dig、nftables 和 dnsmasq。" ;;
   esac
 }
 
@@ -158,6 +159,7 @@ AUDIT_TIME_FILE="/var/lib/prismdns/service-audit.timestamp"
 AUDIT_OUTPUT_FILE="/var/lib/prismdns/service-audit.txt"
 LOCK_FILE="/run/prismdns-report.lock"
 NFT_TABLE="prismdns_traffic"
+DNS_GUARD_STATE_FILE="/var/lib/prismdns/dns-guard.state"
 COUNTER_VERSION="dns-sni-ports-v10-smart-dual-stack-rx-tx"
 AUDIT_INTERVAL=21600
 AUDIT_VERSION="selected-providers-browser-path-ipv4-v12"
@@ -234,14 +236,20 @@ else
 fi
 route_ready() {
   local domain="$1" answer peer
-  local -a expected answers
+  local -a expected expected4 expected6 answers
   shift
   expected=("$@")
   ((${#expected[@]} > 0)) || return 1
-  mapfile -t answers < <({
-    dig @127.0.0.1 "$domain" A +short +time=2 +tries=1
-    dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1
-  } 2>/dev/null | sed '/^$/d' | sort -u)
+  expected4=()
+  expected6=()
+  for peer in "${expected[@]}"; do
+    if [[ "$peer" == *:* ]]; then expected6+=("$peer"); else expected4+=("$peer"); fi
+  done
+  if ((${#expected4[@]} > 0)); then
+    mapfile -t answers < <(dig @127.0.0.1 "$domain" A +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
+  else
+    mapfile -t answers < <(dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
+  fi
   for answer in "${answers[@]}"; do
     for peer in "${expected[@]}"; do
       if [[ "$answer" == "$peer" ]]; then
@@ -250,6 +258,13 @@ route_ready() {
     done
   done
   return 1
+}
+dns_guard_ok() {
+  local required ready
+  [[ -f "$DNS_GUARD_STATE_FILE" ]] || return 1
+  required=$(sed -n 's/^required=//p' "$DNS_GUARD_STATE_FILE" | head -1)
+  ready=$(sed -n 's/^ready=//p' "$DNS_GUARD_STATE_FILE" | head -1)
+  [[ "$required" != "1" || "$ready" == "1" ]]
 }
 ROUTE_HEALTH_KEY=$(jq -Sc '
   {mode:"agent-smart-dual-stack-v1",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))}
@@ -286,6 +301,10 @@ if ((EXPECTED_ROUTES == HEALTHY_ROUTES)) && $DNS_READY && $SYSTEM_DNS_READY; the
   ROUTES_READY=true
 else
   HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE；}路由探针 ${HEALTHY_ROUTES}/${EXPECTED_ROUTES}"
+fi
+if ! dns_guard_ok; then
+  ROUTES_READY=false
+  HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE；}代理进程 DNS 未接管到 Prism"
 fi
 PAYLOAD=$(jq -nc \
   --arg token "$TOKEN" --argjson rx "$RX" --argjson tx "$TX" \
@@ -500,6 +519,10 @@ DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
 DNSMASQ_ROUTES="/etc/prismdns/dnsmasq-routes.conf"
 LOCAL_DNS_SERVICE="prismdns-local-dns.service"
 LOCAL_DNS_TABLE="prismdns_local_dns"
+DNS_GUARD_TABLE="prismdns_dns_guard"
+DNS_GUARD_HASH_FILE="/var/lib/prismdns/dns-guard.sha256"
+DNS_GUARD_STATE_FILE="/var/lib/prismdns/dns-guard.state"
+PROXY_DNS_PORT=5353
 LOCK_FILE="/run/prismdns-route-sync.lock"
 [[ -f "$CONFIG_FILE" ]] || exit 0
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
@@ -602,6 +625,62 @@ table inet prismdns_local_dns {
 LOCAL_DNS_NFT
   fi
 }
+collect_dns_guard_cgroups() {
+  local unit descriptor control_group path cgroup_id
+  while IFS= read -r unit; do
+    [[ -n "$unit" ]] || continue
+    case "$unit" in
+      prism*|docker*|containerd*|ssh*|nginx*|komari*|flux*) continue ;;
+    esac
+    descriptor=$(systemctl show "$unit" -p ExecStart --value 2>/dev/null || true)
+    if ! printf '%s\n' "$unit $descriptor" | grep -Eqi 'xray|xrayr|v2ray|v2bx|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|clash|mihomo|brook|naiveproxy'; then
+      continue
+    fi
+    control_group=$(systemctl show "$unit" -p ControlGroup --value 2>/dev/null || true)
+    [[ "$control_group" == /* ]] || continue
+    path="/sys/fs/cgroup${control_group}"
+    [[ -d "$path" ]] || continue
+    cgroup_id=$(stat -c '%i' "$path" 2>/dev/null || true)
+    [[ "$cgroup_id" =~ ^[0-9]+$ ]] || continue
+    printf '%s\n' "$cgroup_id"
+  done < <(systemctl list-units --type=service --state=running --no-legend --no-pager 2>/dev/null | awk '{print $1}' | sort -u)
+}
+ensure_dns_guard() {
+  local -a cgroups=()
+  local fingerprint previous rules_tmp cgroup_id
+  mapfile -t cgroups < <(collect_dns_guard_cgroups | sort -u)
+  fingerprint=$(printf '%s\n' "${cgroups[@]}" | sha256sum | awk '{print $1}')
+  previous=$(cat "$DNS_GUARD_HASH_FILE" 2>/dev/null || true)
+  if [[ "$fingerprint" == "$previous" ]] && nft list table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ((${#cgroups[@]} == 0)); then
+    nft delete table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1 || true
+    printf 'required=0\nready=1\n' > "$DNS_GUARD_STATE_FILE"
+    printf '%s\n' "$fingerprint" > "$DNS_GUARD_HASH_FILE"
+    return 0
+  fi
+  rules_tmp=$(mktemp /var/lib/prismdns/dns-guard.XXXXXX)
+  {
+    printf 'table inet %s {\n' "$DNS_GUARD_TABLE"
+    printf '  chain output { type nat hook output priority -100; policy accept;\n'
+    for cgroup_id in "${cgroups[@]}"; do
+      printf '    meta cgroup %s udp dport 53 redirect to :%s\n' "$cgroup_id" "$PROXY_DNS_PORT"
+      printf '    meta cgroup %s tcp dport 53 redirect to :%s\n' "$cgroup_id" "$PROXY_DNS_PORT"
+    done
+    printf '  }\n}\n'
+  } > "$rules_tmp"
+  nft delete table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1 || true
+  if nft -f "$rules_tmp"; then
+    printf '%s\n' "$fingerprint" > "$DNS_GUARD_HASH_FILE"
+    printf 'required=1\nready=1\n' > "$DNS_GUARD_STATE_FILE"
+    rm -f "$rules_tmp"
+    return 0
+  fi
+  rm -f "$rules_tmp"
+  printf 'required=1\nready=0\n' > "$DNS_GUARD_STATE_FILE"
+  return 1
+}
 render_local_routes() {
   local rules_tmp domain peer previous changed=false
   local -A domain_routes=()
@@ -672,7 +751,12 @@ ensure_agent_mode() {
     rm -f "$HASH_FILE" "$RESTART_FILE"
   fi
 }
-remove_deterministic_dns
+if ensure_local_dns_service && render_local_routes && ensure_dns_guard; then
+  :
+else
+  nft delete table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1 || true
+  printf 'required=1\nready=0\n' > "$DNS_GUARD_STATE_FILE"
+fi
 ensure_agent_mode
 CURRENT_HASH=$(jq -Sc '{
   mode:"agent-smart-dual-stack-v1",
@@ -699,14 +783,20 @@ trigger_service_audit() {
 }
 route_ready() {
   local domain="$1" answer peer
-  local -a expected answers
+  local -a expected expected4 expected6 answers
   shift
   expected=("$@")
   ((${#expected[@]} > 0)) || return 1
-  mapfile -t answers < <({
-    dig @127.0.0.1 "$domain" A +short +time=2 +tries=1
-    dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1
-  } 2>/dev/null | sed '/^$/d' | sort -u)
+  expected4=()
+  expected6=()
+  for peer in "${expected[@]}"; do
+    if [[ "$peer" == *:* ]]; then expected6+=("$peer"); else expected4+=("$peer"); fi
+  done
+  if ((${#expected4[@]} > 0)); then
+    mapfile -t answers < <(dig @127.0.0.1 "$domain" A +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
+  else
+    mapfile -t answers < <(dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1 2>/dev/null | sed '/^$/d' | sort -u)
+  fi
   for answer in "${answers[@]}"; do
     for peer in "${expected[@]}"; do
       if [[ "$answer" == "$peer" ]]; then

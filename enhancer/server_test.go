@@ -92,6 +92,60 @@ func TestCustomServiceWriteRequiresAuthentication(t *testing.T) {
 	}
 }
 
+func TestCustomServiceDeleteRequiresAuthenticationAndPersists(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") == "Bearer valid" {
+			_, _ = writer.Write([]byte(`[]`))
+			return
+		}
+		writer.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+
+	path := filepath.Join(t.TempDir(), "services.json")
+	store, err := NewCustomServiceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := store.Upsert(Service{Name: "Delete Test", Domains: []string{"delete.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := NewCatalogManager("http://127.0.0.1:1/unavailable", upstream.Client(), store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, err := NewApp(upstream.URL, catalog, store, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestPath := "/enhancer/api/custom-services/" + service.ID
+
+	request := httptest.NewRequest(http.MethodDelete, requestPath, nil)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated custom service delete should fail, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, requestPath, nil)
+	request.Header.Set("Authorization", "Bearer valid")
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("authenticated custom service delete failed: %d %s", response.Code, response.Body.String())
+	}
+	if _, ok := store.Get(service.ID); ok {
+		t.Fatal("deleted custom service remained in memory")
+	}
+
+	reloaded, err := NewCustomServiceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reloaded.Get(service.ID); ok {
+		t.Fatal("deleted custom service remained on disk")
+	}
+}
+
 func TestServiceDomainWriteRequiresAuthenticationAndCanRestore(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/api/nodes" && request.Header.Get("Authorization") == "Bearer valid" {
