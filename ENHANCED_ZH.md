@@ -3,7 +3,7 @@
 本 Fork 在原 Controller 前增加一个独立、可审计的增强层。原 Controller 和 Agent 仍使用上游发布的二进制，增强层负责简体中文界面、服务级路由、自定义域名与分类、动态规则集、UnlockTests 结果展示、账户安全和解锁链路统计。
 
 - 仓库：[xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns)
-- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest)
+- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.4.5)
 
 ## 主要能力
 
@@ -55,13 +55,13 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 
 ## 路由自动应用
 
-`prismdns.sh 1.4.10` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer` 和专用 `prismdns-local-dns.service`。增强层把服务到用户所选 Proxy IPv4 的映射持久化，动态生成 `/etc/prismdns/dnsmasq-routes.conf`；专用 dnsmasq 仅监听 `127.0.0.1:5353`，nftables 把本机 53 请求重定向到该端口，精确返回所选 IPv4 并抑制对应 AAAA。它不依赖 Agent 的 Smart/Fallback 或熔断状态，Agent 保留用于面板同步、授权和报告。稳定安装器固定使用上游 Agent `v1.2.1` 并校验 SHA-256、锁定可执行文件；配置变化优先原子替换规则并重启专用 dnsmasq，只有健康恢复失败才重启 Agent。受限网络链路会通过 `prism_transport.sh 2.2.3` 建立加密 TCP SNI 传输；客户端每 60 秒同步并用双站点 HTTPS 探针识别“SSH/TCP 仍在线但业务转发卡死”的假健康，SSH 本身继续按 15 秒保活、连续 3 次失联判定；修复时只重建对应隧道，不改服务路由。守卫每 10 秒检查配置哈希和本地 DNS 监听，每 300 秒抽测每项服务一个代表域名；配置变化、30 分钟健康缓存刷新和服务审计仍会全量验证所有域名。发往已选解锁机的 UDP/443 会被明确拒绝，促使支持 QUIC 的应用回落到 SNIproxy 可处理的 TCP/TLS。每分钟定时器只负责流量上报，耗时的四阶段检测由独立 `prismdns-service-audit.service` 执行。守卫只操作 Prism 服务，不触碰 MTProxy、XrayR、V2bX；面板或网络瞬时不可达时任务会正常退出并等待下一轮。
+`prismdns.sh 1.4.5` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer` 和专用 `prismdns-local-dns.service`。增强层把服务到用户所选 Proxy IPv4 的映射持久化，动态生成 `/etc/prismdns/dnsmasq-routes.conf`；专用 dnsmasq 仅监听 `127.0.0.1:5353`，nftables 把本机 53 请求重定向到该端口，精确返回所选 IPv4 并抑制对应 AAAA。它不依赖 Agent 的 Smart/Fallback 或熔断状态，Agent 保留用于面板同步、授权和报告。稳定安装器固定使用上游 Agent `v1.2.1` 并校验 SHA-256、锁定可执行文件；配置变化优先原子替换规则并重启专用 dnsmasq，只有健康恢复失败才重启 Agent。受限网络链路会通过 `prism_transport.sh 2.2.3` 建立加密 TCP SNI 传输；客户端每 60 秒同步并用双站点 HTTPS 探针识别“SSH/TCP 仍在线但业务转发卡死”的假健康，SSH 本身继续按 15 秒保活、连续 3 次失联判定；修复时只重建对应隧道，不改服务路由。守卫每 10 秒检查配置哈希和本地 DNS 监听，每 300 秒抽测每项服务一个代表域名；配置变化、30 分钟健康缓存刷新和服务审计仍会全量验证所有域名。发往已选解锁机的 UDP/443 会被明确拒绝，促使支持 QUIC 的应用回落到 SNIproxy 可处理的 TCP/TLS。每分钟定时器只负责流量上报，耗时的四阶段检测由独立 `prismdns-service-audit.service` 执行。守卫只操作 Prism 服务，不触碰 MTProxy、XrayR、V2bX；面板或网络瞬时不可达时任务会正常退出并等待下一轮。
 
 目标机只检测该 IP 已选择的服务。每项服务必须依次通过：全部路由域名精确解析到用户所选 Proxy IPv4、AAAA 为空、TLS/SNI 连续三次至少两次成功、代表页面或对应 UnlockTests 服务方项目可用。Gemini 会覆盖 26 个网页与移动端依赖，而不是只检查首页。服务方明确返回 `NO`、`Banned`、WAF 或稳定性不足时直接显示失败；没有专属 UnlockTests 项目的自定义服务则按自己的 DNS、TLS/SNI 和代表页面判定，不会因检测器没有输出而误报。任何实测结果都不会修改路由或自动跳转节点，用户需要切换线路时必须手动选择并保存。长时间审计会被守卫识别并去重，不会每 10 秒重复排队。节点页只把解锁机 Agent 自检保留为参考，目标机四阶段结果才是最终结论。
 
 该逻辑不写死任何现有 IP、域名或节点 ID。以后从面板新增的解锁机和被解锁机，只要执行页面首次生成的客户端命令，就会默认获得相同的 IPv4 优先、AAAA 抑制、共享域名联动、只读实测、5 秒授权、缓存清理、流量统计和健康上报能力。无 `flock` 的精简系统会自动使用原子目录锁降级。
 
-`1.4.10` 回归使用运行时最新有效服务目录，并对每台目标机逐项验证 DNS、AAAA、TLS/SNI、代表页面和服务方结论。面板不会把解锁机自身自检结果伪装成目标机可用，不会因第三方检测波动自动切换节点，也不会把共享域名拆到互相覆盖的出口。Crackle、Salto、GYAO 已停止运营，不再进入有效服务目录。
+`1.4.5` 回归使用运行时最新有效服务目录，并对每台目标机逐项验证 DNS、AAAA、TLS/SNI、代表页面和服务方结论。Gemini 检测覆盖登录态实际使用的账户能力、One Google、静态资源和应用 API 域名；即时检测不再只截取前 10 个域名，而是并发验证完整应用链后才显示通过。面板不会把解锁机自身自检结果伪装成目标机可用，不会因第三方检测波动自动切换节点，也不会把共享域名拆到互相覆盖的出口。Crackle、Salto、GYAO 已停止运营，不再进入有效服务目录。
 
 ## 解锁检测与账户安全
 

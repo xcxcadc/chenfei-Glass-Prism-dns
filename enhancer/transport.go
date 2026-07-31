@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
@@ -21,10 +22,11 @@ import (
 const transportFreshness = 90 * time.Second
 
 type proxyTransportRecord struct {
-	NodeID     string    `json:"node_id"`
-	Endpoint   string    `json:"endpoint"`
-	SSHHostKey string    `json:"ssh_host_key"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	NodeID      string    `json:"node_id"`
+	Endpoint    string    `json:"endpoint"`
+	SSHHostKey  string    `json:"ssh_host_key"`
+	EgressReady bool      `json:"egress_ready,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type clientTransportRecord struct {
@@ -47,10 +49,11 @@ type TransportStore struct {
 }
 
 type proxyTransportRequest struct {
-	Secret     string `json:"secret"`
-	SSHHostKey string `json:"ssh_host_key"`
-	PublicKey  string `json:"public_key,omitempty"`
-	ListenPort int    `json:"listen_port,omitempty"`
+	Secret      string `json:"secret"`
+	SSHHostKey  string `json:"ssh_host_key"`
+	EgressReady bool   `json:"egress_ready,omitempty"`
+	PublicKey   string `json:"public_key,omitempty"`
+	ListenPort  int    `json:"listen_port,omitempty"`
 }
 
 type clientTransportRequest struct {
@@ -70,13 +73,24 @@ type transportPeer struct {
 	ProxyIP       string `json:"proxy_ip,omitempty"`
 	ClientIP      string `json:"client_ip,omitempty"`
 	PublicProxyIP string `json:"public_proxy_ip,omitempty"`
+	RemoteHTTP    int    `json:"remote_http,omitempty"`
+	RemoteHTTPS   int    `json:"remote_https,omitempty"`
+}
+
+type transportEgressService struct {
+	ServiceID     string   `json:"service_id"`
+	Name          string   `json:"name"`
+	Domains       []string `json:"domains"`
+	ProbeDomains  []string `json:"probe_domains"`
+	IPv6Candidate bool     `json:"ipv6_candidate,omitempty"`
 }
 
 type transportConfig struct {
-	Role          string          `json:"role"`
-	Interface     string          `json:"interface"`
-	Peers         []transportPeer `json:"peers"`
-	AuthorizedIPs []string        `json:"authorized_ips,omitempty"`
+	Role           string                   `json:"role"`
+	Interface      string                   `json:"interface"`
+	Peers          []transportPeer          `json:"peers"`
+	AuthorizedIPs  []string                 `json:"authorized_ips,omitempty"`
+	EgressServices []transportEgressService `json:"egress_services,omitempty"`
 }
 
 type controllerNode struct {
@@ -100,7 +114,7 @@ func NewTransportStore(path string) (*TransportStore, error) {
 	return store, nil
 }
 
-func (store *TransportStore) RegisterProxy(nodeID, endpoint, sshHostKey string) error {
+func (store *TransportStore) RegisterProxy(nodeID, endpoint, sshHostKey string, egressReady ...bool) error {
 	if net.ParseIP(endpoint) == nil {
 		return errors.New("invalid proxy endpoint")
 	}
@@ -111,10 +125,11 @@ func (store *TransportStore) RegisterProxy(nodeID, endpoint, sshHostKey string) 
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.proxies[nodeID] = proxyTransportRecord{
-		NodeID:     nodeID,
-		Endpoint:   endpoint,
-		SSHHostKey: normalizedHostKey,
-		UpdatedAt:  time.Now().UTC(),
+		NodeID:      nodeID,
+		Endpoint:    endpoint,
+		SSHHostKey:  normalizedHostKey,
+		EgressReady: len(egressReady) > 0 && egressReady[0],
+		UpdatedAt:   time.Now().UTC(),
 	}
 	return store.saveLocked()
 }
@@ -161,6 +176,10 @@ func (store *TransportStore) ClientConfig(record ipConfigRecord) transportConfig
 			continue
 		}
 		proxyIP, clientIP := transportPairIPs(proxyID, record.ID)
+		remoteHTTP, remoteHTTPS := 80, 443
+		if proxy.EgressReady {
+			remoteHTTP, remoteHTTPS = 19080, 19443
+		}
 		config.Peers = append(config.Peers, transportPeer{
 			ProxyID:       proxyID,
 			SSHHostKey:    proxy.SSHHostKey,
@@ -169,6 +188,8 @@ func (store *TransportStore) ClientConfig(record ipConfigRecord) transportConfig
 			ProxyIP:       proxyIP,
 			ClientIP:      clientIP,
 			PublicProxyIP: proxy.Endpoint,
+			RemoteHTTP:    remoteHTTP,
+			RemoteHTTPS:   remoteHTTPS,
 		})
 	}
 	sort.Slice(config.Peers, func(i, j int) bool { return config.Peers[i].ProxyID < config.Peers[j].ProxyID })
@@ -306,11 +327,40 @@ func (app *App) handleProxyTransport(writer http.ResponseWriter, request *http.R
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "proxy node requires a reachable IPv4 address"})
 		return
 	}
-	if err := app.transport.RegisterProxy(node.ID, endpoint, payload.SSHHostKey); err != nil {
+	if err := app.transport.RegisterProxy(node.ID, endpoint, payload.SSHHostKey, payload.EgressReady); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, app.transport.ProxyConfig(node.ID, app.ipStore.Records()))
+	config := app.transport.ProxyConfig(node.ID, app.ipStore.Records())
+	config.EgressServices = app.proxyEgressServices(request.Context(), node.ID)
+	writeJSON(writer, http.StatusOK, config)
+}
+
+func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []transportEgressService {
+	serviceIDs := make(map[string]struct{})
+	for _, record := range app.ipStore.Records() {
+		for serviceID, routeProxyID := range record.Routes {
+			if routeProxyID == proxyID {
+				serviceIDs[serviceID] = struct{}{}
+			}
+		}
+	}
+	services := app.catalog.Snapshot(ctx, false).Services
+	result := make([]transportEgressService, 0, len(serviceIDs))
+	for _, service := range services {
+		if _, selected := serviceIDs[service.ID]; !selected {
+			continue
+		}
+		result = append(result, transportEgressService{
+			ServiceID:     service.ID,
+			Name:          service.Name,
+			Domains:       routingDomains(service.Domains),
+			ProbeDomains:  preferredProbeDomains(service),
+			IPv6Candidate: service.Name == "Gemini" || service.Name == "Google AI Studio",
+		})
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].ServiceID < result[right].ServiceID })
+	return result
 }
 
 func (app *App) handleClientTransport(writer http.ResponseWriter, request *http.Request) {

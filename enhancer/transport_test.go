@@ -19,7 +19,7 @@ func TestTransportStoreBuildsReadyPair(t *testing.T) {
 	}
 	proxyKey := testSSHKey(t)
 	clientKey := testSSHKey(t)
-	if err := store.RegisterProxy("proxy-a", "203.0.113.10", proxyKey); err != nil {
+	if err := store.RegisterProxy("proxy-a", "203.0.113.10", proxyKey, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RegisterClient("ip-a", clientKey, nil); err != nil {
@@ -27,7 +27,8 @@ func TestTransportStoreBuildsReadyPair(t *testing.T) {
 	}
 	record := ipConfigRecord{IPConfig: IPConfig{ID: "ip-a", IP: "198.51.100.30", Routes: map[string]string{"youtube": "proxy-a"}}}
 	clientConfig := store.ClientConfig(record)
-	if len(clientConfig.Peers) != 1 || clientConfig.Peers[0].SSHHost != "203.0.113.10" || clientConfig.Peers[0].SSHPort != 22 {
+	if len(clientConfig.Peers) != 1 || clientConfig.Peers[0].SSHHost != "203.0.113.10" || clientConfig.Peers[0].SSHPort != 22 ||
+		clientConfig.Peers[0].RemoteHTTP != 19080 || clientConfig.Peers[0].RemoteHTTPS != 19443 {
 		t.Fatalf("unexpected client config: %#v", clientConfig)
 	}
 	proxyConfig := store.ProxyConfig("proxy-a", []ipConfigRecord{record})

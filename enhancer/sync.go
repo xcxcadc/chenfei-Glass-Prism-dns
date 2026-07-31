@@ -62,7 +62,6 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 	for domain := range managedDomains {
 		delete(overrides, domain)
 	}
-	payload["smart"] = false
 
 	routes, _ := normalizeConflictingRoutes(nil, record.Routes, services)
 	proxyPeers := app.effectiveProxyPeers(record)
@@ -86,13 +85,18 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 			"pattern": metaKey, "ips": peers, "strategy": "", "name": "", "type": "meta",
 			"priority": 100, "check": false, "node_id": proxyID,
 		}
+		probeDomain := preferredProbeDomain(service)
 		for _, domain := range routingDomains(service.Domains) {
 			name := "enhancer:" + service.ID
 			rules[name+":"+domain] = map[string]any{
 				"pattern": domain, "ips": peers, "strategy": "", "name": name, "type": "DOMAIN-SUFFIX",
-				"priority": 100, "check": false, "node_id": "",
+				"priority": 100, "check": domain == probeDomain, "node_id": "",
 			}
-			delete(overrides, domain)
+			if _, tunneled := app.transport.EffectiveProxyIP(record.ID, proxyID); tunneled {
+				delete(overrides, domain)
+			} else {
+				overrides[domain] = proxyID
+			}
 		}
 	}
 	payload["rules"] = rules
@@ -122,8 +126,7 @@ func objectMap(value any) map[string]any {
 
 func (app *App) effectiveProxyPeers(record ipConfigRecord) map[string][]string {
 	result := effectiveProxyPeers(record)
-	for proxyID, peers := range result {
-		result[proxyID] = ipv4Peers(peers)
+	for proxyID := range result {
 		if tunnelIP, ready := app.transport.EffectiveProxyIP(record.ID, proxyID); ready {
 			result[proxyID] = []string{tunnelIP}
 		}
@@ -145,7 +148,7 @@ func effectiveProxyPeers(record ipConfigRecord) map[string][]string {
 	}
 	peers := make([]string, 0, len(record.TrafficPeers))
 	for _, peer := range record.TrafficPeers {
-		if parsed := net.ParseIP(strings.TrimSpace(peer)); parsed != nil && parsed.To4() != nil {
+		if parsed := net.ParseIP(strings.TrimSpace(peer)); parsed != nil {
 			peers = append(peers, parsed.String())
 		}
 	}
@@ -156,17 +159,4 @@ func effectiveProxyPeers(record ipConfigRecord) map[string][]string {
 		return map[string][]string{proxyID: peers}
 	}
 	return nil
-}
-
-func ipv4Peers(peers []string) []string {
-	result := make([]string, 0, len(peers))
-	for _, peer := range peers {
-		parsed := net.ParseIP(strings.TrimSpace(peer))
-		if parsed == nil || parsed.To4() == nil {
-			continue
-		}
-		result = append(result, parsed.String())
-	}
-	sort.Strings(result)
-	return result
 }

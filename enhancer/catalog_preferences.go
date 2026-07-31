@@ -14,8 +14,9 @@ import (
 )
 
 type CatalogPreferences struct {
-	Categories        []string          `json:"categories"`
-	ServiceCategories map[string]string `json:"service_categories"`
+	Categories        []string            `json:"categories"`
+	ServiceCategories map[string]string   `json:"service_categories"`
+	ServiceDomains    map[string][]string `json:"service_domains,omitempty"`
 }
 
 type CatalogPreferenceStore struct {
@@ -23,6 +24,7 @@ type CatalogPreferenceStore struct {
 	path        string
 	categories  map[string]struct{}
 	assignments map[string]string
+	domains     map[string][]string
 }
 
 func NewCatalogPreferenceStore(path string) (*CatalogPreferenceStore, error) {
@@ -30,6 +32,7 @@ func NewCatalogPreferenceStore(path string) (*CatalogPreferenceStore, error) {
 		path:        path,
 		categories:  make(map[string]struct{}),
 		assignments: make(map[string]string),
+		domains:     make(map[string][]string),
 	}
 	if err := store.load(); err != nil {
 		return nil, err
@@ -129,6 +132,49 @@ func (store *CatalogPreferenceStore) ClearServiceCategory(serviceID string) erro
 	return nil
 }
 
+func (store *CatalogPreferenceStore) SetServiceDomains(serviceID string, domains []string) error {
+	serviceID = strings.TrimSpace(serviceID)
+	if serviceID == "" {
+		return errors.New("service id is required")
+	}
+	normalized, err := normalizeCustomDomains(domains)
+	if err != nil {
+		return err
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	previous, existed := store.domains[serviceID]
+	store.domains[serviceID] = append([]string(nil), normalized...)
+	if err := store.saveLocked(); err != nil {
+		if existed {
+			store.domains[serviceID] = previous
+		} else {
+			delete(store.domains, serviceID)
+		}
+		return err
+	}
+	return nil
+}
+
+func (store *CatalogPreferenceStore) ClearServiceDomains(serviceID string) error {
+	serviceID = strings.TrimSpace(serviceID)
+	if serviceID == "" {
+		return errors.New("service id is required")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	previous, existed := store.domains[serviceID]
+	if !existed {
+		return nil
+	}
+	delete(store.domains, serviceID)
+	if err := store.saveLocked(); err != nil {
+		store.domains[serviceID] = previous
+		return err
+	}
+	return nil
+}
+
 func (store *CatalogPreferenceStore) Apply(services []Service) []Service {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -136,13 +182,29 @@ func (store *CatalogPreferenceStore) Apply(services []Service) []Service {
 	copy(result, services)
 	for index := range result {
 		result[index].OriginalCategory = ""
-		category, ok := store.assignments[result[index].ID]
-		if !ok {
-			continue
+		result[index].DomainOverride = false
+		preferenceIDs := append([]string{result[index].ID}, result[index].Aliases...)
+		category := ""
+		categoryFound := false
+		for _, preferenceID := range preferenceIDs {
+			if value, ok := store.assignments[preferenceID]; ok {
+				category = value
+				categoryFound = true
+				break
+			}
 		}
-		if category != result[index].Category {
+		if categoryFound && category != result[index].Category {
 			result[index].OriginalCategory = result[index].Category
 			result[index].Category = category
+		}
+		for _, preferenceID := range preferenceIDs {
+			domains, exists := store.domains[preferenceID]
+			if !exists {
+				continue
+			}
+			result[index].Domains = append([]string(nil), domains...)
+			result[index].DomainOverride = true
+			break
 		}
 	}
 	return result
@@ -177,6 +239,16 @@ func (store *CatalogPreferenceStore) load() error {
 		}
 		store.assignments[serviceID] = normalized
 	}
+	for serviceID, domains := range preferences.ServiceDomains {
+		if strings.TrimSpace(serviceID) == "" {
+			return fmt.Errorf("decode catalog preferences: invalid service domains")
+		}
+		normalized, normalizeErr := normalizeCustomDomains(domains)
+		if normalizeErr != nil {
+			return fmt.Errorf("decode catalog preferences: invalid service domains")
+		}
+		store.domains[serviceID] = normalized
+	}
 	return nil
 }
 
@@ -190,9 +262,13 @@ func (store *CatalogPreferenceStore) saveLocked() error {
 	preferences := CatalogPreferences{
 		Categories:        sortedCategoryKeys(store.categories),
 		ServiceCategories: make(map[string]string, len(store.assignments)),
+		ServiceDomains:    make(map[string][]string, len(store.domains)),
 	}
 	for serviceID, category := range store.assignments {
 		preferences.ServiceCategories[serviceID] = category
+	}
+	for serviceID, domains := range store.domains {
+		preferences.ServiceDomains[serviceID] = append([]string(nil), domains...)
 	}
 	data, err := json.MarshalIndent(preferences, "", "  ")
 	if err != nil {

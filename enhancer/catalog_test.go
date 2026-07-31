@@ -191,14 +191,19 @@ nameserver /proactivebackend-pa.googleapis.com/group
 		t.Fatalf("expected one service, got %d", len(services))
 	}
 	for _, domain := range []string{
+		"accountcapabilities-pa.googleapis.com",
 		"accounts.google.com",
 		"firebaseinstallations.googleapis.com",
+		"gemini.gstatic.com",
 		"lh3.googleusercontent.com",
+		"ogads-pa.clients6.google.com",
 		"oauthaccountmanager.googleapis.com",
 		"people-pa.googleapis.com",
 		"play.googleapis.com",
 		"signaler-pa.googleapis.com",
 		"subscriptionsfirstparty-pa.googleapis.com",
+		"waa-pa.clients6.google.com",
+		"www.google.com",
 		"www.gstatic.com",
 	} {
 		if !contains(services[0].Domains, domain) {
@@ -289,5 +294,22 @@ nameserver /ftven.fr/group
 	}
 	if len(services) != 1 || services[0].Name != "FR:France.tv" {
 		t.Fatalf("retired services were not removed: %#v", services)
+	}
+}
+
+func TestMergeServicesDeduplicatesNamesAndKeepsLegacyIDs(t *testing.T) {
+	merged := mergeServices(
+		[]Service{{ID: "youtube-old", Name: "YouTube", Category: "Global Platform", Domains: []string{"youtube.com"}}},
+		[]Service{{ID: "youtube-new", Name: "youtube", Category: "Custom", Custom: true, Domains: []string{"*.googlevideo.com", "youtube.com"}}},
+	)
+	if len(merged) != 1 {
+		t.Fatalf("expected one service after merge, got %d: %#v", len(merged), merged)
+	}
+	service := merged[0]
+	if service.ID != "youtube-old" || !contains(service.Aliases, "youtube-new") {
+		t.Fatalf("canonical and legacy IDs were not preserved: %#v", service)
+	}
+	if len(service.Domains) != 2 || !contains(service.Domains, "youtube.com") || !contains(service.Domains, "googlevideo.com") {
+		t.Fatalf("merged domains were not unique and normalized: %#v", service.Domains)
 	}
 }

@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.4.10"
+const uiVersion = "1.4.5"
 
 type App struct {
 	catalog      *CatalogManager
@@ -94,6 +94,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/catalog", app.handleCatalog)
 	mux.HandleFunc("/enhancer/api/custom-services", app.handleCustomServices)
 	mux.HandleFunc("/enhancer/api/custom-services/", app.handleCustomService)
+	mux.HandleFunc("/enhancer/api/service-domains/", app.handleServiceDomains)
 	mux.HandleFunc("/enhancer/api/categories", app.handleCategories)
 	mux.HandleFunc("/enhancer/api/service-categories/", app.handleServiceCategory)
 	mux.HandleFunc("/enhancer/api/connectivity", app.handleConnectivity)
@@ -198,6 +199,10 @@ func (app *App) handleCustomServices(writer http.ResponseWriter, request *http.R
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		if err := app.preferences.ClearServiceDomains(saved.ID); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(writer, http.StatusCreated, saved)
 	default:
 		methodNotAllowed(writer, http.MethodGet, http.MethodPost)
@@ -252,10 +257,52 @@ func (app *App) handleCustomService(writer http.ResponseWriter, request *http.Re
 			return
 		}
 		_ = app.preferences.ClearServiceCategory(id)
+		_ = app.preferences.ClearServiceDomains(id)
 		writer.WriteHeader(http.StatusNoContent)
 	default:
 		methodNotAllowed(writer, http.MethodPut, http.MethodDelete)
 	}
+}
+
+func (app *App) handleServiceDomains(writer http.ResponseWriter, request *http.Request) {
+	if !app.authorize(request.Context(), request.Header.Get("Authorization")) {
+		writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "登录已失效"})
+		return
+	}
+	serviceID := strings.TrimPrefix(request.URL.Path, "/enhancer/api/service-domains/")
+	if serviceID == "" {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "无效的服务 ID"})
+		return
+	}
+	service, ok := app.catalog.Service(request.Context(), serviceID)
+	if !ok {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "服务不存在"})
+		return
+	}
+	switch request.Method {
+	case http.MethodPut:
+		var payload struct {
+			Domains []string `json:"domains"`
+		}
+		if err := decodeJSON(request, &payload); err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := app.preferences.SetServiceDomains(service.ID, payload.Domains); err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	case http.MethodDelete:
+		if err := app.preferences.ClearServiceDomains(service.ID); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	default:
+		methodNotAllowed(writer, http.MethodPut, http.MethodDelete)
+		return
+	}
+	updated, _ := app.catalog.Service(request.Context(), service.ID)
+	writeJSON(writer, http.StatusOK, updated)
 }
 
 func (app *App) handleCategories(writer http.ResponseWriter, request *http.Request) {
@@ -430,7 +477,7 @@ func (app *App) handleConnectivity(writer http.ResponseWriter, request *http.Req
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	ctx, cancel := context.WithTimeout(request.Context(), 35*time.Second)
+	ctx, cancel := context.WithTimeout(request.Context(), 90*time.Second)
 	defer cancel()
 	results, err := TestConnectivity(ctx, payload)
 	if err != nil {

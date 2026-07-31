@@ -17,6 +17,8 @@ var (
 	servicePattern           = regexp.MustCompile(`^#\s*>\s*(.+?)\s*$`)
 	domainPattern            = regexp.MustCompile(`^nameserver\s+/([^/]+)/`)
 	geminiApplicationDomains = []string{
+		"gemini.google.com",
+		"accountcapabilities-pa.googleapis.com",
 		"accounts.google.com",
 		"aisandbox-pa.googleapis.com",
 		"alkaliminer-pa.googleapis.com",
@@ -26,10 +28,12 @@ var (
 		"clients3.google.com",
 		"firebaseinstallations.googleapis.com",
 		"firebaseremoteconfig.googleapis.com",
-		"gemini.google.com",
+		"gemini.gstatic.com",
 		"growth-pa.googleapis.com",
 		"lh3.googleusercontent.com",
 		"notifications-pa.googleapis.com",
+		"ogads-pa.clients6.google.com",
+		"ogs.google.com",
 		"oauth2.googleapis.com",
 		"oauthaccountmanager.googleapis.com",
 		"people-pa.googleapis.com",
@@ -39,9 +43,13 @@ var (
 		"robinfrontend-pa.googleapis.com",
 		"signaler-pa.clients6.google.com",
 		"signaler-pa.googleapis.com",
+		"ssl.gstatic.com",
 		"subscriptionsfirstparty-pa.googleapis.com",
 		"voilatile-pa.googleapis.com",
+		"waa-pa.clients6.google.com",
 		"www.googleapis.com",
+		"www.google.com",
+		"www.google.com.hk",
 		"www.gstatic.com",
 	}
 	serviceDomainSupplements = map[string][]string{
@@ -114,6 +122,8 @@ type Service struct {
 	OriginalCategory string   `json:"original_category,omitempty"`
 	Domains          []string `json:"domains"`
 	Custom           bool     `json:"custom"`
+	DomainOverride   bool     `json:"domain_override,omitempty"`
+	Aliases          []string `json:"aliases,omitempty"`
 }
 
 func ParseSmartDNS(reader io.Reader) ([]Service, error) {
@@ -343,6 +353,16 @@ func stableServiceID(category, name string) string {
 	}
 	sum := sha256.Sum256([]byte(category + "\x00" + name))
 	return base + "-" + hex.EncodeToString(sum[:4])
+}
+
+func serviceIdentityKey(name string) string {
+	var builder strings.Builder
+	for _, character := range strings.ToLower(strings.TrimSpace(name)) {
+		if unicode.IsLetter(character) || unicode.IsDigit(character) {
+			builder.WriteRune(character)
+		}
+	}
+	return builder.String()
 }
 
 func customServiceID(name string) string {

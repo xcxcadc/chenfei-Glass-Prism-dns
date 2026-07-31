@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.4.10"
+VERSION="1.4.5"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -60,17 +60,16 @@ ensure_dependencies() {
   command -v jq >/dev/null 2>&1 || missing+=(jq)
   command -v dig >/dev/null 2>&1 || missing+=(dig)
   command -v nft >/dev/null 2>&1 || missing+=(nftables)
-  command -v dnsmasq >/dev/null 2>&1 || missing+=(dnsmasq)
   ((${#missing[@]} == 0)) && return 0
   require_root
   local manager
   manager=$(detect_package_manager)
   info "安装依赖: ${missing[*]}"
   case "$manager" in
-    apt) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq dnsutils nftables dnsmasq-base ;;
-    dnf) dnf install -y curl jq bind-utils nftables dnsmasq ;;
-    yum) yum install -y curl jq bind-utils nftables dnsmasq ;;
-    apk) apk add --no-cache curl jq bind-tools nftables dnsmasq ;;
+    apt) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq dnsutils nftables ;;
+    dnf) dnf install -y curl jq bind-utils nftables ;;
+    yum) yum install -y curl jq bind-utils nftables ;;
+    apk) apk add --no-cache curl jq bind-tools nftables ;;
     *) fail "无法识别包管理器，请手动安装 curl、jq、dig 和 nftables。" ;;
   esac
 }
@@ -103,10 +102,11 @@ bootstrap() {
   validate_master
   local response
   response=$(curl -fsSL --connect-timeout 8 --max-time 20 "$MASTER/enhancer/api/bootstrap/$TOKEN") || fail "无法从面板获取配置，请检查地址和令牌。"
-  local expected detected secret installer transport_installer configured_master
+  local expected detected secret smart installer transport_installer configured_master
   expected=$(jq -r '.expected_ip // empty' <<<"$response")
   detected=$(jq -r '.detected_ip // empty' <<<"$response")
   secret=$(jq -r '.secret // empty' <<<"$response")
+  smart=$(jq -r '.smart // true' <<<"$response")
   installer=$(jq -r '.agent_installer // empty' <<<"$response")
   transport_installer=$(jq -r '.transport_installer // empty' <<<"$response")
   configured_master=$(jq -r '.master // empty' <<<"$response")
@@ -122,6 +122,7 @@ bootstrap() {
   chmod 600 "$BOOTSTRAP_FILE"
   info "安装 Prism DNS Client Agent..."
   local args=(--master "$MASTER" --secret "$secret")
+  [[ "$smart" == "true" ]] && args+=(--smart)
   if [[ -n "${PRISM_AGENT_INSTALLER_FILE:-}" ]]; then
     bash "$PRISM_AGENT_INSTALLER_FILE" "${args[@]}"
   else
@@ -157,9 +158,9 @@ AUDIT_TIME_FILE="/var/lib/prismdns/service-audit.timestamp"
 AUDIT_OUTPUT_FILE="/var/lib/prismdns/service-audit.txt"
 LOCK_FILE="/run/prismdns-report.lock"
 NFT_TABLE="prismdns_traffic"
-COUNTER_VERSION="dns-sni-ports-v9-monotonic-deterministic-local-dns-rx-tx"
+COUNTER_VERSION="dns-sni-ports-v10-smart-dual-stack-rx-tx"
 AUDIT_INTERVAL=21600
-AUDIT_VERSION="selected-providers-browser-path-ipv4-v11"
+AUDIT_VERSION="selected-providers-browser-path-ipv4-v12"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
 HEALTH_CACHE_INTERVAL=1800
 [[ -f "$CONFIG_FILE" ]] || exit 0
@@ -195,8 +196,8 @@ if [[ "$PEER_HASH" != "$CURRENT_HASH" ]] || ! nft list table inet "$NFT_TABLE" >
     printf '  set peers6 { type ipv6_addr;'
     ((${#PEERS6[@]} > 0)) && printf ' elements = { %s };' "$(join_csv "${PEERS6[@]}")"
     printf ' }\n'
-    printf '  chain input { type filter hook input priority -10; policy accept; tcp dport 53 counter name rx; udp dport 53 counter name rx; ip saddr 127.0.0.1 tcp sport 5353 counter name rx; ip saddr 127.0.0.1 udp sport 5353 counter name rx; ip6 saddr ::1 tcp sport 5353 counter name rx; ip6 saddr ::1 udp sport 5353 counter name rx; ip saddr @peers4 tcp sport { 80, 443 } counter name rx; ip6 saddr @peers6 tcp sport { 80, 443 } counter name rx; }\n'
-    printf '  chain output { type filter hook output priority -10; policy accept; ip daddr @peers4 udp dport 443 reject with icmp type port-unreachable; ip6 daddr @peers6 udp dport 443 reject with icmpv6 type port-unreachable; tcp sport 53 counter name tx; udp sport 53 counter name tx; ip daddr 127.0.0.1 tcp dport 5353 counter name tx; ip daddr 127.0.0.1 udp dport 5353 counter name tx; ip6 daddr ::1 tcp dport 5353 counter name tx; ip6 daddr ::1 udp dport 5353 counter name tx; ip daddr @peers4 tcp dport { 80, 443 } counter name tx; ip6 daddr @peers6 tcp dport { 80, 443 } counter name tx; }\n'
+    printf '  chain input { type filter hook input priority -10; policy accept; tcp dport 53 counter name rx; udp dport 53 counter name rx; ip saddr @peers4 tcp sport { 80, 443 } counter name rx; ip6 saddr @peers6 tcp sport { 80, 443 } counter name rx; }\n'
+    printf '  chain output { type filter hook output priority -10; policy accept; ip daddr @peers4 udp dport 443 reject with icmp type port-unreachable; ip6 daddr @peers6 udp dport 443 reject with icmpv6 type port-unreachable; tcp sport 53 counter name tx; udp sport 53 counter name tx; ip daddr @peers4 tcp dport { 80, 443 } counter name tx; ip6 daddr @peers6 tcp dport { 80, 443 } counter name tx; }\n'
     printf '}\n'
   } > "$RULE_FILE"
   nft delete table inet "$NFT_TABLE" >/dev/null 2>&1 || true
@@ -221,8 +222,7 @@ HEALTHY_ROUTES=0
 EXPECTED_ROUTES=0
 HEALTH_MESSAGE=""
 if systemctl is-active --quiet prism-agent 2>/dev/null &&
-   systemctl is-active --quiet prismdns-local-dns.service 2>/dev/null &&
-   ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {agent=1} $5 ~ /:5353$/ && /dnsmasq/ {localdns=1} END {exit !(agent && localdns)}'; then
+   ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}'; then
   DNS_READY=true
 else
   HEALTH_MESSAGE="Prism Agent 未接管 53 端口"
@@ -232,34 +232,27 @@ if awk '$1 == "nameserver" && ($2 == "127.0.0.1" || $2 == "::1") {found=1} END {
 else
   HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE；}系统 DNS 未使用 Prism"
 fi
-route_family_ready() {
-  local domain="$1" query_type="$2" answer peer matched
+route_ready() {
+  local domain="$1" answer peer
   local -a expected answers
-  shift 2
+  shift
   expected=("$@")
-  if [[ "$query_type" == "A" ]]; then
-    mapfile -t answers < <(dig @127.0.0.1 "$domain" A +short +time=2 +tries=1 2>/dev/null | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/' | sort -u)
-  else
-    mapfile -t answers < <(dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1 2>/dev/null | awk 'index($0, ":") > 0' | sort -u)
-  fi
-  if ((${#expected[@]} == 0)); then
-    ((${#answers[@]} == 0))
-    return
-  fi
-  ((${#answers[@]} > 0)) || return 1
+  ((${#expected[@]} > 0)) || return 1
+  mapfile -t answers < <({
+    dig @127.0.0.1 "$domain" A +short +time=2 +tries=1
+    dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1
+  } 2>/dev/null | sed '/^$/d' | sort -u)
   for answer in "${answers[@]}"; do
-    matched=false
     for peer in "${expected[@]}"; do
       if [[ "$answer" == "$peer" ]]; then
-        matched=true
-        break
+        return 0
       fi
     done
-    $matched || return 1
   done
+  return 1
 }
 ROUTE_HEALTH_KEY=$(jq -Sc '
-  [.health_probes[]? | {service_id,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id)
+  {mode:"agent-smart-dual-stack-v1",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))}
 ' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 NOW=$(date +%s)
 USE_HEALTH_CACHE=false
@@ -274,13 +267,11 @@ if [[ -s "$HEALTH_CACHE_FILE" ]]; then
 fi
 if ! $USE_HEALTH_CACHE; then
   while IFS= read -r probe; do
-    mapfile -t PROBE_PEERS4 < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
-    mapfile -t PROBE_PEERS6 < <(jq -r '.traffic_peers[]? | select(contains(":"))' <<<"$probe" | sort -u)
+    mapfile -t PROBE_PEERS < <(jq -r '.traffic_peers[]?' <<<"$probe" | sort -u)
     mapfile -t PROBE_DOMAINS < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
     for domain in "${PROBE_DOMAINS[@]}"; do
       EXPECTED_ROUTES=$((EXPECTED_ROUTES + 1))
-      if route_family_ready "$domain" A "${PROBE_PEERS4[@]}" &&
-         route_family_ready "$domain" AAAA "${PROBE_PEERS6[@]}"; then
+      if route_ready "$domain" "${PROBE_PEERS[@]}"; then
         HEALTHY_ROUTES=$((HEALTHY_ROUTES + 1))
       fi
     done
@@ -311,7 +302,7 @@ reset_traffic_counters() {
 
 run_service_audit() {
   local audit_hash="$1" now="$2" output="" attempt_output attempt_block plain="" results probe service_id service_name result provider_summary matched_peer answer peer mapping_output
-  local providers_csv candidate failure test_provider probe_domain route_domain http_code
+  local providers_csv candidate failure test_provider probe_domain route_domain http_code resolve_peer
   local attempt attempt_count pass_count youtube_pass route_total route_pass https_total https_pass https_success
   local probe_attempt tls_attempt_pass page_ok
   local -a provider_results test_providers matched_results probe_domains route_domains probe_peers
@@ -403,12 +394,11 @@ run_service_audit() {
     provider_summary="$result"
     mapfile -t route_domains < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
     mapfile -t probe_domains < <(jq -r '[(.probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
-    mapfile -t probe_peers < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
+    mapfile -t probe_peers < <(jq -r '.traffic_peers[]?' <<<"$probe" | sort -u)
     route_total=${#route_domains[@]}
     route_pass=0
     for route_domain in "${route_domains[@]}"; do
-      if route_family_ready "$route_domain" A "${probe_peers[@]}" &&
-         route_family_ready "$route_domain" AAAA; then
+      if route_ready "$route_domain" "${probe_peers[@]}"; then
         route_pass=$((route_pass + 1))
       fi
     done
@@ -424,14 +414,19 @@ run_service_audit() {
             break 2
           fi
         done
-      done < <(dig @127.0.0.1 "$probe_domain" A +short +time=2 +tries=1 2>/dev/null | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/' | sort -u)
+      done < <({
+        dig @127.0.0.1 "$probe_domain" A +short +time=2 +tries=1
+        dig @127.0.0.1 "$probe_domain" AAAA +short +time=2 +tries=1
+      } 2>/dev/null | sed '/^$/d' | sort -u)
       [[ -n "$matched_peer" ]] || continue
+      resolve_peer="$matched_peer"
+      [[ "$resolve_peer" == *:* ]] && resolve_peer="[$resolve_peer]"
       tls_attempt_pass=0
       page_ok=false
       for probe_attempt in 1 2 3; do
-        http_code=$(curl -4 -sS -o /dev/null -w '%{http_code}' \
+        http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
           -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' \
-          --resolve "$probe_domain:443:$matched_peer" --connect-timeout 6 --max-time 25 "https://$probe_domain/" || true)
+          --resolve "$probe_domain:443:$resolve_peer" --connect-timeout 6 --max-time 25 "https://$probe_domain/" || true)
         if [[ "$http_code" =~ ^[1-5][0-9][0-9]$ ]]; then
           tls_attempt_pass=$((tls_attempt_pass + 1))
         fi
@@ -453,14 +448,12 @@ run_service_audit() {
       result="FAIL (no TLS/SNI probe domains; DNS ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
     elif ((https_pass != https_total)); then
       result="FAIL (TLS/SNI ${https_pass}/${https_total}; page success ${https_success}; DNS ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
+    elif ((https_success == 0)); then
+      result="FAIL (DNS and TLS/SNI passed, but representative pages did not load; provider ${provider_summary:-not checked})"
     elif [[ "$provider_summary" =~ ^YES([[:space:]]|$) ]]; then
       result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; provider verified; page success ${https_success}/${https_total})"
-    elif ((${#test_providers[@]} > 0)) || [[ "$service_name" == "YouTube" ]]; then
-      result="FAIL (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; provider ${provider_summary:-verification unavailable}; page success ${https_success}/${https_total})"
-    elif ((https_success > 0)); then
-      result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; page success ${https_success}/${https_total}; provider not configured)"
     else
-      result="FAIL (DNS and TLS/SNI passed, but no representative page or provider verification succeeded; provider ${provider_summary:-not checked})"
+      result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; page success ${https_success}/${https_total}; provider reference ${provider_summary:-not configured})"
     fi
     results=$(jq -c --arg id "$service_id" --arg result "$result" '. + {($id):$result}' <<<"$results")
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
@@ -500,7 +493,7 @@ CONFIG_FILE="/var/lib/prismdns/client.conf"
 HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
-AUDIT_VERSION="selected-providers-browser-path-ipv4-v11"
+AUDIT_VERSION="selected-providers-browser-path-ipv4-v12"
 HEALTH_CHECK_FILE="/var/lib/prismdns/route-health.timestamp"
 HEALTH_CHECK_INTERVAL=300
 DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
@@ -651,8 +644,14 @@ render_local_routes() {
     fi
   fi
 }
-ensure_deterministic_agent() {
-  local unit=""
+remove_deterministic_dns() {
+  systemctl disable --now "$LOCAL_DNS_SERVICE" >/dev/null 2>&1 || true
+  rm -f "/etc/systemd/system/$LOCAL_DNS_SERVICE" "$DNSMASQ_CONFIG" "$DNSMASQ_ROUTES"
+  nft delete table inet "$LOCAL_DNS_TABLE" >/dev/null 2>&1 || true
+  systemctl daemon-reload >/dev/null 2>&1 || true
+}
+ensure_agent_mode() {
+  local unit="" smart changed=false
   for candidate in /etc/systemd/system/prism-agent.service /lib/systemd/system/prism-agent.service; do
     if [[ -s "$candidate" ]]; then
       unit="$candidate"
@@ -660,24 +659,28 @@ ensure_deterministic_agent() {
     fi
   done
   [[ -n "$unit" ]] || return 0
-  grep -Eq '^ExecStart=.*(^|[[:space:]])--smart([[:space:]]|$)' "$unit" || return 0
-  sed -i -E '/^ExecStart=/ s/[[:space:]]+--smart([[:space:]]|$)/\1/g' "$unit"
-  systemctl daemon-reload
-  rm -f "$HASH_FILE" "$RESTART_FILE"
+  smart=$(jq -r '.smart // true' <<<"$BOOTSTRAP")
+  if [[ "$smart" == "true" ]] && ! grep -Eq '^ExecStart=.*(^|[[:space:]])--smart([[:space:]]|$)' "$unit"; then
+    sed -i -E '/^ExecStart=/ s/$/ --smart/' "$unit"
+    changed=true
+  elif [[ "$smart" != "true" ]] && grep -Eq '^ExecStart=.*(^|[[:space:]])--smart([[:space:]]|$)' "$unit"; then
+    sed -i -E '/^ExecStart=/ s/[[:space:]]+--smart([[:space:]]|$)/\1/g' "$unit"
+    changed=true
+  fi
+  if $changed; then
+    systemctl daemon-reload
+    rm -f "$HASH_FILE" "$RESTART_FILE"
+  fi
 }
-ensure_deterministic_agent
+remove_deterministic_dns
+ensure_agent_mode
 CURRENT_HASH=$(jq -Sc '{
-  mode:"dnsmasq-deterministic-ipv4-service-peers-v3",
+  mode:"agent-smart-dual-stack-v1",
+  smart:(.smart // true),
   traffic_peers:((.traffic_peers // []) | sort),
   health_probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,unlock_test,unlock_tests,traffic_peers}] | sort_by(.service_id))
 }' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 LAST_HASH=$(cat "$HASH_FILE" 2>/dev/null || true)
-if [[ "$CURRENT_HASH" != "$LAST_HASH" ]] ||
-   ! systemctl is-active --quiet "$LOCAL_DNS_SERVICE" 2>/dev/null ||
-   ! nft list table inet "$LOCAL_DNS_TABLE" >/dev/null 2>&1; then
-  ensure_local_dns_service
-  render_local_routes
-fi
 NOW=$(date +%s)
 AUDIT_HASH=$({
   printf '%s\n' "$AUDIT_VERSION"
@@ -694,62 +697,50 @@ trigger_service_audit() {
   systemctl is-active --quiet prismdns-service-audit.service && return 0
   systemctl start --no-block prismdns-service-audit.service >/dev/null 2>&1 || true
 }
-route_family_ready() {
-  local domain="$1" query_type="$2" answer peer matched
+route_ready() {
+  local domain="$1" answer peer
   local -a expected answers
-  shift 2
+  shift
   expected=("$@")
-  if [[ "$query_type" == "A" ]]; then
-    mapfile -t answers < <(dig @127.0.0.1 "$domain" A +short +time=2 +tries=1 2>/dev/null | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/' | sort -u)
-  else
-    mapfile -t answers < <(dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1 2>/dev/null | awk 'index($0, ":") > 0' | sort -u)
-  fi
-  if ((${#expected[@]} == 0)); then
-    ((${#answers[@]} == 0))
-    return
-  fi
-  ((${#answers[@]} > 0)) || return 1
+  ((${#expected[@]} > 0)) || return 1
+  mapfile -t answers < <({
+    dig @127.0.0.1 "$domain" A +short +time=2 +tries=1
+    dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1
+  } 2>/dev/null | sed '/^$/d' | sort -u)
   for answer in "${answers[@]}"; do
-    matched=false
     for peer in "${expected[@]}"; do
       if [[ "$answer" == "$peer" ]]; then
-        matched=true
-        break
+        return 0
       fi
     done
-    $matched || return 1
   done
+  return 1
 }
 basic_health_ok() {
   systemctl is-active --quiet prism-agent 2>/dev/null || return 1
-  systemctl is-active --quiet "$LOCAL_DNS_SERVICE" 2>/dev/null || return 1
-  ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {agent=1} $5 ~ /:5353$/ && /dnsmasq/ {localdns=1} END {exit !(agent && localdns)}'
+  ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}'
 }
 route_health_ok() {
   basic_health_ok || return 1
   local probe domain
-  local -a expected4 expected6 domains
+  local -a expected domains
   while IFS= read -r probe; do
-    mapfile -t expected4 < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
-    mapfile -t expected6 < <(jq -r '.traffic_peers[]? | select(contains(":"))' <<<"$probe" | sort -u)
+    mapfile -t expected < <(jq -r '.traffic_peers[]?' <<<"$probe" | sort -u)
     mapfile -t domains < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
     for domain in "${domains[@]}"; do
-      route_family_ready "$domain" A "${expected4[@]}" || return 1
-      route_family_ready "$domain" AAAA "${expected6[@]}" || return 1
+      route_ready "$domain" "${expected[@]}" || return 1
     done
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
 }
 route_health_sample_ok() {
   basic_health_ok || return 1
   local probe domain
-  local -a expected4 expected6
+  local -a expected
   while IFS= read -r probe; do
-    mapfile -t expected4 < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
-    mapfile -t expected6 < <(jq -r '.traffic_peers[]? | select(contains(":"))' <<<"$probe" | sort -u)
+    mapfile -t expected < <(jq -r '.traffic_peers[]?' <<<"$probe" | sort -u)
     domain=$(jq -r '[(.domain // empty), .probe_domains[]?, .route_domains[]?] | map(select(length > 0)) | unique | .[0] // empty' <<<"$probe")
     [[ -n "$domain" ]] || continue
-    route_family_ready "$domain" A "${expected4[@]}" || return 1
-    route_family_ready "$domain" AAAA "${expected6[@]}" || return 1
+    route_ready "$domain" "${expected[@]}" || return 1
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
 }
 if [[ -n "$LAST_HASH" && "$CURRENT_HASH" == "$LAST_HASH" ]] && basic_health_ok; then
@@ -767,9 +758,7 @@ if ((NOW - LAST_RESTART < 60)); then
   exit 0
 fi
 printf '%s\n' "$NOW" > "$RESTART_FILE"
-ensure_local_dns_service
-render_local_routes
-systemctl restart "$LOCAL_DNS_SERVICE"
+systemctl restart prism-agent
 for _ in {1..30}; do
   if route_health_ok; then
     printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
@@ -779,13 +768,7 @@ for _ in {1..30}; do
   fi
   sleep 1
 done
-systemctl restart prism-agent
-sleep 2
-route_health_ok
-printf '%s\n' "$CURRENT_HASH" > "$HASH_FILE"
-printf '%s\n' "$NOW" > "$HEALTH_CHECK_FILE"
-trigger_service_audit
-exit 0
+exit 1
 EOF
   chmod 700 /usr/local/lib/prismdns/sync-routes.sh
   if command -v systemctl >/dev/null 2>&1; then
@@ -877,51 +860,31 @@ wait_for_local_dns() {
 
 verify_route_probes() {
   local bootstrap probe domain matched_peer expected=0 mapped=0 healthy=0
-  local -a peers4 peers6 domains
+  local -a peers domains answers
   bootstrap=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN")
-  route_family_ready() {
-    local probe_domain="$1" query_type="$2" answer peer matched
-    local -a expected_peers answers
-    shift 2
-    expected_peers=("$@")
-    if [[ "$query_type" == "A" ]]; then
-      mapfile -t answers < <(dig @127.0.0.1 "$probe_domain" A +short +time=2 +tries=1 2>/dev/null | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/' | sort -u)
-    else
-      mapfile -t answers < <(dig @127.0.0.1 "$probe_domain" AAAA +short +time=2 +tries=1 2>/dev/null | awk 'index($0, ":") > 0' | sort -u)
-    fi
-    if ((${#expected_peers[@]} == 0)); then
-      ((${#answers[@]} == 0))
-      return
-    fi
-    ((${#answers[@]} > 0)) || return 1
-    for answer in "${answers[@]}"; do
-      matched=false
-      for peer in "${expected_peers[@]}"; do
-        if [[ "$answer" == "$peer" ]]; then
-          matched=true
-          break
-        fi
-      done
-      $matched || return 1
-    done
-  }
   while IFS= read -r probe; do
-    mapfile -t peers4 < <(jq -r '.traffic_peers[]? | select(contains(":") | not)' <<<"$probe" | sort -u)
-    mapfile -t peers6 < <(jq -r '.traffic_peers[]? | select(contains(":"))' <<<"$probe" | sort -u)
+    mapfile -t peers < <(jq -r '.traffic_peers[]?' <<<"$probe" | sort -u)
     mapfile -t domains < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
     for domain in "${domains[@]}"; do
       expected=$((expected + 1))
-      matched_peer="${peers4[0]:-}"
+      matched_peer=""
       probe_ok=false
-      if route_family_ready "$domain" A "${peers4[@]}" &&
-         route_family_ready "$domain" AAAA "${peers6[@]}"; then
-        mapped=$((mapped + 1))
-      else
-        continue
-      fi
+      mapfile -t answers < <({
+        dig @127.0.0.1 "$domain" A +short +time=2 +tries=1
+        dig @127.0.0.1 "$domain" AAAA +short +time=2 +tries=1
+      } 2>/dev/null | sed '/^$/d' | sort -u)
+      for answer in "${answers[@]}"; do
+        for peer in "${peers[@]}"; do
+          if [[ "$answer" == "$peer" ]]; then
+            matched_peer="$peer"
+            break 2
+          fi
+        done
+      done
+      [[ -n "$matched_peer" ]] || continue
+      mapped=$((mapped + 1))
       for probe_attempt in 1 2; do
-        if [[ -n "$matched_peer" ]] &&
-           curl -sS -o /dev/null --resolve "$domain:443:$matched_peer" --connect-timeout 5 --max-time 12 "https://$domain/"; then
+        if curl -sS -o /dev/null --resolve "$domain:443:$matched_peer" --connect-timeout 5 --max-time 12 "https://$domain/"; then
           probe_ok=true
           break
         fi

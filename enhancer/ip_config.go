@@ -198,7 +198,7 @@ func (app *App) handleBootstrap(writer http.ResponseWriter, request *http.Reques
 		"detected_ip":                clientIP(request),
 		"master":                     publicBaseURL(request),
 		"secret":                     record.NodeSecret,
-		"smart":                      false,
+		"smart":                      record.Smart,
 		"dns":                        "127.0.0.1",
 		"traffic_peers":              app.effectiveTrafficPeers(record),
 		"health_probes":              app.healthProbes(request.Context(), record),
@@ -268,20 +268,20 @@ func unlockTestProvider(service Service) string {
 
 func unlockTestProviders(service Service) []string {
 	providers := map[string][]string{
-		"Apple TV+":                       {"Apple"},
-		"Bilibili":                        {"Bilibili Anime"},
-		"ChatGPT / OpenAI":                {"ChatGPT"},
-		"Claude":                          {"Claude"},
-		"Crunchyroll":                     {"Crunchyroll"},
-		"DAZN":                            {"Dazn"},
-		"Disney+":                         {"Disney+"},
-		"Gemini":                          {"Gemini"},
-		"HBO / Max":                       {"HBO Max"},
-		"Netflix":                         {"Netflix"},
-		"Paramount+":                      {"ParamountPlus"},
-		"Spotify":                         {"Spotify Registration"},
-		"TikTok":                          {"TikTok"},
-		"YouTube":                         {"YouTube Region", "YouTube CDN"},
+		"Apple TV+":        {"Apple"},
+		"Bilibili":         {"Bilibili Anime"},
+		"ChatGPT / OpenAI": {"ChatGPT"},
+		"Claude":           {"Claude"},
+		"Crunchyroll":      {"Crunchyroll"},
+		"DAZN":             {"Dazn"},
+		"Disney+":          {"Disney+"},
+		"Gemini":           {"Gemini"},
+		"HBO / Max":        {"HBO Max"},
+		"Netflix":          {"Netflix"},
+		"Paramount+":       {"ParamountPlus"},
+		"Spotify":          {"Spotify Registration"},
+		"TikTok":           {"TikTok"},
+		"YouTube":          {"YouTube Region", "YouTube CDN"},
 	}
 	return append([]string(nil), providers[service.Name]...)
 }
@@ -392,7 +392,7 @@ func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, ExternalDNSNode: externalNode, Smart: false, Routes: application.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
+	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, ExternalDNSNode: externalNode, Smart: payload.Smart, Routes: application.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -472,7 +472,7 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	record.Note = payload.Note
-	record.Smart = false
+	record.Smart = payload.Smart
 	record.Routes = application.Routes
 	record.TrafficPeers = application.TrafficPeers
 	saved, err := app.ipStore.Save(record.IPConfig, record.NodeSecret, application.ProxyPeers)
@@ -644,9 +644,7 @@ func nodePublicIPs(node map[string]any) []string {
 				candidate = strings.Trim(host, "[]")
 			}
 			if parsed := net.ParseIP(candidate); parsed != nil {
-				if parsed.To4() != nil {
-					seen[parsed.String()] = struct{}{}
-				}
+				seen[parsed.String()] = struct{}{}
 			}
 		}
 	}

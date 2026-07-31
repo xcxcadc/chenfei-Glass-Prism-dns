@@ -13,6 +13,7 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{
 			"role":"dns",
+			"smart":true,
 			"rules":{"https://panel/enhancer/rules/stale.list:stale.example":{"name":"https://panel/enhancer/rules/stale.list","pattern":"stale.example","ips":["192.0.2.1"]},"public:example.net":{"name":"public","pattern":"example.net","ips":["192.0.2.2"]}},
 			"rule_overrides":{"stale.example":"old-proxy","example.net":"public-proxy"}
 		}`))
@@ -50,11 +51,11 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := payload.RuleOverrides["example.com"]; exists {
-		t.Fatalf("managed exact override must be removed: %+v", payload.RuleOverrides)
+	if payload.RuleOverrides["example.com"] != "proxy-1" {
+		t.Fatalf("managed exact override was not restored: %+v", payload.RuleOverrides)
 	}
-	if _, exists := payload.RuleOverrides["cdn.example.com"]; exists {
-		t.Fatalf("managed wildcard override must be removed: %+v", payload.RuleOverrides)
+	if payload.RuleOverrides["cdn.example.com"] != "proxy-1" {
+		t.Fatalf("managed wildcard override was not restored: %+v", payload.RuleOverrides)
 	}
 	if _, exists := payload.RuleOverrides["*.example.com"]; exists {
 		t.Fatalf("wildcard leaked into agent overrides: %+v", payload.RuleOverrides)
@@ -67,8 +68,8 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 		t.Fatalf("persistent rule missing: %+v", payload.Rules)
 	}
 	ips, _ := rule["ips"].([]any)
-	if len(ips) != 1 || ips[0] != "198.51.100.20" {
-		t.Fatalf("managed rules must use only the proxy IPv4 address: %+v", rule)
+	if len(ips) != 2 || ips[0] != "198.51.100.20" || ips[1] != "2001:db8::20" {
+		t.Fatalf("managed rules must preserve both proxy address families: %+v", rule)
 	}
 	if _, exists := payload.Rules["https://panel/enhancer/rules/stale.list:stale.example"]; exists {
 		t.Fatal("stale enhancer rule was not removed")
@@ -76,11 +77,11 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	if _, exists := payload.Rules["public:example.net"]; !exists {
 		t.Fatal("unmanaged rule was removed")
 	}
-	if payload.Smart {
-		t.Fatal("managed DNS sync must disable Agent smart mode")
+	if !payload.Smart {
+		t.Fatal("managed DNS sync must preserve Agent smart mode")
 	}
-	if check, _ := rule["check"].(bool); check {
-		t.Fatalf("managed DNS rule must not enable Agent circuit-breaker probes: %+v", rule)
+	if check, _ := rule["check"].(bool); !check {
+		t.Fatalf("managed DNS rule must retain its Smart probe: %+v", rule)
 	}
 }
 
@@ -109,7 +110,7 @@ func TestEffectiveProxyPeersMigratesSingleProxyConfig(t *testing.T) {
 		TrafficPeers: []string{"198.51.100.20", "2001:db8::20"},
 	}}
 	peers := effectiveProxyPeers(record)
-	if len(peers) != 1 || len(peers["proxy-1"]) != 1 || peers["proxy-1"][0] != "198.51.100.20" {
+	if len(peers) != 1 || len(peers["proxy-1"]) != 2 || peers["proxy-1"][0] != "198.51.100.20" || peers["proxy-1"][1] != "2001:db8::20" {
 		t.Fatalf("legacy single-proxy config was not migrated: %+v", peers)
 	}
 	record.Routes["service-b"] = "proxy-2"

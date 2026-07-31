@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="2.2.3"
+VERSION="2.3.0"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -10,6 +10,12 @@ ENV_FILE="/etc/prismdns/transport.env"
 SSH_KEY_FILE="$STATE_DIR/ssh_key"
 READY_FILE="$STATE_DIR/ready-proxies.json"
 ACTIVE_FILE="$STATE_DIR/active-proxies.json"
+EGRESS_BINARY="/usr/local/bin/prism-egress-proxy"
+EGRESS_SERVICE="prism-egress-proxy.service"
+EGRESS_POLICY="/etc/prismdns/egress-policy.json"
+EGRESS_HTTP_PORT=19080
+EGRESS_HTTPS_PORT=19443
+EGRESS_REPO="${PRISM_EGRESS_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 ROLE=""
 MASTER=""
 CREDENTIAL=""
@@ -113,6 +119,68 @@ ensure_client_keypair() {
   chmod 644 "$SSH_KEY_FILE.pub"
 }
 
+detect_architecture() {
+  case "$(uname -m)" in
+    x86_64|amd64) echo amd64 ;;
+    aarch64|arm64) echo arm64 ;;
+    *) fail "unsupported architecture: $(uname -m)" ;;
+  esac
+}
+
+install_proxy_egress() {
+  [[ "$ROLE" == "proxy" ]] || return 0
+  local source="${PRISM_EGRESS_BINARY_FILE:-}" temporary architecture
+  if [[ -n "$source" ]]; then
+    [[ -s "$source" ]] || fail "PRISM_EGRESS_BINARY_FILE does not exist: $source"
+  else
+    architecture=$(detect_architecture)
+    temporary=$(mktemp)
+    curl -fL --retry 3 --connect-timeout 15 --max-time 120 \
+      -o "$temporary" \
+      "https://github.com/$EGRESS_REPO/releases/latest/download/prism-egress-proxy_linux_$architecture"
+    source="$temporary"
+  fi
+  install -m 755 "$source" "$EGRESS_BINARY"
+  [[ -z "${temporary:-}" ]] || rm -f "$temporary"
+  mkdir -p "$(dirname "$EGRESS_POLICY")"
+  if [[ ! -s "$EGRESS_POLICY" ]]; then
+    printf '{"services":[]}\n' >"$EGRESS_POLICY"
+    chmod 644 "$EGRESS_POLICY"
+  fi
+  cat >/etc/systemd/system/$EGRESS_SERVICE <<EOF
+[Unit]
+Description=Prism adaptive IPv4/IPv6 SNI egress
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$EGRESS_BINARY --http-listen 127.0.0.1:$EGRESS_HTTP_PORT --tls-listen 127.0.0.1:$EGRESS_HTTPS_PORT --policy $EGRESS_POLICY
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=$EGRESS_POLICY
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now "$EGRESS_SERVICE" >/dev/null
+  for _ in {1..30}; do
+    if systemctl is-active --quiet "$EGRESS_SERVICE" &&
+      ss -lnt 2>/dev/null | awk -v http=":$EGRESS_HTTP_PORT" -v https=":$EGRESS_HTTPS_PORT" \
+        '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  fail "adaptive egress did not open its loopback listeners"
+}
+
 post_json() {
   local endpoint="$1" body="$2"
   curl -fsSL --connect-timeout 8 --max-time 20 \
@@ -122,13 +190,19 @@ post_json() {
 }
 
 proxy_registration() {
-  local host_key body
+  local host_key body egress_ready=false
   ssh-keygen -A >/dev/null 2>&1 || true
   host_key=$(awk '{print $1" "$2}' /etc/ssh/ssh_host_ed25519_key.pub)
+  if systemctl is-active --quiet "$EGRESS_SERVICE" 2>/dev/null &&
+    ss -lnt 2>/dev/null | awk -v http=":$EGRESS_HTTP_PORT" -v https=":$EGRESS_HTTPS_PORT" \
+      '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'; then
+    egress_ready=true
+  fi
   body=$(jq -nc \
     --arg secret "$CREDENTIAL" \
     --arg ssh_host_key "$host_key" \
-    '{secret:$secret,ssh_host_key:$ssh_host_key}')
+    --argjson egress_ready "$egress_ready" \
+    '{secret:$secret,ssh_host_key:$ssh_host_key,egress_ready:$egress_ready}')
   post_json "/enhancer/api/transport/proxy" "$body"
 }
 
@@ -164,11 +238,24 @@ apply_authorized_keys() {
   temporary=$(mktemp)
   while IFS= read -r public_key; do
     [[ -n "$public_key" ]] || continue
-    printf 'restrict,port-forwarding,permitopen="127.0.0.1:80",permitopen="127.0.0.1:443",command="/bin/sleep 2147483647" %s\n' "$public_key"
+    printf 'restrict,port-forwarding,permitopen="127.0.0.1:80",permitopen="127.0.0.1:443",permitopen="127.0.0.1:%s",permitopen="127.0.0.1:%s",command="/bin/sleep 2147483647" %s\n' \
+      "$EGRESS_HTTP_PORT" "$EGRESS_HTTPS_PORT" "$public_key"
   done < <(jq -r '.peers[]?.ssh_public_key // empty' <<<"$response" | sort -u) >"$temporary"
   install -m 600 -o prism-tunnel -g prism-tunnel "$temporary" "$target"
   rm -f "$temporary"
   sshd -t
+}
+
+apply_egress_policy() {
+  local response="$1" temporary
+  systemctl is-active --quiet "$EGRESS_SERVICE" 2>/dev/null || return 0
+  temporary=$(mktemp)
+  jq '{services:(.egress_services // [])}' <<<"$response" >"$temporary"
+  if [[ ! -f "$EGRESS_POLICY" ]] || ! cmp -s "$temporary" "$EGRESS_POLICY"; then
+    install -m 644 "$temporary" "$EGRESS_POLICY"
+    systemctl kill -s HUP "$EGRESS_SERVICE" >/dev/null 2>&1 || true
+  fi
+  rm -f "$temporary"
 }
 
 apply_proxy_authorization() {
@@ -211,6 +298,7 @@ sync_proxy() {
   jq -e '.role == "proxy" and (.peers | type == "array") and (.authorized_ips | type == "array")' <<<"$response" >/dev/null
   apply_authorized_keys "$response"
   apply_proxy_authorization "$response"
+  apply_egress_policy "$response"
   log "proxy transport synchronized: $(jq '.authorized_ips | length' <<<"$response") authorized IPs, $(jq '.peers | length' <<<"$response") encrypted clients"
 }
 
@@ -219,12 +307,14 @@ service_id_for_proxy() {
 }
 
 write_tunnel_service() {
-  local peer="$1" proxy_id proxy_ip ssh_host ssh_port host_key service_id service_path known_hosts temporary port_seed local_http local_https
+  local peer="$1" proxy_id proxy_ip ssh_host ssh_port host_key remote_http remote_https service_id service_path known_hosts temporary port_seed local_http local_https
   proxy_id=$(jq -r '.proxy_id' <<<"$peer")
   proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
   ssh_host=$(jq -r '.ssh_host' <<<"$peer")
   ssh_port=$(jq -r '.ssh_port' <<<"$peer")
   host_key=$(jq -r '.ssh_host_key' <<<"$peer")
+  remote_http=$(jq -r '.remote_http // 80' <<<"$peer")
+  remote_https=$(jq -r '.remote_https // 443' <<<"$peer")
   service_id=$(service_id_for_proxy "$proxy_id")
   port_seed=$((16#${service_id:0:4}))
   local_http=$((20000 + (port_seed % 10000)))
@@ -242,7 +332,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ssh -N -T -l prism-tunnel -p $ssh_port -i $SSH_KEY_FILE -o IdentitiesOnly=yes -o BatchMode=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=8 -o ConnectionAttempts=3 -o TCPKeepAlive=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none -o LogLevel=ERROR -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts -o HostKeyAlias=prism-$service_id -L 127.0.0.1:$local_http:127.0.0.1:80 -L 127.0.0.1:$local_https:127.0.0.1:443 $ssh_host
+ExecStart=/usr/bin/ssh -N -T -l prism-tunnel -p $ssh_port -i $SSH_KEY_FILE -o IdentitiesOnly=yes -o BatchMode=yes -o ExitOnForwardFailure=yes -o ConnectTimeout=8 -o ConnectionAttempts=3 -o TCPKeepAlive=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o IPQoS=none -o LogLevel=ERROR -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts -o HostKeyAlias=prism-$service_id -L 127.0.0.1:$local_http:127.0.0.1:$remote_http -L 127.0.0.1:$local_https:127.0.0.1:$remote_https $ssh_host
 Restart=always
 RestartSec=2
 LimitNOFILE=1048576
@@ -262,7 +352,8 @@ EOF
   rm -f "$temporary"
   jq -nc --arg proxy_id "$proxy_id" --arg proxy_ip "$proxy_ip" --arg service_id "$service_id" \
     --argjson local_http "$local_http" --argjson local_https "$local_https" \
-    '{proxy_id:$proxy_id,proxy_ip:$proxy_ip,service_id:$service_id,local_http:$local_http,local_https:$local_https}'
+    --argjson remote_http "$remote_http" --argjson remote_https "$remote_https" \
+    '{proxy_id:$proxy_id,proxy_ip:$proxy_ip,service_id:$service_id,local_http:$local_http,local_https:$local_https,remote_http:$remote_http,remote_https:$remote_https}'
 }
 
 remove_stale_tunnels() {
@@ -507,6 +598,7 @@ install_transport() {
   fi
   save_environment
   [[ "$ROLE" == "client" ]] && ensure_client_keypair
+  [[ "$ROLE" == "proxy" ]] && install_proxy_egress
   install_timer
   sync_transport
   log "encrypted TCP transport v$VERSION installed for role $ROLE"
@@ -525,6 +617,10 @@ uninstall_transport() {
     done < <(jq -r '.[] | [.service_id,.proxy_ip] | @tsv' "$ACTIVE_FILE")
   fi
   systemctl disable --now prism-transport.timer prism-transport.service >/dev/null 2>&1 || true
+  if [[ "$ROLE" == "proxy" ]]; then
+    systemctl disable --now "$EGRESS_SERVICE" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/$EGRESS_SERVICE" "$EGRESS_BINARY" "$EGRESS_POLICY"
+  fi
   systemctl disable --now wg-quick@prismwg0 >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/prism-transport.service /etc/systemd/system/prism-transport.timer
   rm -f /etc/wireguard/prismwg0.conf "$ENV_FILE"
@@ -538,6 +634,9 @@ show_status() {
   load_environment
   echo "role=${ROLE:-unconfigured}"
   echo "timer=$(systemctl is-active prism-transport.timer 2>/dev/null || true)"
+  if [[ "${ROLE:-}" == "proxy" ]]; then
+    echo "egress=$(systemctl is-active "$EGRESS_SERVICE" 2>/dev/null || true)"
+  fi
   if [[ -f "$READY_FILE" ]]; then
     echo "ready_proxies=$(jq -c . "$READY_FILE" 2>/dev/null || echo '[]')"
   fi

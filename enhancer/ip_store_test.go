@@ -102,7 +102,7 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 	}
 }
 
-func TestIPConfigStoreNormalizesLegacyProxyPeersToIPv4(t *testing.T) {
+func TestIPConfigStorePreservesDualStackProxyPeers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ip-configs.json")
 	data, err := json.Marshal([]ipConfigRecord{{
 		IPConfig: IPConfig{
@@ -135,11 +135,11 @@ func TestIPConfigStoreNormalizesLegacyProxyPeersToIPv4(t *testing.T) {
 	if !ok {
 		t.Fatal("legacy record was not loaded")
 	}
-	if len(record.ProxyPeers) != 1 || len(record.ProxyPeers["proxy-a"]) != 1 || record.ProxyPeers["proxy-a"][0] != "198.51.100.10" {
-		t.Fatalf("legacy proxy peers were not normalized to the assigned IPv4 proxy: %+v", record.ProxyPeers)
+	if len(record.ProxyPeers) != 1 || len(record.ProxyPeers["proxy-a"]) != 2 || record.ProxyPeers["proxy-a"][0] != "198.51.100.10" || record.ProxyPeers["proxy-a"][1] != "2001:db8::10" {
+		t.Fatalf("dual-stack proxy peers were not preserved: %+v", record.ProxyPeers)
 	}
-	if len(record.TrafficPeers) != 1 || record.TrafficPeers[0] != "198.51.100.10" {
-		t.Fatalf("legacy traffic peers were not normalized to IPv4: %+v", record.TrafficPeers)
+	if len(record.TrafficPeers) != 2 || record.TrafficPeers[0] != "198.51.100.10" || record.TrafficPeers[1] != "2001:db8::10" {
+		t.Fatalf("dual-stack traffic peers were not preserved: %+v", record.TrafficPeers)
 	}
 
 	persistedData, err := os.ReadFile(path)
@@ -150,8 +150,8 @@ func TestIPConfigStoreNormalizesLegacyProxyPeersToIPv4(t *testing.T) {
 	if err := json.Unmarshal(persistedData, &persisted); err != nil {
 		t.Fatal(err)
 	}
-	if len(persisted) != 1 || len(persisted[0].TrafficPeers) != 1 || persisted[0].TrafficPeers[0] != "198.51.100.10" {
-		t.Fatalf("normalized IPv4 peers were not persisted: %+v", persisted)
+	if len(persisted) != 1 || len(persisted[0].TrafficPeers) != 2 || persisted[0].TrafficPeers[1] != "2001:db8::10" {
+		t.Fatalf("dual-stack peers were not persisted: %+v", persisted)
 	}
 }
 
@@ -182,7 +182,7 @@ func TestIPConfigStoreRemovesLegacyAutomaticFailoverState(t *testing.T) {
 	}
 }
 
-func TestNormalizeRouteConflictsDisablesManagedSmartMode(t *testing.T) {
+func TestNormalizeRouteConflictsPreservesManagedSmartMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ip-configs.json")
 	store, err := NewIPConfigStore(path)
 	if err != nil {
@@ -202,19 +202,19 @@ func TestNormalizeRouteConflictsDisablesManagedSmartMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if normalized != 1 {
-		t.Fatalf("normalized count = %d, want 1", normalized)
+	if normalized != 0 {
+		t.Fatalf("normalized count = %d, want 0", normalized)
 	}
 	updated, ok := store.Get(config.ID)
-	if !ok || updated.Smart {
-		t.Fatalf("managed smart mode was not disabled: %+v", updated)
+	if !ok || !updated.Smart {
+		t.Fatalf("managed smart mode was not preserved: %+v", updated)
 	}
 	reloaded, err := NewIPConfigStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	persisted, ok := reloaded.Get(config.ID)
-	if !ok || persisted.Smart {
-		t.Fatalf("managed smart-mode migration was not persisted: %+v", persisted)
+	if !ok || !persisted.Smart {
+		t.Fatalf("managed smart mode was not persisted: %+v", persisted)
 	}
 }

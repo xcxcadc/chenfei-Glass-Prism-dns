@@ -151,7 +151,7 @@ func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...m
 		config.Routes = map[string]string{}
 	}
 	config.Routes = cloneStringMap(config.Routes)
-	config.TrafficPeers = ipv4Peers(config.TrafficPeers)
+	config.TrafficPeers = validIPPeers(config.TrafficPeers)
 	for serviceID, proxyID := range config.Routes {
 		if strings.TrimSpace(serviceID) == "" || strings.TrimSpace(proxyID) == "" {
 			return IPConfig{}, errors.New("service routes must include a proxy node")
@@ -192,7 +192,7 @@ func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...m
 		config.ServiceAuditRequestedAt = &now
 	}
 	if len(proxyPeers) > 0 {
-		record.ProxyPeers = ipv4ProxyPeers(proxyPeers[0])
+		record.ProxyPeers = validProxyPeers(proxyPeers[0])
 	}
 	config.UpdatedAt = now
 	record.IPConfig = config
@@ -214,13 +214,13 @@ func cloneProxyPeers(source map[string][]string) map[string][]string {
 	return result
 }
 
-func ipv4ProxyPeers(source map[string][]string) map[string][]string {
+func validProxyPeers(source map[string][]string) map[string][]string {
 	if len(source) == 0 {
 		return nil
 	}
 	result := make(map[string][]string, len(source))
 	for proxyID, peers := range source {
-		filtered := ipv4Peers(peers)
+		filtered := validIPPeers(peers)
 		if len(filtered) > 0 {
 			result[proxyID] = filtered
 		}
@@ -348,18 +348,10 @@ func (store *IPConfigStore) NormalizeRouteConflicts(services []Service) (int, er
 	now := time.Now().UTC()
 	for id, record := range store.configs {
 		routes, routeChanged := normalizeConflictingRoutes(nil, record.Routes, services)
-		smartChanged := record.Smart
-		changed := routeChanged || smartChanged
-		if !changed {
+		if !routeChanged {
 			continue
 		}
-		if routeChanged {
-			store.applyNormalizedRoutes(&record, routes, now)
-		}
-		if smartChanged {
-			record.Smart = false
-			record.UpdatedAt = now
-		}
+		store.applyNormalizedRoutes(&record, routes, now)
 		store.configs[id] = record
 		normalizedCount++
 	}
@@ -437,12 +429,12 @@ func (store *IPConfigStore) load() error {
 	for _, record := range records {
 		originalTrafficPeers := append([]string(nil), record.TrafficPeers...)
 		originalProxyPeers := cloneProxyPeers(record.ProxyPeers)
-		record.ProxyPeers = ipv4ProxyPeers(record.ProxyPeers)
+		record.ProxyPeers = validProxyPeers(record.ProxyPeers)
 		pruneUnusedProxyPeers(&record)
 		if len(record.ProxyPeers) > 0 {
 			record.TrafficPeers = flattenProxyPeers(record.ProxyPeers)
 		} else {
-			record.TrafficPeers = ipv4Peers(record.TrafficPeers)
+			record.TrafficPeers = validIPPeers(record.TrafficPeers)
 		}
 		if !stringSlicesEqual(originalTrafficPeers, record.TrafficPeers) ||
 			!proxyPeersEqual(originalProxyPeers, record.ProxyPeers) {
@@ -510,8 +502,23 @@ func pruneUnusedProxyPeers(record *ipConfigRecord) {
 func flattenProxyPeers(proxyPeers map[string][]string) []string {
 	seen := make(map[string]struct{})
 	for _, peers := range proxyPeers {
-		for _, peer := range ipv4Peers(peers) {
+		for _, peer := range validIPPeers(peers) {
 			seen[peer] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for peer := range seen {
+		result = append(result, peer)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func validIPPeers(peers []string) []string {
+	seen := make(map[string]struct{}, len(peers))
+	for _, peer := range peers {
+		if parsed := net.ParseIP(strings.TrimSpace(peer)); parsed != nil {
+			seen[parsed.String()] = struct{}{}
 		}
 	}
 	result := make([]string, 0, len(seen))

@@ -995,6 +995,18 @@ a { color: inherit; }
 .settings-grid .settings-card { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; min-height: 190px; }
 .settings-grid .settings-card .btn { margin-top: 18px; }
 .inline-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.service-domain-box { margin-top: 15px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.service-domain-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.service-domain-head > div { min-width: 0; }
+.service-domain-head strong,
+.service-domain-head span { display: block; }
+.service-domain-head strong { font-size: 11px; }
+.service-domain-head span { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.domain-chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; max-height: 110px; overflow: auto; }
+.domain-chip-list code,
+.domain-chip-more { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); font-size: 9px; word-break: break-all; }
+.domain-chip-more { color: var(--muted); }
+.service-domain-box > .btn { margin-top: 10px; }
 
 @media (max-width: 1180px) {
   .dashboard-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }

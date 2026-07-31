@@ -45,6 +45,33 @@ func TestCatalogPreferenceStorePersistsUnicodeCategories(t *testing.T) {
 	}
 }
 
+func TestCatalogPreferenceStorePersistsDomainOverridesAndLegacyAliases(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog-preferences.json")
+	store, err := NewCatalogPreferenceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetServiceDomains("legacy-youtube", []string{"Example.COM", "*.cdn.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	service := store.Apply([]Service{{ID: "canonical-youtube", Aliases: []string{"legacy-youtube"}, Name: "YouTube", Domains: []string{"youtube.com"}}})[0]
+	if !service.DomainOverride || len(service.Domains) != 2 || service.Domains[0] != "*.cdn.example.com" {
+		t.Fatalf("alias domain override was not applied: %#v", service)
+	}
+
+	reloaded, err := NewCatalogPreferenceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reloaded.ClearServiceDomains("legacy-youtube"); err != nil {
+		t.Fatal(err)
+	}
+	service = reloaded.Apply([]Service{{ID: "canonical-youtube", Aliases: []string{"legacy-youtube"}, Name: "YouTube", Domains: []string{"youtube.com"}}})[0]
+	if service.DomainOverride || len(service.Domains) != 1 || service.Domains[0] != "youtube.com" {
+		t.Fatalf("clearing domain override did not restore catalog values: %#v", service)
+	}
+}
+
 func TestCatalogSnapshotIncludesEmptyCustomCategories(t *testing.T) {
 	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
 	preferences, _ := NewCatalogPreferenceStore(filepath.Join(t.TempDir(), "catalog-preferences.json"))

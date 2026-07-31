@@ -109,8 +109,34 @@ func (manager *CatalogManager) refresh(ctx context.Context) error {
 
 func mergeServices(base, custom []Service) []Service {
 	result := make([]Service, 0, len(base)+len(custom))
-	result = append(result, custom...)
-	result = append(result, base...)
+	indexes := make(map[string]int, len(base)+len(custom))
+	appendService := func(service Service) {
+		key := serviceIdentityKey(service.Name)
+		if key == "" {
+			key = service.ID
+		}
+		if index, exists := indexes[key]; exists {
+			merged := &result[index]
+			merged.Domains = normalizeDomains(append(merged.Domains, service.Domains...))
+			if service.ID != "" && service.ID != merged.ID && !contains(merged.Aliases, service.ID) {
+				merged.Aliases = append(merged.Aliases, service.ID)
+				sort.Strings(merged.Aliases)
+			}
+			if merged.Category == "" {
+				merged.Category = service.Category
+			}
+			return
+		}
+		service.Domains = normalizeDomains(service.Domains)
+		indexes[key] = len(result)
+		result = append(result, service)
+	}
+	for _, service := range base {
+		appendService(service)
+	}
+	for _, service := range custom {
+		appendService(service)
+	}
 	sortServices(result)
 	return result
 }

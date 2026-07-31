@@ -24,7 +24,7 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 		}
 		switch {
 		case request.URL.Path == "/api/nodes" && request.Method == http.MethodGet:
-			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": 2, "role": "proxy", "public_ip": "198.51.100.20"}})
+			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": 2, "role": "proxy", "public_ip": "198.51.100.20, 2001:db8::20"}})
 		case request.URL.Path == "/api/nodes" && request.Method == http.MethodPost:
 			writeJSON(writer, http.StatusCreated, map[string]any{"id": 7, "secret": "controller-secret"})
 		case request.URL.Path == "/api/rules" && request.Method == http.MethodGet:
@@ -69,7 +69,7 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &config); err != nil {
 		t.Fatal(err)
 	}
-	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || config.ServiceAuditRequestedAt == nil || override["proxy_node_id"] != "2" || len(config.TrafficPeers) != 1 || config.TrafficPeers[0] != "198.51.100.20" {
+	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || config.ServiceAuditRequestedAt == nil || override["proxy_node_id"] != "2" || len(config.TrafficPeers) != 2 || config.TrafficPeers[0] != "198.51.100.20" || config.TrafficPeers[1] != "2001:db8::20" {
 		t.Fatalf("configuration was not orchestrated: config=%+v override=%+v", config, override)
 	}
 	if createdRule["target_type"] != "group" || createdRule["target_val"] != "__prism_enhancer_direct__" {
@@ -91,14 +91,14 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if !strings.Contains(bootstrapResponse.Body.String(), `"unlock_test":"Netflix"`) {
 		t.Fatalf("bootstrap did not include UnlockTests provider: %s", bootstrapResponse.Body.String())
 	}
-	if !strings.Contains(bootstrapResponse.Body.String(), `"traffic_peers":["198.51.100.20"]`) {
-		t.Fatalf("bootstrap did not bind the service probe to its proxy IPv4: %s", bootstrapResponse.Body.String())
+	if !strings.Contains(bootstrapResponse.Body.String(), `"traffic_peers":["198.51.100.20","2001:db8::20"]`) {
+		t.Fatalf("bootstrap did not preserve both proxy address families: %s", bootstrapResponse.Body.String())
 	}
 	if !strings.Contains(bootstrapResponse.Body.String(), `"service_audit_requested_at"`) {
 		t.Fatalf("bootstrap did not include the service audit request: %s", bootstrapResponse.Body.String())
 	}
-	if !strings.Contains(bootstrapResponse.Body.String(), `"smart":false`) {
-		t.Fatalf("managed IP bootstrap must disable Agent smart mode for deterministic IPv4 routing: %s", bootstrapResponse.Body.String())
+	if !strings.Contains(bootstrapResponse.Body.String(), `"smart":true`) {
+		t.Fatalf("managed IP bootstrap must preserve Agent smart mode: %s", bootstrapResponse.Body.String())
 	}
 
 	triggerRequest := httptest.NewRequest(http.MethodPost, "/enhancer/api/ip-configs/"+config.ID+"/audit", nil)
@@ -214,8 +214,8 @@ func TestApplyIPRoutesLinksOverlappingDomainsBeforeControllerDelivery(t *testing
 			t.Fatalf("controller override %s used conflicting proxy %s", path, proxyID)
 		}
 	}
-	if len(application.TrafficPeers) != 1 || application.TrafficPeers[0] != "198.51.100.20" {
-		t.Fatalf("linked route did not keep proxy IPv4 only: %+v", application.TrafficPeers)
+	if len(application.TrafficPeers) != 2 || application.TrafficPeers[0] != "198.51.100.20" || application.TrafficPeers[1] != "2001:db8::20" {
+		t.Fatalf("linked route did not preserve both proxy address families: %+v", application.TrafficPeers)
 	}
 }
 

@@ -92,6 +92,64 @@ func TestCustomServiceWriteRequiresAuthentication(t *testing.T) {
 	}
 }
 
+func TestServiceDomainWriteRequiresAuthenticationAndCanRestore(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/nodes" && request.Header.Get("Authorization") == "Bearer valid" {
+			_, _ = writer.Write([]byte(`[]`))
+			return
+		}
+		writer.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+
+	store, err := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := store.Upsert(Service{Name: "Domain Test", Domains: []string{"original.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := NewCatalogManager("http://127.0.0.1:1/unavailable", upstream.Client(), store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, err := NewApp(upstream.URL, catalog, store, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/enhancer/api/service-domains/" + service.ID
+
+	request := httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"domains":["*.custom.example","custom.example"]}`))
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated domain write should fail, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"domains":["*.custom.example","custom.example"]}`))
+	request.Header.Set("Authorization", "Bearer valid")
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"domain_override":true`) {
+		t.Fatalf("domain override write failed: %d %s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPut, path, strings.NewReader(`{"domains":["https://invalid.example"]}`))
+	request.Header.Set("Authorization", "Bearer valid")
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid domain should fail, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, path, nil)
+	request.Header.Set("Authorization", "Bearer valid")
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `"domain_override":true`) || !strings.Contains(response.Body.String(), `"original.example"`) {
+		t.Fatalf("domain override restore failed: %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestServiceIconHandlerCachesFetchedIcon(t *testing.T) {
 	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
 	service, _ := store.Upsert(Service{Name: "Example", Domains: []string{"example.com"}})

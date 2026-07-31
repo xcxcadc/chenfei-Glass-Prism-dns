@@ -7,7 +7,7 @@ const translations = {
     customServices: "自定义服务", notConfigured: "未配置", auto: "自动选择", manual: "手动", open: "配置", domains: "域名",
     serviceConfig: "配置服务", currentRoute: "当前路由", targetServer: "目标解锁机", assign: "保存并切换", reset: "恢复自动",
     connectivity: "DNS 解锁检测", testing: "正在检测...", triggerUnlock: "运行解锁检测", customEdit: "编辑服务", customDelete: "删除服务",
-    serviceName: "服务名称", category: "分类", domainList: "域名列表", save: "保存", cancel: "取消", deleteConfirm: "确认删除这个自定义服务？",
+    serviceName: "服务名称", category: "分类", domainList: "域名列表", viewDomains: "查看/编辑域名", restoreDomains: "恢复默认域名", domainOverrideHint: "已保存自定义域名覆盖；恢复后使用域名库当前值。", save: "保存", cancel: "取消", deleteConfirm: "确认删除这个自定义服务？",
     nodeName: "节点名称", role: "节点类型", proxy: "解锁机", dns: "DNS 客户端", address: "连接 IP / DNS 地址", country: "地区",
     group: "分组", priority: "优先级", smartMode: "智能模式", standardMode: "标准模式", createNode: "创建节点", editNode: "编辑节点", deleteNode: "删除节点", installCommand: "Agent 安装命令", showInstallCommand: "安装命令",
     nextStep: "下一步", back: "上一步", copy: "复制命令", copied: "已复制", close: "关闭", nodeHint: "支持字母、数字和空格；点、短横线、下划线会自动转换为空格。", groupHint: "支持字母、数字、空格和逗号；其他分隔符会自动转换为空格。",
@@ -34,7 +34,7 @@ const translations = {
     customServices: "Custom services", notConfigured: "Not configured", auto: "Automatic", manual: "Manual", open: "Configure", domains: "Domains",
     serviceConfig: "Configure service", currentRoute: "Current route", targetServer: "Target proxy", assign: "Save and switch", reset: "Reset to auto",
     connectivity: "DNS unlock check", testing: "Testing...", triggerUnlock: "Run unlock check", customEdit: "Edit service", customDelete: "Delete service",
-    serviceName: "Service name", category: "Category", domainList: "Domain list", save: "Save", cancel: "Cancel", deleteConfirm: "Delete this custom service?",
+    serviceName: "Service name", category: "Category", domainList: "Domain list", viewDomains: "View/edit domains", restoreDomains: "Restore default domains", domainOverrideHint: "A custom domain override is active. Restore to use the current catalog values.", save: "Save", cancel: "Cancel", deleteConfirm: "Delete this custom service?",
     nodeName: "Node name", role: "Node role", proxy: "Proxy agent", dns: "DNS client", address: "Connect IP / DNS address", country: "Region",
     group: "Group", priority: "Priority", smartMode: "Smart mode", standardMode: "Standard mode", createNode: "Create node", editNode: "Edit node", deleteNode: "Delete node", installCommand: "Agent install command", showInstallCommand: "Install command",
     nextStep: "Next step", back: "Back", copy: "Copy command", copied: "Copied", close: "Close", nodeHint: "Use letters, numbers, and spaces; dots, hyphens, and underscores become spaces.", groupHint: "Use letters, numbers, spaces, and commas; other separators become spaces.",
@@ -82,7 +82,7 @@ const state = {
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
-const iconAssetVersion = "1.4.10-final";
+const iconAssetVersion = "1.4.5-final";
 
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
@@ -155,8 +155,26 @@ function serviceDetectorKey(service) {
   return match ? match[0] : "";
 }
 function serviceRule(service) {
-  return state.rules.find(rule => String(rule.value || "").includes(`/enhancer/rules/${service.id}.list`)) ||
+  const ids = serviceIDs(service);
+  return state.rules.find(rule => ids.some(id => String(rule.value || "").includes(`/enhancer/rules/${id}.list`))) ||
     state.rules.find(rule => String(rule.name || "").toLowerCase() === `stream · ${service.name}`.toLowerCase());
+}
+function serviceIDs(service) {
+  return [...new Set([service?.id, ...(service?.aliases || [])].filter(Boolean))];
+}
+function serviceRouteEntry(config, service) {
+  if (!config?.routes || !service) return null;
+  for (const id of serviceIDs(service)) {
+    if (config.routes[id]) return {id, value:config.routes[id]};
+  }
+  return null;
+}
+function serviceResult(config, service) {
+  if (!config?.service_results || !service) return "";
+  for (const id of serviceIDs(service)) {
+    if (config.service_results[id]) return config.service_results[id];
+  }
+  return "";
 }
 function normalizeOverride(value) {
   if (value == null) return "";
@@ -187,14 +205,14 @@ function activeNodeFor(rule) {
 }
 function routedNodeForService(service) {
   const targetConfig = configForNode(selectedDNS());
-  const proxyId = nodeID(targetConfig?.routes?.[service.id]);
+  const proxyId = nodeID(serviceRouteEntry(targetConfig, service)?.value);
   if (proxyId) return state.nodes.find(node => nodeID(node.id) === proxyId) || null;
   return activeNodeFor(serviceRule(service));
 }
 function serviceStatus(service, node) {
   const targetConfig = configForNode(selectedDNS());
-  const targetResult = targetConfig?.service_results?.[service.id];
-  if (targetResult && nodeID(targetConfig?.routes?.[service.id]) === nodeID(node?.id)) {
+  const targetResult = serviceResult(targetConfig, service);
+  if (targetResult && nodeID(serviceRouteEntry(targetConfig, service)?.value) === nodeID(node?.id)) {
     const audit = auditResultState(targetResult);
     return {kind:audit.kind, label:audit.kind === "good" ? t("targetAvailable") : audit.kind === "warn" ? t("targetUncertain") : t("targetProblem"), raw:targetResult};
   }
@@ -233,7 +251,9 @@ function routeDomainsOverlap(left, right) {
 }
 function linkedRouteServiceIds(serviceId, routes) {
   const selectedIds = new Set([...Object.keys(routes || {}).filter(id => routes[id]), serviceId]);
-  const services = new Map(state.catalog.filter(service => selectedIds.has(service.id)).map(service => [service.id, service]));
+  const services = new Map(state.catalog
+    .filter(service => serviceIDs(service).some(id => selectedIds.has(id)))
+    .map(service => [service.id, service]));
   if (!services.has(serviceId)) return [serviceId];
   const linked = [serviceId];
   const seen = new Set(linked);
@@ -332,7 +352,7 @@ function viewFingerprint() {
     rules:state.rules,
     overrides:state.overrides,
     activeSelections:state.activeSelections,
-    catalog:state.catalog.map(service => ({id:service.id, name:service.name, category:service.category, domains:service.domains, custom:service.custom})),
+    catalog:state.catalog.map(service => ({id:service.id, aliases:service.aliases, name:service.name, category:service.category, domains:service.domains, custom:service.custom})),
     categories:state.categories,
     branding:state.branding
   });
@@ -353,7 +373,7 @@ function auditResultState(result) {
   const value = String(result || "").trim();
   if (!value) return {kind:"", label:t("auditPending"), detail:""};
   if (/^YES\b|^PASS\b/i.test(value)) {
-    return {kind:"good", label:state.lang === "zh" ? "DNS/SNI 实测通过" : "DNS/SNI verified", detail:value};
+    return {kind:"good", label:state.lang === "zh" ? "完整应用链实测通过" : "Full application path verified", detail:value};
   }
   const ratio = value.match(/(\d+)\s*\/\s*(\d+)(?:\s*YES)?/i);
   if (/INCONCLUSIVE|DEGRADED|UNSTABLE|Banned|WAF/i.test(value) && ratio) {
@@ -381,8 +401,8 @@ function auditResultState(result) {
 
 function targetAuditObservations(proxyId, service) {
   return state.ipConfigs
-    .filter(config => nodeID(config?.routes?.[service.id]) === nodeID(proxyId))
-    .map(config => ({ip:config.ip, result:String(config?.service_results?.[service.id] || "").trim()}));
+    .filter(config => nodeID(serviceRouteEntry(config, service)?.value) === nodeID(proxyId))
+    .map(config => ({ip:config.ip, result:String(serviceResult(config, service) || "").trim()}));
 }
 
 function targetCompatibility(proxyId, service) {
@@ -613,7 +633,7 @@ function navigationHTML() {
     ["alerts", "bi-bell", state.lang === "zh" ? "告警中心" : "Alerts"],
     ["settings", "bi-gear", state.lang === "zh" ? "设置中心" : "Settings"]
   ];
-  return items.map(([id, icon, label]) => `<button class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}"><i class="bi ${icon}" aria-hidden="true"></i><span>${escapeHTML(label)}</span></button>`).join("");
+  return items.map(([id, icon, label]) => `<button type="button" class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}"><i class="bi ${icon}" aria-hidden="true"></i><span>${escapeHTML(label)}</span></button>`).join("");
 }
 
 function shellHTML() {
@@ -683,7 +703,7 @@ function serviceTableRowHTML(service) {
   const node = routedNodeForService(service);
   const status = serviceStatus(service, node);
   const targetConfig = configForNode(selectedDNS());
-  const result = targetConfig?.service_results?.[service.id] || "";
+  const result = serviceResult(targetConfig, service);
   const configured = !!node;
   const checked = state.selectedServiceIds.has(service.id);
   const statusClass = !configured ? "neutral" : status.kind === "warn" ? "warn" : status.kind === "bad" ? "bad" : "";
@@ -706,11 +726,12 @@ function syncHTML() {
 }
 
 function auditRows() {
-  const services = new Map(state.catalog.map(service => [service.id, service]));
+  const services = new Map();
+  state.catalog.forEach(service => serviceIDs(service).forEach(id => services.set(id, service)));
   return state.ipConfigs.flatMap(config => Object.entries(config.service_results || {}).map(([serviceID, raw]) => {
     const service = services.get(serviceID);
     const audit = auditResultState(raw);
-    const proxy = state.nodes.find(node => nodeID(node.id) === nodeID(config.routes?.[serviceID]));
+    const proxy = state.nodes.find(node => nodeID(node.id) === nodeID(service ? serviceRouteEntry(config, service)?.value : config.routes?.[serviceID]));
     return {config, service, serviceID, raw, audit, proxy};
   })).sort((left, right) => String(right.config.service_audited_at || "").localeCompare(String(left.config.service_audited_at || "")));
 }
@@ -733,7 +754,7 @@ function currentAlerts() {
     Object.entries(config.service_results || {}).forEach(([serviceID, raw]) => {
       const audit = auditResultState(raw);
       if (audit.kind === "good") return;
-      const service = state.catalog.find(item => item.id === serviceID);
+      const service = state.catalog.find(item => serviceIDs(item).includes(serviceID));
       alerts.push({kind:audit.kind, title:`${config.ip} · ${service ? displayServiceName(service) : serviceID}`, detail:audit.label, tab:"audit"});
     });
   });
@@ -829,12 +850,15 @@ function ipConfigsHTML() {
 function bindShell() {
   updateClock();
   if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
-  document.querySelectorAll("[data-tab]").forEach(button => button.addEventListener("click", () => {
+  document.querySelector(".tabs")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-tab]");
+    if (!button) return;
+    event.preventDefault();
     state.tab = button.dataset.tab;
     state.page = 1;
     localStorage.setItem("enhancer_tab", state.tab);
     render();
-  }));
+  });
   document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
   document.querySelectorAll(".lang-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); }));
   document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));
@@ -897,20 +921,34 @@ function bindShell() {
   document.querySelectorAll(".service-audit-run").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); runTableServiceAudit(button.dataset.serviceId); }));
   document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openService(card.dataset.serviceId)));
   document.querySelectorAll(".selected-service-row").forEach(row => row.addEventListener("click", () => openService(row.dataset.serviceId)));
-  document.querySelectorAll(".node-test").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); triggerNodeCheck(button.dataset.nodeId); }));
-  document.querySelectorAll(".node-install").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openInstallCommand(button.dataset.nodeId); }));
-  document.querySelectorAll(".node-manage-ip").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openIPForm(null, 1, state.nodes.find(node => nodeID(node.id) === nodeID(button.dataset.nodeId))); }));
-  document.querySelectorAll(".node-edit").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openNodeForm(state.nodes.find(node => nodeID(node.id) === nodeID(button.dataset.nodeId))); }));
-  document.querySelectorAll(".node-delete").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openDeleteNode(button.dataset.nodeId); }));
-  document.querySelectorAll(".ip-row").forEach(row => {
-    const open = () => openIPForm(state.ipConfigs.find(config => config.id === row.dataset.ipId), 2);
-    row.addEventListener("click", open);
-    row.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } });
+  const container = document.querySelector(".container");
+  container?.addEventListener("click", event => {
+    const button = event.target.closest?.("button");
+    if (button && container.contains(button)) {
+      const node = state.nodes.find(item => nodeID(item.id) === nodeID(button.dataset.nodeId));
+      if (button.matches(".node-test")) { event.preventDefault(); triggerNodeCheck(button.dataset.nodeId); return; }
+      if (button.matches(".node-install")) { event.preventDefault(); openInstallCommand(button.dataset.nodeId); return; }
+      if (button.matches(".node-manage-ip")) { event.preventDefault(); openIPForm(null, 1, node); return; }
+      if (button.matches(".node-edit")) { event.preventDefault(); openNodeForm(node); return; }
+      if (button.matches(".node-delete")) { event.preventDefault(); openDeleteNode(button.dataset.nodeId); return; }
+      if (button.matches(".ip-edit")) { event.preventDefault(); openIPForm(state.ipConfigs.find(config => nodeID(config.id) === nodeID(button.dataset.ipId)), 2); return; }
+      if (button.matches(".ip-script")) { event.preventDefault(); openIPScript(button.dataset.ipId); return; }
+      if (button.matches(".ip-delete")) { event.preventDefault(); openIPDelete(button.dataset.ipId); return; }
+      if (button.matches(".ip-clear-traffic")) { event.preventDefault(); clearTraffic(button.dataset.ipId); return; }
+      return;
+    }
+    const row = event.target.closest?.(".ip-row");
+    if (row && container.contains(row)) {
+      openIPForm(state.ipConfigs.find(config => nodeID(config.id) === nodeID(row.dataset.ipId)), 2);
+    }
   });
-  document.querySelectorAll(".ip-edit").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openIPForm(state.ipConfigs.find(config => config.id === button.dataset.ipId), 2); }));
-  document.querySelectorAll(".ip-script").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openIPScript(button.dataset.ipId); }));
-  document.querySelectorAll(".ip-delete").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openIPDelete(button.dataset.ipId); }));
-  document.querySelectorAll(".ip-clear-traffic").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); clearTraffic(button.dataset.ipId); }));
+  container?.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest?.(".ip-row");
+    if (!row || !container.contains(row)) return;
+    event.preventDefault();
+    openIPForm(state.ipConfigs.find(config => nodeID(config.id) === nodeID(row.dataset.ipId)), 2);
+  });
   document.getElementById("clear-all-traffic")?.addEventListener("click", clearAllTraffic);
   markLoadedServiceIcons();
 }
@@ -956,6 +994,16 @@ function openService(id) {
   state.testResults = null;
   renderModal();
 }
+function openServiceDomains(id) {
+  const service = state.catalog.find(item => item.id === id);
+  if (!service) return;
+  if (service.custom) {
+    openServiceForm(service);
+    return;
+  }
+  state.modal = {type:"service-domains", service, error:"", busy:false};
+  renderModal();
+}
 function openServiceRoute(id) {
   const service = state.catalog.find(item => item.id === id);
   if (!service) return;
@@ -989,7 +1037,7 @@ function openBulkServiceConfig() {
 async function runTableServiceAudit(id) {
   const service = state.catalog.find(item => item.id === id);
   const config = configForNode(selectedDNS());
-  if (!service || !config?.routes?.[id]) {
+  if (!service || !serviceRouteEntry(config, service)) {
     toast(state.lang === "zh" ? "请先为当前目标配置该服务" : "Configure this service for the current target first", "warn");
     return;
   }
@@ -1055,6 +1103,7 @@ function renderModal() {
   const root = document.getElementById("modal-root");
   if (!state.modal) { root.innerHTML = ""; return; }
   if (state.modal.type === "service") root.innerHTML = serviceModalHTML(state.modal.service);
+  if (state.modal.type === "service-domains") root.innerHTML = serviceDomainFormHTML(state.modal.service);
   if (state.modal.type === "service-form") root.innerHTML = serviceFormHTML(state.modal.service);
   if (state.modal.type === "service-category") root.innerHTML = serviceCategoryHTML();
   if (state.modal.type === "category-manager") root.innerHTML = categoryManagerHTML();
@@ -1083,14 +1132,21 @@ function accountModalHTML() {
 function serviceModalHTML(service) {
   const rule = serviceRule(service); const current = activeNodeFor(rule); const manual = overrideFor(rule); const proxies = proxyNodes();
   const status = serviceStatus(service, current);
-  return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("serviceConfig")} · ${escapeHTML(service.name)}</h2><p>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")} · ${status.label}</p></div><button class="btn icon modal-close">×</button></header>
-    <div class="modal-body"><div class="field"><label>${t("targetServer")}</label><div class="server-list">${proxies.length ? proxies.map(node => {
-      const selected = nodeID(state.modal.proxyId) === nodeID(node.id); const nodeStatus = serviceStatus(service, node);
-      return `<label class="server-option ${selected ? "selected" : ""}"><input type="radio" name="proxy" value="${nodeID(node.id)}" ${selected ? "checked" : ""}><div class="server-name"><strong>${escapeHTML(node.name)}</strong><span>${escapeHTML(node.country || node.public_ip || node.address || "-")}</span></div><span class="badge ${nodeStatus.kind}">${nodeStatus.label}</span></label>`;
-    }).join("") : `<div class="empty"><strong>${t("noProxy")}</strong></div>`}</div></div>
-    <div class="inline" style="margin-top:15px"><span class="badge ${manual ? "warn" : ""}">${manual ? t("manual") : t("auto")}</span><span class="hint">${t("currentRoute")}: ${escapeHTML(current?.name || "-")}</span></div>
-    ${state.testResults ? testResultsHTML(state.testResults) : ""}</div>
-    <footer class="modal-foot"><div class="inline"><button class="btn small" id="edit-service-category">${t("serviceCategory")}</button>${service.custom ? `<button class="btn small" id="edit-custom">${t("customEdit")}</button><button class="btn small danger" id="delete-custom">${t("customDelete")}</button>` : ""}</div><div class="modal-foot-right"><button class="btn" id="test-service" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
+  const visibleDomains = service.domains.slice(0, 18);
+  const hiddenDomainCount = Math.max(0, service.domains.length - visibleDomains.length);
+  return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("serviceConfig")} · ${escapeHTML(service.name)}</h2><p>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")} · ${status.label}</p></div><button class="btn icon modal-close" type="button">×</button></header>
+     <div class="modal-body"><div class="field"><label>${t("targetServer")}</label><div class="server-list">${proxies.length ? proxies.map(node => {
+       const selected = nodeID(state.modal.proxyId) === nodeID(node.id); const nodeStatus = serviceStatus(service, node);
+       return `<label class="server-option ${selected ? "selected" : ""}"><input type="radio" name="proxy" value="${nodeID(node.id)}" ${selected ? "checked" : ""}><div class="server-name"><strong>${escapeHTML(node.name)}</strong><span>${escapeHTML(node.country || node.public_ip || node.address || "-")}</span></div><span class="badge ${nodeStatus.kind}">${nodeStatus.label}</span></label>`;
+     }).join("") : `<div class="empty"><strong>${t("noProxy")}</strong></div>`}</div></div>
+     <div class="service-domain-box"><div class="service-domain-head"><div><strong>${t("domainList")}</strong><span>${service.domain_override ? t("domainOverrideHint") : `${service.domains.length} ${t("domains")}`}</span></div><button class="btn small" id="edit-service-domains" type="button">${t("viewDomains")}</button></div><div class="domain-chip-list">${visibleDomains.map(domain => `<code>${escapeHTML(domain)}</code>`).join("")}${hiddenDomainCount ? `<span class="domain-chip-more">+${hiddenDomainCount}</span>` : ""}</div>${service.domain_override ? `<button class="btn small" id="restore-service-domains" type="button">${t("restoreDomains")}</button>` : ""}</div>
+     <div class="inline" style="margin-top:15px"><span class="badge ${manual ? "warn" : ""}">${manual ? t("manual") : t("auto")}</span><span class="hint">${t("currentRoute")}: ${escapeHTML(current?.name || "-")}</span></div>
+     ${state.testResults ? testResultsHTML(state.testResults) : ""}</div>
+     <footer class="modal-foot"><div class="inline"><button class="btn small" id="edit-service-category" type="button">${t("serviceCategory")}</button>${service.custom ? `<button class="btn small" id="edit-custom" type="button">${t("customEdit")}</button><button class="btn small danger" id="delete-custom" type="button">${t("customDelete")}</button>` : ""}</div><div class="modal-foot-right"><button class="btn" id="test-service" type="button" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" type="button" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" type="button" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
+}
+
+function serviceDomainFormHTML(service) {
+  return `<div class="modal-backdrop"><form class="modal medium panel" id="service-domains-form"><header class="modal-head"><div><h2>${t("viewDomains")}</h2><p>${escapeHTML(displayServiceName(service))}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" required spellcheck="false">${escapeHTML((service.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名；泛域名请使用 *.example.com，也支持逗号和分号分隔。" : "One domain per line. Use *.example.com for wildcards; commas and semicolons are accepted."}</span></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("save")}</button></div></footer></form></div>`;
 }
 
 function testResultsHTML(results) {
@@ -1158,12 +1214,12 @@ function nodeDeleteHTML() {
 function ipFormHTML() {
   const modal = state.modal; const draft = modal.draft; const editing = !!modal.config; const proxies = proxyNodes();
   if (modal.step === 1) {
-    return `<div class="modal-backdrop"><form class="modal medium panel" id="ip-form"><header class="modal-head"><div><h2>${editing ? t("editIP") : t("addIP")}</h2><p>${t("targetIP")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("targetIP")}</label><input class="input" name="ip" value="${escapeHTML(draft.ip)}" placeholder="203.0.113.10" ${editing ? "disabled" : ""} required></div><div class="field"><label>${t("note")}</label><input class="input" name="note" value="${escapeHTML(draft.note)}" maxlength="80"></div><div class="field"><label>${t("defaultProxy")}</label><select class="select" name="default_proxy" required><option value="">${t("noProxy")}</option>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)} · ${escapeHTML(node.country || node.public_ip || node.address || "-")}</option>`).join("")}</select></div><p class="hint">${state.lang === "zh" ? "托管目标固定使用您选择的 IPv4 解锁机，不启用 Agent 自动切换或熔断改路。" : "Managed targets stay on the selected IPv4 proxy; Agent auto-switching and circuit-breaker rerouting are disabled."}</p><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${!proxies.length ? "disabled" : ""}>${t("nextStep")}</button></div></footer></form></div>`;
+    return `<div class="modal-backdrop"><form class="modal medium panel" id="ip-form"><header class="modal-head"><div><h2>${editing ? t("editIP") : t("addIP")}</h2><p>${t("targetIP")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("targetIP")}</label><input class="input" name="ip" value="${escapeHTML(draft.ip)}" placeholder="203.0.113.10" ${editing ? "disabled" : ""} required></div><div class="field"><label>${t("note")}</label><input class="input" name="note" value="${escapeHTML(draft.note)}" maxlength="80"></div><div class="field"><label>${t("defaultProxy")}</label><select class="select" name="default_proxy" required><option value="">${t("noProxy")}</option>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)} · ${escapeHTML(node.country || node.public_ip || node.address || "-")}</option>`).join("")}</select></div><label class="toggle-row"><input type="checkbox" name="smart" ${draft.smart ? "checked" : ""}><span><strong>${t("smartMode")}</strong><small>${state.lang === "zh" ? "保留双栈并由 Agent 选择可用出口" : "Preserve dual stack and let Agent select a working egress"}</small></span></label><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${!proxies.length ? "disabled" : ""}>${t("nextStep")}</button></div></footer></form></div>`;
   }
   const services = state.catalog;
   const selectedCount = Object.keys(modal.routes).length;
   return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
-    const selectedProxy = modal.routes[service.id] || ""; const checked = !!selectedProxy; const audit = auditResultState(modal.config?.service_results?.[service.id]);
+     const selectedProxy = serviceRouteEntry({routes:modal.routes}, service)?.value || ""; const checked = !!selectedProxy; const audit = auditResultState(serviceResult(modal.config, service));
     const canAudit = checked && !!modal.config?.id;
     return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "立即实测" : "Test now"}</button></div></div></article>`;
   }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 自动同步配置；实测只更新结果，不会改动您选择的节点" : "The Agent syncs configuration; audits update reports without changing your selected node"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
@@ -1186,10 +1242,13 @@ function bindModal() {
   document.getElementById("assign-service")?.addEventListener("click", assignService);
   document.getElementById("reset-service")?.addEventListener("click", resetService);
   document.getElementById("test-service")?.addEventListener("click", testService);
+  document.getElementById("edit-service-domains")?.addEventListener("click", () => openServiceDomains(state.modal.service.id));
+  document.getElementById("restore-service-domains")?.addEventListener("click", restoreServiceDomains);
   document.getElementById("edit-custom")?.addEventListener("click", () => openServiceForm(state.modal.service));
   document.getElementById("edit-service-category")?.addEventListener("click", () => openServiceCategory(state.modal.service.id));
   document.getElementById("delete-custom")?.addEventListener("click", deleteCustomService);
   document.getElementById("service-form")?.addEventListener("submit", saveCustomService);
+  document.getElementById("service-domains-form")?.addEventListener("submit", saveServiceDomains);
   document.getElementById("service-category-form")?.addEventListener("submit", saveServiceCategory);
   document.getElementById("restore-service-category")?.addEventListener("click", restoreServiceCategory);
   document.getElementById("open-category-manager")?.addEventListener("click", () => openCategoryManager(state.modal.service.id));
@@ -1268,6 +1327,43 @@ async function saveServiceCategory(event) {
     toast(t("saved"), "good");
   } catch (error) {
     state.modal.busy = false; state.modal.error = error.message; renderModal();
+  }
+}
+
+async function saveServiceDomains(event) {
+  event.preventDefault();
+  const service = state.modal.service;
+  const form = new FormData(event.currentTarget);
+  const domains = String(form.get("domains") || "").split(/\r?\n|,|;/);
+  state.modal.busy = true;
+  state.modal.error = "";
+  renderModal();
+  try {
+    await api(`/enhancer/api/service-domains/${encodeURIComponent(service.id)}`, {method:"PUT", body:JSON.stringify({domains})});
+    state.modal = null;
+    await loadAll(true);
+    toast(t("saved"), "good");
+  } catch (error) {
+    state.modal.busy = false;
+    state.modal.error = error.message;
+    renderModal();
+  }
+}
+
+async function restoreServiceDomains() {
+  const service = state.modal.service;
+  state.modal.busy = true;
+  state.modal.error = "";
+  renderModal();
+  try {
+    await api(`/enhancer/api/service-domains/${encodeURIComponent(service.id)}`, {method:"DELETE"});
+    state.modal = null;
+    await loadAll(true);
+    toast(t("saved"), "good");
+  } catch (error) {
+    state.modal.busy = false;
+    state.modal.error = error.message;
+    renderModal();
   }
 }
 
@@ -1435,7 +1531,7 @@ async function testService() {
   try {
     const results = [];
     const targetConfig = state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(state.dnsNodeId));
-    const targetResult = targetConfig?.service_results?.[service.id];
+    const targetResult = serviceResult(targetConfig, service);
     const detector = serviceDetectorKey(service);
     if (targetResult) {
       results.push({domain:`${t("actualAudit")} · UnlockTests`, detail:targetResult, success:auditResultState(targetResult).kind === "good"});
@@ -1486,7 +1582,7 @@ function submitIPForm(event) {
   const defaultProxy = String(form.get("default_proxy") || "");
   if (!ip) { state.modal.error = t("addressInvalid"); renderModal(); return; }
   if (!defaultProxy) { state.modal.error = t("noProxy"); renderModal(); return; }
-  state.modal.draft = {ip, note:String(form.get("note") || "").trim(), smart:false, existing_dns_node_id:nodeID(state.modal.existingNode?.id)};
+  state.modal.draft = {ip, note:String(form.get("note") || "").trim(), smart:form.get("smart") === "on", existing_dns_node_id:nodeID(state.modal.existingNode?.id)};
   state.modal.defaultProxy = defaultProxy;
   state.modal.step = 2;
   state.modal.error = "";
@@ -1520,9 +1616,10 @@ async function saveIPConfig() {
 function updateIPServiceAuditUI(config) {
   document.querySelectorAll(".ip-service-option").forEach(option => {
     const serviceId = option.dataset.serviceId;
+    const service = state.catalog.find(item => item.id === serviceId);
     const badge = option.querySelector(".service-audit .badge");
     if (!badge) return;
-    const audit = auditResultState(config?.service_results?.[serviceId]);
+    const audit = auditResultState(serviceResult(config, service));
     badge.className = `badge ${audit.kind}`;
     badge.textContent = audit.label;
     badge.title = audit.detail;
@@ -1554,8 +1651,10 @@ async function triggerIPServiceAudit(serviceId) {
       activeModal.routes = {...(latest.routes || activeModal.routes)};
       updateIPServiceAuditUI(latest);
       const auditedAt = new Date(latest.service_audited_at || 0).getTime();
-      if (auditedAt >= requestedAt && latest.service_results?.[serviceId]) {
-        const audit = auditResultState(latest.service_results[serviceId]);
+      const service = state.catalog.find(item => item.id === serviceId);
+      const latestResult = serviceResult(latest, service);
+      if (auditedAt >= requestedAt && latestResult) {
+        const audit = auditResultState(latestResult);
         toast(audit.label || t("testDone"), audit.kind === "bad" ? "error" : audit.kind || "good");
         return;
       }
