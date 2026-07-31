@@ -4,7 +4,7 @@ set -e
 
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 REPO="${PRISM_AGENT_REPO:-mslxi/Liquid-Glass-Prism-dns}"
-PINNED_STABLE_TAG="${PRISM_AGENT_TAG:-v1.2.1}"
+PINNED_STABLE_TAG="${PRISM_AGENT_TAG:-v1.3}"
 BINARY_NAME="prism-agent"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"
@@ -57,6 +57,14 @@ parse_args() {
                     error "--secret requires a value"
                 fi
                 ;;
+            --version|--agent-version)
+                if [ -n "$2" ] && [ "${2:0:2}" != "--" ]; then
+                    PINNED_STABLE_TAG="$2"
+                    shift 2
+                else
+                    error "--version requires an Agent release tag, for example v1.3"
+                fi
+                ;;
             --name)
                 if [ -n "$2" ] && [ "${2:0:2}" != "--" ]; then
                     SERVICE_NAME="$2"
@@ -97,8 +105,12 @@ parse_args() {
 
     if [ -z "$MASTER_ADDR" ] || [ -z "$SECRET_TOKEN" ]; then
         echo -e "${YELLOW}Missing parameters!${NC}"
-        echo -e "Usage: ... | bash -s -- --master URL --secret TOKEN [--beta] [--smart]"
+        echo -e "Usage: ... | bash -s -- --master URL --secret TOKEN [--version v1.3] [--beta] [--smart]"
         exit 1
+    fi
+
+    if ! [[ "$PINNED_STABLE_TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+        error "Invalid stable Agent release tag: $PINNED_STABLE_TAG"
     fi
 }
 
@@ -108,7 +120,6 @@ uninstall_agent() {
     if [ -x "/usr/local/lib/prismdns/prism_transport.sh" ]; then
         /usr/local/lib/prismdns/prism_transport.sh --uninstall || true
     fi
-    
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable --now prism-agent-watchdog.timer prism-agent-watchdog.service 2>/dev/null || true
@@ -202,10 +213,22 @@ download_binary() {
         error "Download failed. Please check network or GitHub access."
     fi
 
-    if [ "$BETA_MODE" = false ] && [ "$PINNED_STABLE_TAG" = "v1.2.1" ] && [ "$OS" = "linux" ]; then
+    if [ "$BETA_MODE" = false ] && [ "$OS" = "linux" ]; then
         case "$ARCH_SUFFIX" in
-            amd64) EXPECTED_SHA256="0c2fb5c6e7b95af356ba78663d7279e8ecce2b9e05e3991426096044fffc1f42" ;;
-            arm64) EXPECTED_SHA256="5b8511e5385680a59a58acb1db27d4a7366f69d2dccff27275d180eabfe5da92" ;;
+            amd64)
+                case "$PINNED_STABLE_TAG" in
+                    v1.2.1) EXPECTED_SHA256="0c2fb5c6e7b95af356ba78663d7279e8ecce2b9e05e3991426096044fffc1f42" ;;
+                    v1.3) EXPECTED_SHA256="1b6b545f2220c8c944128a17eb9a6c5cfc402c2faa931dc3c5e695a43d22d81f" ;;
+                    *) EXPECTED_SHA256="" ;;
+                esac
+                ;;
+            arm64)
+                case "$PINNED_STABLE_TAG" in
+                    v1.2.1) EXPECTED_SHA256="5b8511e5385680a59a58acb1db27d4a7366f69d2dccff27275d180eabfe5da92" ;;
+                    v1.3) EXPECTED_SHA256="b695504bca37627d0697e3067d376b151b7e58b226da16c81332c60ac610123c" ;;
+                    *) EXPECTED_SHA256="" ;;
+                esac
+                ;;
             *) EXPECTED_SHA256="" ;;
         esac
         if [ -n "$EXPECTED_SHA256" ]; then
