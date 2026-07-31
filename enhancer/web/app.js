@@ -319,7 +319,7 @@ function catalogCategories() {
   return [...new Set([...(state.categories || []), ...state.catalog.map(service => service.category)].filter(Boolean))]
     .sort((left, right) => displayCategory(left).localeCompare(displayCategory(right), state.lang === "zh" ? "zh-CN" : "en"));
 }
-function isOnline(node) { if (!node.last_heartbeat) return false; return Date.now() - new Date(node.last_heartbeat).getTime() < 90000; }
+function isOnline(node) { if (!node?.last_heartbeat) return false; return Date.now() - new Date(node.last_heartbeat).getTime() < 90000; }
 function normalizeIP(value) {
   let candidate = String(value || "").split(",")[0].trim();
   if (candidate.startsWith("[")) candidate = candidate.slice(1, candidate.indexOf("]"));
@@ -879,7 +879,7 @@ function nodeCheckHTML() {
   return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("unlockResults")} · ${escapeHTML(node?.name || "-")}</h2><p>${t("unlockSourceHint")}</p></div><button class="btn icon modal-close">×</button></header><div class="modal-body"><div class="unlock-summary"><div><span>${t("actualAvailable")}</span><strong>${available.length}</strong></div><div><span>${t("actualProblem")}</span><strong>${problems.length}</strong></div><div><span>${t("referenceOnly")}</span><strong>${reference.length}</strong></div></div>${state.modal.running ? `<div class="unlock-wait"><div class="spinner"></div><span>${t("waitingResults")}</span></div>` : ""}<div class="unlock-results">${rows || `<div class="empty"><strong>${t("unknown")}</strong></div>`}</div>${state.modal.error ? `<div class="form-error">${escapeHTML(state.modal.error)}</div>` : ""}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close">${t("close")}</button><button class="btn primary" id="node-check-retry" ${state.modal.running ? "disabled" : ""}>${t("checkAgain")}</button></div></footer></section></div>`;
 }
 
-function ipConfigNode(config) { return state.nodes.find(node => nodeID(node.id) === nodeID(config.dns_node_id)); }
+function ipConfigNode(config) { return config ? state.nodes.find(node => nodeID(node.id) === nodeID(config.dns_node_id)) : null; }
 
 function ipConfigsHTML() {
   const header = contentHeaderHTML(state.lang === "zh" ? "IP 配置" : "IP Configs", state.lang === "zh" ? "每个目标 IP 独立配置解锁服务、统计 DNS 53 与解锁 TCP 80/443 流量。" : "Configure each target independently and count only DNS 53 plus unlock TCP 80/443 traffic.", `<button class="btn primary" id="add-ip"><i class="bi bi-plus-circle"></i>${t("addIP")}</button>`);
