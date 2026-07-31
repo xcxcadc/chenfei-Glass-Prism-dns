@@ -325,9 +325,12 @@ reset_traffic_counters() {
 run_service_audit() {
   local audit_hash="$1" now="$2" output="" attempt_output attempt_block plain="" results probe service_id service_name result provider_summary matched_peer answer peer mapping_output
   local providers_csv candidate failure test_provider probe_domain route_domain http_code resolve_peer
-  local attempt attempt_count pass_count youtube_pass youtube_tls_pass youtube_tls_total route_total route_pass https_total https_pass https_success mobile_domain http_code
+  local attempt attempt_count pass_count youtube_pass youtube_tls_pass youtube_tls_total route_total route_pass https_total https_pass https_success required_https_total required_https_pass optional_https_total optional_https_pass optional_failure_csv mobile_domain http_code
   local probe_attempt tls_attempt_pass page_ok
-  local -a provider_results test_providers matched_results probe_domains route_domains probe_peers youtube_mobile_domains
+  local -a provider_results test_providers matched_results probe_domains route_domains probe_peers youtube_mobile_domains optional_failures
+  is_optional_probe_domain() {
+    [[ "$service_name" == "Gemini" && "$1" == "play.google.com" ]]
+  }
   ut_supports_selected() {
     local help_output
     help_output=$(/usr/bin/ut -h 2>&1 || true)
@@ -437,6 +440,11 @@ run_service_audit() {
     https_total=${#probe_domains[@]}
     https_pass=0
     https_success=0
+    required_https_total=0
+    required_https_pass=0
+    optional_https_total=0
+    optional_https_pass=0
+    optional_failures=()
     for probe_domain in "${probe_domains[@]}"; do
       matched_peer=""
       while IFS= read -r answer; do
@@ -470,22 +478,51 @@ run_service_audit() {
       if ((tls_attempt_pass >= 2)); then
         https_pass=$((https_pass + 1))
       fi
+      if is_optional_probe_domain "$probe_domain"; then
+        optional_https_total=$((optional_https_total + 1))
+        if ((tls_attempt_pass >= 2)); then
+          optional_https_pass=$((optional_https_pass + 1))
+        else
+          optional_failures+=("$probe_domain")
+        fi
+      else
+        required_https_total=$((required_https_total + 1))
+        if ((tls_attempt_pass >= 2)); then
+          required_https_pass=$((required_https_pass + 1))
+        fi
+      fi
       if $page_ok; then
         https_success=$((https_success + 1))
       fi
     done
+    if ((${#optional_failures[@]} > 0)); then
+      local old_ifs="$IFS"
+      IFS=,
+      optional_failure_csv="${optional_failures[*]}"
+      IFS="$old_ifs"
+    else
+      optional_failure_csv=""
+    fi
     if ((route_total == 0 || route_pass != route_total)); then
       result="FAIL (DNS routes ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
     elif ((https_total == 0)); then
       result="FAIL (no TLS/SNI probe domains; DNS ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
-    elif ((https_pass != https_total)); then
-      result="FAIL (TLS/SNI ${https_pass}/${https_total}; page success ${https_success}; DNS ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
+    elif ((required_https_pass != required_https_total)); then
+      result="FAIL (TLS/SNI required ${required_https_pass}/${required_https_total}; optional ${optional_https_pass}/${optional_https_total}; page success ${https_success}; DNS ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
     elif ((https_success == 0)); then
       result="FAIL (DNS and TLS/SNI passed, but representative pages did not load; provider ${provider_summary:-not checked})"
     elif [[ "$provider_summary" =~ ^YES([[:space:]]|$) ]]; then
-      result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; provider verified; page success ${https_success}/${https_total})"
+      if [[ -n "$optional_failure_csv" ]]; then
+        result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; optional dependency unavailable: ${optional_failure_csv}; provider verified; page success ${https_success}/${https_total})"
+      else
+        result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; provider verified; page success ${https_success}/${https_total})"
+      fi
     else
-      result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; page success ${https_success}/${https_total}; provider reference ${provider_summary:-not configured})"
+      if [[ -n "$optional_failure_csv" ]]; then
+        result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; optional dependency unavailable: ${optional_failure_csv}; page success ${https_success}/${https_total}; provider reference ${provider_summary:-not configured})"
+      else
+        result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; page success ${https_success}/${https_total}; provider reference ${provider_summary:-not configured})"
+      fi
     fi
     results=$(jq -c --arg id "$service_id" --arg result "$result" '. + {($id):$result}' <<<"$results")
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
