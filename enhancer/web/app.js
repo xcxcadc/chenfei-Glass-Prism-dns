@@ -649,11 +649,36 @@ function navigationHTML() {
 }
 function selectTab(tab) {
   if (!["services", "nodes", "ips", "sync", "audit", "alerts", "settings"].includes(tab)) return;
-  if (state.tab === tab) return;
+  if (state.tab === tab && document.querySelector(".container")?.dataset.view === tab) return;
   state.tab = tab;
   state.page = 1;
   localStorage.setItem("enhancer_tab", state.tab);
   render();
+}
+
+let navigationEventsBound = false;
+function bindNavigation() {
+  if (navigationEventsBound) return;
+  const activate = event => {
+    const target = event.target;
+    const button = target instanceof Element ? target.closest(".tab[data-tab]") : null;
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectTab(button.dataset.tab);
+  };
+  document.addEventListener("click", activate, true);
+  document.addEventListener("pointerup", activate, true);
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target;
+    const button = target instanceof Element ? target.closest(".tab[data-tab]") : null;
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectTab(button.dataset.tab);
+  }, true);
+  navigationEventsBound = true;
 }
 
 function shellHTML() {
@@ -870,10 +895,6 @@ function ipConfigsHTML() {
 function bindShell() {
   updateClock();
   if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
-  document.querySelectorAll(".tab[data-tab]").forEach(button => button.addEventListener("click", event => {
-    event.preventDefault();
-    selectTab(button.dataset.tab);
-  }));
   document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
   document.querySelectorAll(".lang-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); }));
   document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));
@@ -1867,6 +1888,7 @@ function toast(message, type = "") {
 
 async function initialize() {
   if (!["services", "nodes", "ips", "sync", "audit", "alerts", "settings"].includes(state.tab)) state.tab = "services";
+  bindNavigation();
   await loadBranding();
   render();
   if (state.token) loadAll();
