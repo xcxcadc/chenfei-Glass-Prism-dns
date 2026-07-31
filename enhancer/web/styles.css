@@ -653,7 +653,7 @@ a { color: inherit; }
   .toast { max-width: 220px; margin-left: auto; }
 }
 
-/* 1.4.9 table dashboard */
+/* 1.5.1 table dashboard */
 .shell { grid-template-columns: 238px minmax(0, 1fr); }
 .sidebar { padding: 28px 18px 22px; background: color-mix(in srgb, var(--surface-strong) 86%, transparent); }
 .sidebar-brand {
