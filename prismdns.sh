@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.8"
+VERSION="1.5.9"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -154,13 +154,14 @@ install_traffic_reporter() {
 set -euo pipefail
 CONFIG_FILE="/var/lib/prismdns/client.conf"
 PEER_HASH_FILE="/var/lib/prismdns/traffic-peers.sha256"
+TRAFFIC_STATE_FILE="/var/lib/prismdns/traffic-cumulative.json"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
 AUDIT_TIME_FILE="/var/lib/prismdns/service-audit.timestamp"
 AUDIT_OUTPUT_FILE="/var/lib/prismdns/service-audit.txt"
 LOCK_FILE="/run/prismdns-report.lock"
 NFT_TABLE="prismdns_traffic"
 DNS_GUARD_STATE_FILE="/var/lib/prismdns/dns-guard.state"
-COUNTER_VERSION="dns-sni-ports-v10-smart-dual-stack-rx-tx"
+COUNTER_VERSION="dns-sni-ports-v11-persistent-component-rx-tx"
 AUDIT_INTERVAL=21600
 AUDIT_VERSION="selected-providers-browser-path-ipv4-v12"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
@@ -177,6 +178,7 @@ fi
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
 TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
 [[ -n "$MASTER" && -n "$TOKEN" ]] || exit 0
+TRAFFIC_STATE_ID=$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')
 if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
   exit 0
 fi
@@ -207,16 +209,52 @@ if [[ "$PEER_HASH" != "$CURRENT_HASH" ]] || ! nft list table inet "$NFT_TABLE" >
   rm -f "$RULE_FILE"
   printf '%s\n' "$PEER_HASH" > "$PEER_HASH_FILE"
 fi
-RX=$(nft -j list counter inet "$NFT_TABLE" rx | jq '[.nftables[].counter? | .bytes] | add // 0')
-TX=$(nft -j list counter inet "$NFT_TABLE" tx | jq '[.nftables[].counter? | .bytes] | add // 0')
-if nft list counter inet prism_transport tx >/dev/null 2>&1; then
-  TRANSPORT_TX=$(nft -j list counter inet prism_transport tx | jq '[.nftables[].counter? | .bytes] | add // 0')
-  TX=$((TX + TRANSPORT_TX))
+read_counter_bytes() {
+  local table="$1" name="$2"
+  if nft list counter inet "$table" "$name" >/dev/null 2>&1; then
+    nft -j list counter inet "$table" "$name" |
+      jq '[.nftables[].counter? | .bytes] | add // 0'
+  else
+    printf '0\n'
+  fi
+}
+
+DNS_RX=$(read_counter_bytes "$NFT_TABLE" rx)
+DNS_TX=$(read_counter_bytes "$NFT_TABLE" tx)
+TRANSPORT_RX=$(read_counter_bytes prism_transport rx)
+TRANSPORT_TX=$(read_counter_bytes prism_transport tx)
+
+TRAFFIC_RX=0
+TRAFFIC_TX=0
+if [[ -s "$TRAFFIC_STATE_FILE" ]] &&
+   jq -e --arg state_id "$TRAFFIC_STATE_ID" '.version == 1 and ((.state_id // $state_id) == $state_id) and (.dns_rx|type == "number") and (.dns_tx|type == "number") and (.transport_rx|type == "number") and (.transport_tx|type == "number") and (.total_rx|type == "number") and (.total_tx|type == "number")' "$TRAFFIC_STATE_FILE" >/dev/null 2>&1; then
+  PREV_DNS_RX=$(jq -r '.dns_rx' "$TRAFFIC_STATE_FILE")
+  PREV_DNS_TX=$(jq -r '.dns_tx' "$TRAFFIC_STATE_FILE")
+  PREV_TRANSPORT_RX=$(jq -r '.transport_rx' "$TRAFFIC_STATE_FILE")
+  PREV_TRANSPORT_TX=$(jq -r '.transport_tx' "$TRAFFIC_STATE_FILE")
+  TRAFFIC_RX=$(jq -r '.total_rx' "$TRAFFIC_STATE_FILE")
+  TRAFFIC_TX=$(jq -r '.total_tx' "$TRAFFIC_STATE_FILE")
+  if ((DNS_RX >= PREV_DNS_RX)); then TRAFFIC_RX=$((TRAFFIC_RX + DNS_RX - PREV_DNS_RX)); else TRAFFIC_RX=$((TRAFFIC_RX + DNS_RX)); fi
+  if ((TRANSPORT_RX >= PREV_TRANSPORT_RX)); then TRAFFIC_RX=$((TRAFFIC_RX + TRANSPORT_RX - PREV_TRANSPORT_RX)); else TRAFFIC_RX=$((TRAFFIC_RX + TRANSPORT_RX)); fi
+  if ((DNS_TX >= PREV_DNS_TX)); then TRAFFIC_TX=$((TRAFFIC_TX + DNS_TX - PREV_DNS_TX)); else TRAFFIC_TX=$((TRAFFIC_TX + DNS_TX)); fi
+  if ((TRANSPORT_TX >= PREV_TRANSPORT_TX)); then TRAFFIC_TX=$((TRAFFIC_TX + TRANSPORT_TX - PREV_TRANSPORT_TX)); else TRAFFIC_TX=$((TRAFFIC_TX + TRANSPORT_TX)); fi
 fi
-if nft list counter inet prism_transport rx >/dev/null 2>&1; then
-  TRANSPORT_RX=$(nft -j list counter inet prism_transport rx | jq '[.nftables[].counter? | .bytes] | add // 0')
-  RX=$((RX + TRANSPORT_RX))
+TRAFFIC_STATE_TEMP="${TRAFFIC_STATE_FILE}.tmp.$$"
+if ! jq -nc \
+  --argjson dns_rx "$DNS_RX" --argjson dns_tx "$DNS_TX" \
+  --argjson transport_rx "$TRANSPORT_RX" --argjson transport_tx "$TRANSPORT_TX" \
+  --argjson total_rx "$TRAFFIC_RX" --argjson total_tx "$TRAFFIC_TX" \
+  --arg state_id "$TRAFFIC_STATE_ID" \
+  '{version:1,state_id:$state_id,dns_rx:$dns_rx,dns_tx:$dns_tx,transport_rx:$transport_rx,transport_tx:$transport_tx,total_rx:$total_rx,total_tx:$total_tx}' > "$TRAFFIC_STATE_TEMP"; then
+  rm -f "$TRAFFIC_STATE_TEMP"
+  exit 0
 fi
+if ! mv -f "$TRAFFIC_STATE_TEMP" "$TRAFFIC_STATE_FILE"; then
+  rm -f "$TRAFFIC_STATE_TEMP"
+  exit 0
+fi
+RX=$TRAFFIC_RX
+TX=$TRAFFIC_TX
 DNS_READY=false
 SYSTEM_DNS_READY=false
 ROUTES_READY=false

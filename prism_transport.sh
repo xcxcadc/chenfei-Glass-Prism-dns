@@ -388,7 +388,7 @@ apply_redirect_rules() {
     while IFS= read -r peer; do
       [[ -n "$peer" ]] || continue
       proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
-      printf '    ip daddr %s counter name "tx"\n' "$proxy_ip"
+      printf '    ip daddr %s tcp dport { 80, 443 } counter name "tx"\n' "$proxy_ip"
     done < <(jq -c 'unique_by(.proxy_ip)[]?' <<<"$current")
     echo '  }'
     echo '  chain redirect_output {'
@@ -494,7 +494,7 @@ sync_client() {
   [[ -f "$ACTIVE_FILE" ]] && old_current=$(jq -c 'sort_by(.proxy_id)' "$ACTIVE_FILE" 2>/dev/null || echo '[]')
   [[ "$(jq -c 'sort_by(.proxy_id)' <<<"$current_json")" != "$old_current" ]] && changed_current=true
   remove_stale_tunnels "$current_json"
-  if $changed_current ||
+  if [[ "${PRISM_FORCE_TRANSPORT_RULES:-0}" == "1" ]] || $changed_current ||
     ! nft list counter inet prism_transport tx >/dev/null 2>&1 ||
     ! nft list counter inet prism_transport rx >/dev/null 2>&1; then
     apply_redirect_rules "$current_json"

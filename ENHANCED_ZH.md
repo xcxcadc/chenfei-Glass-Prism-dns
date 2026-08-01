@@ -50,7 +50,7 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 
 ## 流量统计口径
 
-`prismdns.sh` 会为每台目标服务器创建独立 nftables 统计链：本机 Prism DNS 的 UDP/TCP 53 请求与响应计入 DNS 用量，只有与当前所选 Proxy IPv4 或其专属加密传输端点之间的 TCP 80/443 才计入 SNI 解锁用量。普通公网 80/443、系统更新和其他非解锁机流量不会计入。systemd timer 启用后 15 秒内首次上报，之后每分钟上报一次；计数器在正常上报之间保持单调累计，面板按上次采样差值入账，不会因某一分钟流量更大而少算。自动 UnlockTests 审计结束后会开启新的计数纪元，避免把检测流量计入用户用量。
+`prismdns.sh` 会为每台目标服务器创建独立 nftables 统计链：本机 Prism DNS 的 UDP/TCP 53 请求与响应计入 DNS 用量，只有与当前所选 Proxy IPv4 或其专属加密传输端点之间的原始 TCP 80/443 才计入 SNI 解锁用量。普通公网 80/443、SSH 控制流量、系统更新和其他非解锁机流量不会计入。systemd timer 启用后 15 秒内首次上报，之后每分钟上报一次；DNS RX/TX 与每个加密传输 RX/TX 分开持久化到 `/var/lib/prismdns/traffic-cumulative.json`，单个 nftables 表重建或审计清零不会丢失另一组计数器的历史增量，面板按单调采样差值入账。统计状态按 Agent enrollment token 隔离，重新绑定目标 IP 不会串用旧数据。自动 UnlockTests 审计结束后会开启新的计数纪元，避免把检测流量计入用户用量。
 
 “清零流量”只重置面板累计值并保留目标机当前采样基线，后续只累加清零后的新流量，不会把旧计数重新加回；该操作不影响 nftables 规则、DNS 节点和服务配置。IP 配置及令牌保存在 `/var/lib/prism-enhancer/ip-configs.json`，文件权限为 `0600`；请勿公开页面生成的专属命令或配置令牌。
 
