@@ -67,11 +67,15 @@ func (manager *CatalogManager) Snapshot(ctx context.Context, force bool) Catalog
 
 func (manager *CatalogManager) Service(ctx context.Context, id string) (Service, bool) {
 	if service, ok := manager.store.Get(id); ok {
-		return manager.preferences.Apply([]Service{service})[0], true
+		services := manager.preferences.Apply([]Service{service})
+		if len(services) == 0 {
+			return Service{}, false
+		}
+		return services[0], true
 	}
 	snapshot := manager.Snapshot(ctx, false)
 	for _, service := range snapshot.Services {
-		if service.ID == id {
+		if service.ID == id || contains(service.Aliases, id) {
 			return service, true
 		}
 	}

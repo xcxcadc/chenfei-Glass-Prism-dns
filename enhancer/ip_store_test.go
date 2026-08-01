@@ -155,6 +155,60 @@ func TestIPConfigStorePreservesDualStackProxyPeers(t *testing.T) {
 	}
 }
 
+func TestIPConfigStoreRemovesDeletedServiceRoutesResultsAndPeers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ip-configs.json")
+	store, err := NewIPConfigStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := store.Save(IPConfig{
+		IP:        "203.0.113.40",
+		DNSNodeID: "dns-a",
+		NodeName:  "Target",
+		Routes: map[string]string{
+			"legacy-service": "proxy-a",
+			"kept-service":   "proxy-b",
+		},
+	}, "secret", map[string][]string{
+		"proxy-a": {"198.51.100.10"},
+		"proxy-b": {"198.51.100.11"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{
+		"legacy-service": "YES",
+		"kept-service":   "YES",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := store.RemoveService(Service{ID: "canonical-service", Aliases: []string{"legacy-service"}})
+	if err != nil || changed != 1 {
+		t.Fatalf("remove service failed: changed=%d err=%v", changed, err)
+	}
+	updated, ok := store.Get(config.ID)
+	if !ok {
+		t.Fatal("target config disappeared")
+	}
+	record, ok := store.Record(config.ID)
+	if !ok {
+		t.Fatal("target record disappeared")
+	}
+	if _, exists := updated.Routes["legacy-service"]; exists {
+		t.Fatalf("deleted route remained: %+v", updated.Routes)
+	}
+	if updated.Routes["kept-service"] != "proxy-b" || len(updated.ServiceResults) != 0 {
+		t.Fatalf("service data was not cleaned correctly: %+v", updated)
+	}
+	if len(record.ProxyPeers) != 1 || len(record.ProxyPeers["proxy-b"]) != 1 || len(updated.TrafficPeers) != 1 || updated.TrafficPeers[0] != "198.51.100.11" {
+		t.Fatalf("unused proxy peer remained: %+v peers=%+v", record.ProxyPeers, updated.TrafficPeers)
+	}
+	if updated.ServiceAuditedAt != nil {
+		t.Fatal("route removal should invalidate the aggregate audit timestamp")
+	}
+}
+
 func TestIPConfigStoreRemovesLegacyAutomaticFailoverState(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ip-configs.json")
 	legacy := `[{

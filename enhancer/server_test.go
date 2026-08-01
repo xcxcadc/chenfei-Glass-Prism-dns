@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -201,6 +202,80 @@ func TestServiceDomainWriteRequiresAuthenticationAndCanRestore(t *testing.T) {
 	app.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), `"domain_override":true`) || !strings.Contains(response.Body.String(), `"original.example"`) {
 		t.Fatalf("domain override restore failed: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestBuiltInServiceDeleteRequiresAuthenticationAndCleansRoutes(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/nodes" && request.Header.Get("Authorization") == "Bearer valid" {
+			_, _ = writer.Write([]byte(`[]`))
+			return
+		}
+		if request.URL.Path == "/catalog" {
+			_, _ = writer.Write([]byte("# ---------- > Global\n# > YouTube\nnameserver /youtube.com/group\n"))
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	defer upstream.Close()
+
+	dataDir := t.TempDir()
+	customStore, err := NewCustomServiceStore(filepath.Join(dataDir, "services.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preferences, err := NewCatalogPreferenceStore(filepath.Join(dataDir, "catalog-preferences.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore, preferences)
+	ipStore, err := NewIPConfigStore(filepath.Join(dataDir, "ip-configs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := catalog.Snapshot(context.Background(), true).Services
+	if len(services) != 1 {
+		t.Fatalf("unexpected catalog: %+v", services)
+	}
+	service := services[0]
+	config, err := ipStore.Save(IPConfig{
+		IP:        "203.0.113.41",
+		DNSNodeID: "dns-a",
+		NodeName:  "Target",
+		Routes:    map[string]string{service.ID: "proxy-a"},
+	}, "secret", map[string][]string{"proxy-a": {"198.51.100.12"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ipStore.UpdateServiceAudit(config.EnrollmentToken, map[string]string{service.ID: "YES"}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodDelete, "/enhancer/api/services/"+service.ID, nil)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated service delete should fail, got %d", response.Code)
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/enhancer/api/services/"+service.ID, nil)
+	request.Header.Set("Authorization", "Bearer valid")
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("built-in service delete failed: %d %s", response.Code, response.Body.String())
+	}
+	if services := catalog.Snapshot(context.Background(), true).Services; len(services) != 0 {
+		t.Fatalf("deleted service returned after catalog refresh: %+v", services)
+	}
+	updated, ok := ipStore.Get(config.ID)
+	record, recordOK := ipStore.Record(config.ID)
+	if !ok || !recordOK || len(updated.Routes) != 0 || len(record.ProxyPeers) != 0 || len(updated.ServiceResults) != 0 {
+		t.Fatalf("deleted service route data remained: %+v", updated)
 	}
 }
 

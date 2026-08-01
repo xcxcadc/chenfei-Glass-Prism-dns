@@ -17,6 +17,7 @@ type CatalogPreferences struct {
 	Categories        []string            `json:"categories"`
 	ServiceCategories map[string]string   `json:"service_categories"`
 	ServiceDomains    map[string][]string `json:"service_domains,omitempty"`
+	DeletedServices   []string            `json:"deleted_services,omitempty"`
 }
 
 type CatalogPreferenceStore struct {
@@ -25,6 +26,7 @@ type CatalogPreferenceStore struct {
 	categories  map[string]struct{}
 	assignments map[string]string
 	domains     map[string][]string
+	deleted     map[string]struct{}
 }
 
 func NewCatalogPreferenceStore(path string) (*CatalogPreferenceStore, error) {
@@ -33,6 +35,7 @@ func NewCatalogPreferenceStore(path string) (*CatalogPreferenceStore, error) {
 		categories:  make(map[string]struct{}),
 		assignments: make(map[string]string),
 		domains:     make(map[string][]string),
+		deleted:     make(map[string]struct{}),
 	}
 	if err := store.load(); err != nil {
 		return nil, err
@@ -141,6 +144,9 @@ func (store *CatalogPreferenceStore) SetServiceDomains(serviceID string, domains
 	if err != nil {
 		return err
 	}
+	if len(normalized) == 0 {
+		return errors.New("at least one valid domain is required")
+	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	previous, existed := store.domains[serviceID]
@@ -175,12 +181,61 @@ func (store *CatalogPreferenceStore) ClearServiceDomains(serviceID string) error
 	return nil
 }
 
+func (store *CatalogPreferenceStore) DeleteService(serviceID string, aliases []string) error {
+	ids := uniqueServiceIDs(serviceID, aliases)
+	if len(ids) == 0 {
+		return errors.New("service id is required")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	previousDeleted := make(map[string]bool, len(ids))
+	previousAssignments := make(map[string]string, len(ids))
+	previousDomains := make(map[string][]string, len(ids))
+	for _, id := range ids {
+		_, previousDeleted[id] = store.deleted[id]
+		if category, ok := store.assignments[id]; ok {
+			previousAssignments[id] = category
+		}
+		if domains, ok := store.domains[id]; ok {
+			previousDomains[id] = append([]string(nil), domains...)
+		}
+		store.deleted[id] = struct{}{}
+		delete(store.assignments, id)
+		delete(store.domains, id)
+	}
+	if err := store.saveLocked(); err != nil {
+		for _, id := range ids {
+			if previousDeleted[id] {
+				store.deleted[id] = struct{}{}
+			} else {
+				delete(store.deleted, id)
+			}
+			if category, ok := previousAssignments[id]; ok {
+				store.assignments[id] = category
+			} else {
+				delete(store.assignments, id)
+			}
+			if domains, ok := previousDomains[id]; ok {
+				store.domains[id] = append([]string(nil), domains...)
+			} else {
+				delete(store.domains, id)
+			}
+		}
+		return err
+	}
+	return nil
+}
+
 func (store *CatalogPreferenceStore) Apply(services []Service) []Service {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	result := make([]Service, len(services))
-	copy(result, services)
-	for index := range result {
+	result := make([]Service, 0, len(services))
+	for _, service := range services {
+		if serviceIDsDeleted(service, store.deleted) {
+			continue
+		}
+		result = append(result, service)
+		index := len(result) - 1
 		result[index].OriginalCategory = ""
 		result[index].DomainOverride = false
 		preferenceIDs := append([]string{result[index].ID}, result[index].Aliases...)
@@ -249,6 +304,13 @@ func (store *CatalogPreferenceStore) load() error {
 		}
 		store.domains[serviceID] = normalized
 	}
+	for _, serviceID := range preferences.DeletedServices {
+		serviceID = strings.TrimSpace(serviceID)
+		if serviceID == "" {
+			return fmt.Errorf("decode catalog preferences: invalid deleted service")
+		}
+		store.deleted[serviceID] = struct{}{}
+	}
 	return nil
 }
 
@@ -263,6 +325,7 @@ func (store *CatalogPreferenceStore) saveLocked() error {
 		Categories:        sortedCategoryKeys(store.categories),
 		ServiceCategories: make(map[string]string, len(store.assignments)),
 		ServiceDomains:    make(map[string][]string, len(store.domains)),
+		DeletedServices:   sortedServiceIDs(store.deleted),
 	}
 	for serviceID, category := range store.assignments {
 		preferences.ServiceCategories[serviceID] = category
@@ -282,6 +345,41 @@ func (store *CatalogPreferenceStore) saveLocked() error {
 		return fmt.Errorf("replace catalog preferences: %w", err)
 	}
 	return nil
+}
+
+func uniqueServiceIDs(serviceID string, aliases []string) []string {
+	seen := make(map[string]struct{}, len(aliases)+1)
+	result := make([]string, 0, len(aliases)+1)
+	for _, value := range append([]string{serviceID}, aliases...) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func serviceIDsDeleted(service Service, deleted map[string]struct{}) bool {
+	for _, serviceID := range uniqueServiceIDs(service.ID, service.Aliases) {
+		if _, ok := deleted[serviceID]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedServiceIDs(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for serviceID := range values {
+		result = append(result, serviceID)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func normalizeCategory(category string) (string, error) {

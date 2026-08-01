@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.9"
+VERSION="1.5.10"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -163,7 +163,9 @@ NFT_TABLE="prismdns_traffic"
 DNS_GUARD_STATE_FILE="/var/lib/prismdns/dns-guard.state"
 COUNTER_VERSION="dns-sni-ports-v11-persistent-component-rx-tx"
 AUDIT_INTERVAL=21600
-AUDIT_VERSION="selected-providers-browser-path-ipv4-v12"
+MEDIA_CHECK_URL="https://media.ispvps.com"
+MEDIA_CHECK_TIMEOUT=900
+AUDIT_VERSION="media-ispvps-ipv4-browser-path-v1"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
 HEALTH_CACHE_INTERVAL=1800
 [[ -f "$CONFIG_FILE" ]] || exit 0
@@ -361,110 +363,136 @@ reset_traffic_counters() {
 }
 
 run_service_audit() {
-  local audit_hash="$1" now="$2" output="" attempt_output attempt_block plain="" results probe service_id service_name result provider_summary matched_peer answer peer mapping_output
-  local providers_csv candidate failure test_provider probe_domain route_domain http_code resolve_peer
-  local attempt attempt_count pass_count youtube_pass youtube_tls_pass youtube_tls_total route_total route_pass https_total https_pass https_success required_https_total required_https_pass optional_https_total optional_https_pass optional_failure_csv mobile_domain http_code
-  local probe_attempt tls_attempt_pass page_ok
-  local -a provider_results test_providers matched_results probe_domains route_domains probe_peers youtube_mobile_domains optional_failures
+  local audit_hash="$1" now="$2" media_output="" plain="" results probe service_id service_name result provider_summary matched_peer answer peer media_status=0
+  local media_error="" media_script="" probe_domain route_domain http_code resolve_peer
+  local route_total route_pass https_total https_pass https_success required_https_total required_https_pass optional_https_total optional_https_pass optional_failure_csv
+  local probe_attempt tls_attempt_pass page_ok diagnostic_summary
+  local -a probe_domains route_domains probe_peers optional_failures
   is_optional_probe_domain() {
     [[ "$service_name" == "Gemini" && "$1" == "play.google.com" ]]
   }
-  ut_supports_selected() {
-    local help_output
-    help_output=$(/usr/bin/ut -h 2>&1 || true)
-    grep -q -- '-test string' <<<"$help_output"
+  media_results_for_label() {
+    local label="$1" line trimmed lower target value
+    target="${label,,}:"
+    while IFS= read -r line; do
+      trimmed="${line#$'\r'}"
+      trimmed="${trimmed#"${trimmed%%[![:space:]]*}"}"
+      lower="${trimmed,,}"
+      [[ "$lower" == "$target"* ]] || continue
+      value="${trimmed:${#label}+1}"
+      value="${value#"${value%%[![:space:]]*}"}"
+      [[ -n "$value" ]] && printf '%s\n' "$value"
+    done <<<"$plain"
   }
-  providers_csv=$(jq -r '[.health_probes[]? | (.unlock_tests[]?, .unlock_test // empty) | select(length > 0)] | unique | join(",")' <<<"$BOOTSTRAP")
-  if [[ -n "$providers_csv" ]]; then
-    if [[ ! -x /usr/bin/ut ]] || ! ut_supports_selected; then
-      timeout 180 bash -c 'curl -sL https://raw.githubusercontent.com/oneclickvirt/UnlockTests/main/ut_install.sh -sSf | bash' >/dev/null 2>&1 || true
+  media_result_is_positive() {
+    local value="${1,,}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    [[ "$value" =~ ^(yes|pass)([[:space:](]|$) ]]
+  }
+  media_summary_for_probe() {
+    local label value details="" last="" required_failed=0 required_passed=0
+    local any_found=0 any_passed=0 any_last="" alternative_total=0
+    local missing_labels=""
+    local -a required_labels any_labels
+    mapfile -t required_labels < <(jq -r '.media_required[]? | select(length > 0)' <<<"$1")
+    mapfile -t any_labels < <(jq -r '.media_any[]? | select(length > 0)' <<<"$1")
+    if [[ -n "$media_error" ]]; then
+      printf 'FAIL (media.ispvps.com IPv4 check unavailable: %s)\n' "$media_error"
+      return
     fi
-    if [[ -x /usr/bin/ut ]]; then
-      for attempt in 1 2 3; do
-        if ut_supports_selected; then
-          attempt_output=$(timeout 180 /usr/bin/ut -m 4 -test "$providers_csv" -b=false -s=false 2>&1 || true)
-        else
-          attempt_output=$(timeout 300 /usr/bin/ut -m 4 -f 20 -b=false -s=false 2>&1 || true)
+    if ((${#required_labels[@]} == 0 && ${#any_labels[@]} == 0)); then
+      printf 'NOT COVERED (media.ispvps.com has no matching service check)\n'
+      return
+    fi
+    for label in "${required_labels[@]}"; do
+      local label_found=0 label_positive=0 label_last=""
+      while IFS= read -r value; do
+        [[ -n "$value" ]] || continue
+        label_found=1
+        label_last="$value"
+        if [[ -z "$details" ]]; then
+          details="$label=$value"
+        elif ((${#details} < 700)); then
+          details="$details; $label=$value"
         fi
-        printf -v attempt_block '[attempt %d]\n%s\n' "$attempt" "$attempt_output"
-        output+="$attempt_block"
-        if ((attempt < 3)); then
-          sleep 2
+        media_result_is_positive "$value" && label_positive=1
+      done < <(media_results_for_label "$label")
+      if ((label_found == 0)); then
+        missing_labels="${missing_labels:+$missing_labels, }$label"
+      elif ((label_positive == 1)); then
+        required_passed=$((required_passed + 1))
+      else
+        required_failed=$((required_failed + 1))
+        last="$label_last"
+      fi
+    done
+
+    if ((${#any_labels[@]} > 0)); then
+      alternative_total=1
+      for label in "${any_labels[@]}"; do
+        local label_found=0 label_positive=0 label_last=""
+        while IFS= read -r value; do
+          [[ -n "$value" ]] || continue
+          label_found=1
+          any_found=$((any_found + 1))
+          label_last="$value"
+          if [[ -z "$details" ]]; then
+            details="$label=$value"
+          elif ((${#details} < 700)); then
+            details="$details; $label=$value"
+          fi
+          media_result_is_positive "$value" && label_positive=1
+        done < <(media_results_for_label "$label")
+        if ((label_positive == 1)); then
+          any_passed=1
+        elif [[ -n "$label_last" ]]; then
+          any_last="$label_last"
         fi
       done
-      plain=$(sed $'s/\033\\[[0-9;]*[mK]//g' <<<"$output" | tr -d '\r')
+      if ((any_found == 0)); then
+        missing_labels="${missing_labels:+$missing_labels, }${any_labels[*]}"
+      fi
+    fi
+
+    if [[ -n "$missing_labels" ]]; then
+      printf 'NOT COVERED (media.ispvps.com IPv4 labels not returned: %s; %s)\n' "$missing_labels" "$details"
+    elif ((required_failed > 0 || (${#any_labels[@]} > 0 && any_passed == 0))); then
+      printf 'FAIL (media.ispvps.com IPv4 required %d/%d; alternatives %d/%d; %s)\n' \
+        "$required_passed" "${#required_labels[@]}" "$any_passed" \
+        "$alternative_total" "${details:-${last:-$any_last}}"
+    else
+      printf 'PASS (media.ispvps.com IPv4 required %d/%d; alternatives %d/%d; %s)\n' \
+        "$required_passed" "${#required_labels[@]}" "$any_passed" \
+        "$alternative_total" "${details:-all required labels positive}"
+    fi
+  }
+  media_script=$(mktemp /run/prismdns-media-check.XXXXXX)
+  if ! curl -4 -fsSL --connect-timeout 10 --max-time 30 "$MEDIA_CHECK_URL" | sed 's/\r$//' >"$media_script"; then
+    media_error="download failed"
+  elif [[ ! -s "$media_script" ]]; then
+    media_error="download returned an empty script"
+  else
+    chmod 700 "$media_script"
+    if command -v timeout >/dev/null 2>&1; then
+      media_output=$(printf '\n' | timeout "$MEDIA_CHECK_TIMEOUT" bash "$media_script" -M 4 2>&1) || media_status=$?
+    else
+      media_output=$(printf '\n' | bash "$media_script" -M 4 2>&1) || media_status=$?
+    fi
+    if ((media_status != 0)); then
+      media_error="script exited with status $media_status"
+    elif [[ -z "$media_output" ]]; then
+      media_error="script returned no output"
     fi
   fi
+  rm -f "$media_script"
+  plain=$(sed $'s/\033\\[[0-9;]*[mK]//g' <<<"$media_output" | tr -d '\r')
   printf '%s\n' "$plain" > "$AUDIT_OUTPUT_FILE"
   results='{}'
   while IFS= read -r probe; do
     service_id=$(jq -r '.service_id // empty' <<<"$probe")
     service_name=$(jq -r '.name // empty' <<<"$probe")
     [[ -n "$service_id" ]] || continue
-    result=""
-    if [[ "$service_name" == "YouTube" ]]; then
-      youtube_pass=0
-      youtube_tls_pass=0
-      youtube_tls_total=0
-      youtube_mobile_domains=("www.youtube.com" "youtubei.googleapis.com" "redirector.googlevideo.com" "i.ytimg.com" "yt3.ggpht.com")
-      for attempt in 1 2 3; do
-        mapping_output=$(curl -4 -fsSL --connect-timeout 6 --max-time 20 "https://redirector.googlevideo.com/report_mapping" || true)
-        if curl -4 -fsSL --connect-timeout 6 --max-time 20 -o /dev/null "https://www.youtube.com/" &&
-          grep -q '=> ' <<<"$mapping_output"; then
-          youtube_pass=$((youtube_pass + 1))
-        fi
-        for mobile_domain in "${youtube_mobile_domains[@]}"; do
-          youtube_tls_total=$((youtube_tls_total + 1))
-          http_code=$(curl -4 -sS --connect-timeout 6 --max-time 20 -o /dev/null -w '%{http_code}' "https://${mobile_domain}/" 2>/dev/null || true)
-          if [[ "$http_code" != "000" ]]; then
-            youtube_tls_pass=$((youtube_tls_pass + 1))
-          fi
-        done
-      done
-      if ((youtube_pass == 3 && youtube_tls_pass == youtube_tls_total)); then
-        result="YES (Desktop + mobile TLS ${youtube_tls_pass}/${youtube_tls_total}; CDN 3/3; Premium region is informational)"
-      elif ((youtube_pass > 0 || youtube_tls_pass > 0)); then
-        result="UNSTABLE (Desktop/CDN ${youtube_pass}/3; mobile TLS ${youtube_tls_pass}/${youtube_tls_total})"
-      else
-        result="FAIL (Desktop, mobile, and playback CDN unavailable)"
-      fi
-    fi
-    mapfile -t test_providers < <(jq -r '[(.unlock_tests[]?, .unlock_test // empty) | select(length > 0)] | unique[]' <<<"$probe")
-    if [[ -z "$result" ]] && ((${#test_providers[@]} > 0)); then
-      provider_results=()
-      for test_provider in "${test_providers[@]}"; do
-        mapfile -t matched_results < <(awk -v provider="$test_provider" '
-          index($0, provider) == 1 && substr($0, length(provider) + 1, 2) ~ /^[[:space:]][[:space:]]$/ {
-            value = substr($0, length(provider) + 1)
-            sub(/^[[:space:]]+/, "", value)
-            print value
-          }
-        ' <<<"$plain")
-        provider_results+=("${matched_results[@]}")
-      done
-      attempt_count=${#provider_results[@]}
-      pass_count=0
-      failure=""
-      for candidate in "${provider_results[@]}"; do
-        if [[ "$candidate" =~ ^YES([[:space:]]|$) ]]; then
-          pass_count=$((pass_count + 1))
-        else
-          failure="$candidate"
-        fi
-      done
-      if ((attempt_count > 0 && pass_count == attempt_count)); then
-        if ((${#test_providers[@]} > 1)); then
-          result="YES (${#test_providers[@]} checks; ${pass_count}/${attempt_count} passes)"
-        else
-          result="${provider_results[attempt_count - 1]}"
-        fi
-      elif ((pass_count > 0)); then
-        result="UNSTABLE (${pass_count}/${attempt_count} YES; ${failure:-intermittent failure})"
-      elif ((attempt_count > 0)); then
-        result="${provider_results[attempt_count - 1]}"
-      fi
-    fi
-    provider_summary="$result"
+    provider_summary=$(media_summary_for_probe "$probe")
     mapfile -t route_domains < <(jq -r '[(.route_domains[]?, .probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
     mapfile -t probe_domains < <(jq -r '[(.probe_domains[]?, .domain // empty) | select(length > 0)] | unique[]' <<<"$probe")
     mapfile -t probe_peers < <(jq -r '.traffic_peers[]?' <<<"$probe" | sort -u)
@@ -541,27 +569,23 @@ run_service_audit() {
     else
       optional_failure_csv=""
     fi
-    if ((route_total == 0 || route_pass != route_total)); then
-      result="FAIL (DNS routes ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
-    elif ((https_total == 0)); then
-      result="FAIL (no TLS/SNI probe domains; DNS ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
-    elif ((required_https_pass != required_https_total)); then
-      result="FAIL (TLS/SNI required ${required_https_pass}/${required_https_total}; optional ${optional_https_pass}/${optional_https_total}; page success ${https_success}; DNS ${route_pass}/${route_total}; provider ${provider_summary:-not checked})"
-    elif ((https_success == 0)); then
-      result="FAIL (DNS and TLS/SNI passed, but representative pages did not load; provider ${provider_summary:-not checked})"
-    elif [[ "$provider_summary" =~ ^YES([[:space:]]|$) ]]; then
-      if [[ -n "$optional_failure_csv" ]]; then
-        result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; optional dependency unavailable: ${optional_failure_csv}; provider verified; page success ${https_success}/${https_total})"
-      else
-        result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; provider verified; page success ${https_success}/${https_total})"
-      fi
-    else
-      if [[ -n "$optional_failure_csv" ]]; then
-        result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; optional dependency unavailable: ${optional_failure_csv}; page success ${https_success}/${https_total}; provider reference ${provider_summary:-not configured})"
-      else
-        result="PASS (DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; page success ${https_success}/${https_total}; provider reference ${provider_summary:-not configured})"
-      fi
+    diagnostic_summary="DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; page success ${https_success}/${https_total}"
+    if ((route_total == 0)); then
+      diagnostic_summary="${diagnostic_summary}; no DNS route domains were configured"
+    elif ((route_pass != route_total)); then
+      diagnostic_summary="${diagnostic_summary}; DNS route mismatch"
     fi
+    if ((https_total == 0)); then
+      diagnostic_summary="${diagnostic_summary}; no TLS/SNI probe domains were configured"
+    elif ((required_https_pass != required_https_total)); then
+      diagnostic_summary="${diagnostic_summary}; required TLS/SNI probe mismatch"
+    elif ((https_success == 0)); then
+      diagnostic_summary="${diagnostic_summary}; representative pages did not return a 2xx/3xx response"
+    fi
+    if [[ -n "$optional_failure_csv" ]]; then
+      diagnostic_summary="${diagnostic_summary}; optional dependency unavailable: $optional_failure_csv"
+    fi
+    result="${provider_summary:-FAIL (media.ispvps.com returned no result)}; diagnostics: ${diagnostic_summary}"
     results=$(jq -c --arg id "$service_id" --arg result "$result" '. + {($id):$result}' <<<"$results")
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
   if [[ "$(jq 'length' <<<"$results")" -gt 0 ]]; then
@@ -580,7 +604,7 @@ if [[ "${PRISM_SKIP_SERVICE_AUDIT:-0}" != "1" ]] &&
     jq -Sc '{
       service_audit_requested_at:(.service_audit_requested_at // ""),
       traffic_peers:((.traffic_peers // []) | sort),
-      health_probes:([.health_probes[]? | {service_id,unlock_test,unlock_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
+      health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
     }' <<<"$BOOTSTRAP"
   } | sha256sum | awk '{print $1}')
   LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)
@@ -600,7 +624,7 @@ CONFIG_FILE="/var/lib/prismdns/client.conf"
 HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
-AUDIT_VERSION="selected-providers-browser-path-ipv4-v12"
+AUDIT_VERSION="media-ispvps-ipv4-browser-path-v1"
 HEALTH_CHECK_FILE="/var/lib/prismdns/route-health.timestamp"
 HEALTH_CHECK_INTERVAL=300
 DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
@@ -850,7 +874,7 @@ CURRENT_HASH=$(jq -Sc '{
   mode:"agent-smart-dual-stack-v1",
   smart:(.smart // true),
   traffic_peers:((.traffic_peers // []) | sort),
-  health_probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,unlock_test,unlock_tests,traffic_peers}] | sort_by(.service_id))
+  health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
 }' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 LAST_HASH=$(cat "$HASH_FILE" 2>/dev/null || true)
 NOW=$(date +%s)
@@ -859,7 +883,7 @@ AUDIT_HASH=$({
   jq -Sc '{
     service_audit_requested_at:(.service_audit_requested_at // ""),
     traffic_peers:((.traffic_peers // []) | sort),
-    health_probes:([.health_probes[]? | {service_id,unlock_test,unlock_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
+  health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
   }' <<<"$BOOTSTRAP"
 } | sha256sum | awk '{print $1}')
 LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)

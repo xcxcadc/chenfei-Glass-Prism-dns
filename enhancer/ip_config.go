@@ -245,45 +245,184 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 			continue
 		}
 		probes = append(probes, map[string]any{
-			"service_id":    service.ID,
-			"name":          service.Name,
-			"domain":        preferredProbeDomain(service),
-			"unlock_test":   unlockTestProvider(service),
-			"unlock_tests":  unlockTestProviders(service),
-			"probe_domains": preferredProbeDomains(service),
-			"route_domains": routingDomains(service.Domains),
-			"traffic_peers": append([]string(nil), proxyPeers[routes[serviceID]]...),
+			"service_id":     service.ID,
+			"name":           service.Name,
+			"domain":         preferredProbeDomain(service),
+			"media_source":   "https://media.ispvps.com",
+			"media_required": mediaTestSpecForService(service).Required,
+			"media_any":      mediaTestSpecForService(service).Any,
+			"media_tests":    unlockTestProviders(service),
+			"probe_domains":  preferredProbeDomains(service),
+			"route_domains":  routingDomains(service.Domains),
+			"traffic_peers":  append([]string(nil), proxyPeers[routes[serviceID]]...),
 		})
 	}
 	return probes
 }
 
-func unlockTestProvider(service Service) string {
-	providers := unlockTestProviders(service)
-	if len(providers) == 0 {
-		return ""
+type mediaTestSpec struct {
+	Required []string
+	Any      []string
+}
+
+var mediaScriptLabels = []string{
+	"4GTV.TV", "7plus", "A&E TV", "ABC iView", "Abema.TV", "Acorn TV", "Afreeca TV", "AIS Play",
+	"Amazon Prime Video", "AMC+", "Amediateka", "Bahamut Anime", "BBC iPLAYER", "Bein Sports Connect",
+	"Binge", "BritBox", "Canal+", "CatchPlay+", "CBC Gem", "Channel 10", "Channel 4", "Channel 5", "Channel 9",
+	"ChatGPT", "CineMax Go", "Coupang Play", "Crave", "Crunchyroll", "CW TV", "D Anime Store", "Dazn",
+	"DirecTV Go", "Directv Stream", "Discovery+", "Disney+", "DMM", "DMM TV", "Docplay", "DSTV", "encoreTVB",
+	"ESPN+", "Eurosport RO", "FOD(Fuji TV)", "FOX", "Fubo TV", "Funimation", "FXNOW", "Google Gemini",
+	"Hami Video", "HBO GO Asia", "HBO GO Europe", "HBO Max", "HBO Nordic", "HBO Now", "HBO Portugal", "HBO Spain",
+	"HotStar", "Hulu", "Hulu Japan", "iQyi Oversea Region", "ITV Hub", "Jio Cinema", "Joyn", "K+", "Kancolle Japan",
+	"Karaoke@DAM", "Kayo Sports", "KBS American", "KBS Domestic", "KKTV", "KOCOWA", "Lemino", "LineTV.TW", "LiTV",
+	"Maori TV", "MathsSpot Roblox", "Megogo TV", "MeWatch", "MGM+", "Mola TV", "Molotov", "Mora", "Movistar+", "music.jp",
+	"MX Player", "MyTVSuper", "MyVideo", "Naver TV", "NBA TV", "NBC TV", "Neon TV", "Netflix", "NFL+", "Niconico",
+	"NLZIET", "Now E", "NPO Start Plus", "Optus Sports", "Paramount+", "Peacock TV", "Philo", "Pluto TV", "Popcornflix",
+	"Pretty Derby Japan", "Radiko", "Rai Play", "Rakuten TV", "Reddit", "SBS on Demand", "Setanta Sports", "Showmax",
+	"SHOWTIME", "Shudder", "SKY CH", "SKY DE", "Sky Go", "SkyGo NZ", "SkyShowTime", "Sling TV", "SonyLiv", "Spotify Registration",
+	"SPOTV NOW", "Stan", "Starz", "Steam Currency", "Telasa", "ThreeNow", "TikTok", "TLC GO", "trueID", "Tubi TV",
+	"TV360", "TVBAnywhere+", "TVer", "Tving", "U-NEXT", "videoland", "VideoMarket", "Viu.com", "Viu.TV", "WATCHA",
+	"Wavve", "Wikipedia Editability", "WOWOW", "YouTube Premium", "YouTube Region", "YouTube CDN", "Zee5",
+}
+
+var mediaScriptAliases = map[string]mediaTestSpec{
+	"au:10 play":           {Required: []string{"Channel 10"}},
+	"au:7plus":             {Required: []string{"7plus"}},
+	"au:9 now":             {Required: []string{"Channel 9"}},
+	"au:abc iview":         {Required: []string{"ABC iView"}},
+	"au:binge/kayo sports": {Any: []string{"Binge", "Kayo Sports"}},
+	"au:docplay":           {Required: []string{"Docplay"}},
+	"au:optus":             {Required: []string{"Optus Sports"}},
+	"au:sbs on demand":     {Required: []string{"SBS on Demand"}},
+	"au:stan":              {Required: []string{"Stan"}},
+	"abema":                {Required: []string{"Abema.TV"}},
+	"abema.tv":             {Required: []string{"Abema.TV"}},
+	"b-global":             {Any: []string{"B-Global Indonesia Only", "B-Global SouthEastAsia", "B-Global Thailand Only", "B-Global Việt Nam Only"}},
+	"bilibili":             {Any: []string{"BiliBili China Mainland Only", "BiliBili Hongkong/Macau/Taiwan", "Bilibili Taiwan Only"}},
+	"de:joyn":              {Required: []string{"Joyn"}},
+	"de:sky":               {Required: []string{"SKY DE"}},
+	"de:zdf":               {Required: []string{"ZDF"}},
+	"eu:hbo max":           {Required: []string{"HBO Max"}},
+	"eu:rakuten tv":        {Required: []string{"Rakuten TV"}},
+	"eu:skyshowtime":       {Required: []string{"SkyShowTime"}},
+	"eurosport":            {Required: []string{"Eurosport RO"}},
+	"google ai studio":     {Required: []string{"Google Gemini"}},
+	"gb:bbc":               {Required: []string{"BBC iPLAYER"}},
+	"gb:channel 4 **":      {Required: []string{"Channel 4"}},
+	"gb:channel 5 **":      {Required: []string{"Channel 5"}},
+	"gb:sky go /<replace with groupname>skygonz/<replace with groupname>": {Required: []string{"Sky Go"}},
+	"hbo":              {Required: []string{"HBO Now"}},
+	"hbo / max":        {Required: []string{"HBO Max"}},
+	"hbo max":          {Required: []string{"HBO Max"}},
+	"huluusa":          {Required: []string{"Hulu"}},
+	"in:jiocinema":     {Required: []string{"Jio Cinema"}},
+	"in:mxplayer":      {Required: []string{"MX Player"}},
+	"in:zee5":          {Required: []string{"Zee5"}},
+	"it rai play":      {Required: []string{"Rai Play"}},
+	"nl:npo":           {Required: []string{"NPO Start Plus"}},
+	"nl:videoland":     {Required: []string{"videoland"}},
+	"nz:maori tv":      {Required: []string{"Maori TV"}},
+	"nz:neon tv":       {Required: []string{"Neon TV"}},
+	"nz:skygo nz":      {Required: []string{"SkyGo NZ"}},
+	"nz:threenow":      {Required: []string{"ThreeNow"}},
+	"nfl":              {Required: []string{"NFL+"}},
+	"openai":           {Required: []string{"ChatGPT"}},
+	"chatgpt / openai": {Required: []string{"ChatGPT"}},
+	"gemini":           {Required: []string{"Google Gemini"}},
+	"paramount":        {Required: []string{"Paramount+"}},
+	"peacock":          {Required: []string{"Peacock TV"}},
+	"prime video":      {Required: []string{"Amazon Prime Video"}},
+	"amazon prime":     {Required: []string{"Amazon Prime Video"}},
+	"rakuten tv jp":    {Required: []string{"Rakuten TV"}},
+	"ru:amediateka":    {Required: []string{"Amediateka"}},
+	"sg:mewatch":       {Required: []string{"MeWatch"}},
+	"th:ais play":      {Required: []string{"AIS Play"}},
+	"th:trueid":        {Required: []string{"trueID"}},
+	"ua:megogo":        {Required: []string{"Megogo TV"}},
+	"vn:galaxy play":   {Required: []string{"Galaxy Play"}},
+	"vn:k+":            {Required: []string{"K+"}},
+	"youtube":          {Required: []string{"YouTube Premium"}},
+	"spotify":          {Required: []string{"Spotify Registration"}},
+}
+
+func mediaServiceKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func mediaLabelKey(label string) string {
+	value := strings.ToLower(strings.TrimSpace(label))
+	value = strings.TrimPrefix(value, "eu:")
+	value = strings.TrimPrefix(value, "fr:")
+	value = strings.TrimPrefix(value, "gb:")
+	value = strings.TrimPrefix(value, "de:")
+	value = strings.TrimPrefix(value, "au:")
+	value = strings.TrimPrefix(value, "nz:")
+	value = strings.TrimPrefix(value, "in:")
+	value = strings.TrimPrefix(value, "it:")
+	value = strings.TrimPrefix(value, "nl:")
+	value = strings.TrimPrefix(value, "sg:")
+	value = strings.TrimPrefix(value, "th:")
+	value = strings.TrimPrefix(value, "vn:")
+	value = strings.TrimPrefix(value, "ua:")
+	value = strings.TrimSuffix(value, ":")
+	value = strings.NewReplacer(" ", "", "/", "", "+", "", "-", "", "_", "", "(", "", ")", "", ".", "").Replace(value)
+	return value
+}
+
+func mediaTestSpecForService(service Service) mediaTestSpec {
+	name := mediaServiceKey(service.Name)
+	if spec, ok := mediaScriptAliases[name]; ok {
+		return mediaTestSpec{Required: append([]string(nil), spec.Required...), Any: append([]string(nil), spec.Any...)}
 	}
-	return providers[0]
+	nameKey := mediaLabelKey(name)
+	for _, label := range mediaScriptLabels {
+		if nameKey == mediaLabelKey(label) {
+			return mediaTestSpec{Required: []string{label}}
+		}
+	}
+	for _, domain := range service.Domains {
+		domainKey := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(domain), "*."))
+		switch {
+		case strings.Contains(domainKey, "youtube") || strings.Contains(domainKey, "googlevideo"):
+			return mediaTestSpec{Required: []string{"YouTube Premium"}}
+		case strings.Contains(domainKey, "gemini.google") || strings.Contains(domainKey, "generativelanguage.google"):
+			return mediaTestSpec{Required: []string{"Google Gemini"}}
+		case strings.Contains(domainKey, "chatgpt") || strings.Contains(domainKey, "openai"):
+			return mediaTestSpec{Required: []string{"ChatGPT"}}
+		case strings.Contains(domainKey, "disneyplus") || strings.Contains(domainKey, "bamgrid"):
+			return mediaTestSpec{Required: []string{"Disney+"}}
+		case strings.Contains(domainKey, "netflix"):
+			return mediaTestSpec{Required: []string{"Netflix"}}
+		case strings.Contains(domainKey, "primevideo") || strings.Contains(domainKey, "amazonvideo"):
+			return mediaTestSpec{Required: []string{"Amazon Prime Video"}}
+		case strings.Contains(domainKey, "peacock"):
+			return mediaTestSpec{Required: []string{"Peacock TV"}}
+		case strings.Contains(domainKey, "paramount"):
+			return mediaTestSpec{Required: []string{"Paramount+"}}
+		case strings.Contains(domainKey, "hbomax") || strings.Contains(domainKey, "max.com"):
+			return mediaTestSpec{Required: []string{"HBO Max"}}
+		case strings.Contains(domainKey, "hulu"):
+			return mediaTestSpec{Required: []string{"Hulu"}}
+		case strings.Contains(domainKey, "spotify"):
+			return mediaTestSpec{Required: []string{"Spotify Registration"}}
+		case strings.Contains(domainKey, "tiktok"):
+			return mediaTestSpec{Required: []string{"TikTok"}}
+		case strings.Contains(domainKey, "dazn"):
+			return mediaTestSpec{Required: []string{"Dazn"}}
+		case strings.Contains(domainKey, "crunchyroll"):
+			return mediaTestSpec{Required: []string{"Crunchyroll"}}
+		case strings.Contains(domainKey, "bilibili"):
+			return mediaTestSpec{Any: []string{"BiliBili China Mainland Only", "BiliBili Hongkong/Macau/Taiwan", "Bilibili Taiwan Only"}}
+		case strings.Contains(domainKey, "abema"):
+			return mediaTestSpec{Required: []string{"Abema.TV"}}
+		}
+	}
+	return mediaTestSpec{Required: []string{strings.TrimSpace(service.Name)}}
 }
 
 func unlockTestProviders(service Service) []string {
-	providers := map[string][]string{
-		"Apple TV+":        {"Apple"},
-		"Bilibili":         {"Bilibili Anime"},
-		"ChatGPT / OpenAI": {"ChatGPT"},
-		"Claude":           {"Claude"},
-		"Crunchyroll":      {"Crunchyroll"},
-		"DAZN":             {"Dazn"},
-		"Disney+":          {"Disney+"},
-		"Gemini":           {"Gemini"},
-		"HBO / Max":        {"HBO Max"},
-		"Netflix":          {"Netflix"},
-		"Paramount+":       {"ParamountPlus"},
-		"Spotify":          {"Spotify Registration"},
-		"TikTok":           {"TikTok"},
-		"YouTube":          {"YouTube Region", "YouTube CDN"},
-	}
-	return append([]string(nil), providers[service.Name]...)
+	spec := mediaTestSpecForService(service)
+	return append(append([]string(nil), spec.Required...), spec.Any...)
 }
 
 func preferredProbeDomain(service Service) string {

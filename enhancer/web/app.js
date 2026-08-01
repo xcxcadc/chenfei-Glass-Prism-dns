@@ -6,8 +6,8 @@ const translations = {
     addNode: "新增节点", refresh: "刷新", logout: "退出", totalServices: "服务数量", configured: "已配置", proxyNodes: "解锁机",
     customServices: "自定义服务", notConfigured: "未配置", auto: "自动选择", manual: "手动", open: "配置", domains: "域名",
     serviceConfig: "配置服务", currentRoute: "当前路由", targetServer: "目标解锁机", assign: "保存并切换", reset: "恢复自动",
-    connectivity: "DNS 解锁检测", testing: "正在检测...", triggerUnlock: "运行解锁检测", customEdit: "编辑服务", customDelete: "删除服务",
-    serviceName: "服务名称", category: "分类", domainList: "域名列表", viewDomains: "查看/编辑域名", restoreDomains: "恢复默认域名", domainOverrideHint: "已保存自定义域名覆盖；恢复后使用域名库当前值。", save: "保存", cancel: "取消", deleteConfirm: "确认删除这个自定义服务？",
+    connectivity: "DNS 解锁检测", testing: "正在检测...", triggerUnlock: "运行目标机实测", customEdit: "编辑服务", customDelete: "删除服务", deleteService: "彻底删除服务",
+    serviceName: "服务名称", category: "分类", domainList: "域名列表", viewDomains: "查看/编辑域名", restoreDomains: "恢复默认域名", domainOverrideHint: "已保存自定义域名覆盖；恢复后使用域名库当前值。", save: "保存", cancel: "取消", deleteConfirm: "确认彻底删除这个服务？",
     nodeName: "节点名称", role: "节点类型", proxy: "解锁机", dns: "DNS 客户端", address: "连接 IP / DNS 地址", country: "地区",
     group: "分组", priority: "优先级", smartMode: "智能模式", standardMode: "标准模式", createNode: "创建节点", editNode: "编辑节点", deleteNode: "删除节点", installCommand: "Agent 安装命令", showInstallCommand: "安装命令",
     nextStep: "下一步", back: "上一步", copy: "复制命令", copied: "已复制", close: "关闭", nodeHint: "支持字母、数字和空格；点、短横线、下划线会自动转换为空格。", groupHint: "支持字母、数字、空格和逗号；其他分隔符会自动转换为空格。",
@@ -20,11 +20,11 @@ const translations = {
     totalTraffic: "全体解锁流量", clientTraffic: "解锁链路流量", clearTraffic: "清零流量", clearAllTraffic: "全部清零", trafficHint: "按目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到已选解锁机 TCP 80/443 的 RX/TX；不统计整机网卡流量。", trafficUpdated: "流量更新时间",
     clientState: "数据面状态", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "路由探针",
     actualAudit: "目标机实测", auditPending: "待实测", targetAvailable: "目标机可用", targetUncertain: "探测待确认", targetProblem: "目标机异常", targetCompatibility: "目标机兼容性",
-    actualAvailable: "实测可用", actualProblem: "异常或波动", referenceOnly: "仅节点自检", agentReference: "节点自检（仅参考）", noTargetAudit: "尚无目标机实测",
+    actualAvailable: "实测可用", actualProblem: "异常或波动", referenceOnly: "仅节点自检", agentReference: "节点自检（仅参考）", noTargetAudit: "尚无目标机实测", auditNotCovered: "脚本未覆盖",
     accountSettings: "账户安全", accountHint: "验证旧账号后修改管理员用户名和密码。", oldUsername: "旧用户名", oldPassword: "旧密码", newUsername: "新用户名", newPassword: "新密码", confirmPassword: "确认新密码", updateAccount: "更新账户", credentialsInvalid: "旧用户名或旧密码不正确", passwordMismatch: "两次输入的新密码不一致", accountUpdated: "账户已更新，请使用新账号重新登录",
     siteSettings: "站点设置", siteSettingsHint: "自定义左上角产品名称、说明文字和浏览器标签标题。", siteName: "网页名称", browserTitle: "页面标签名称", siteTagline: "网页说明", saveBranding: "保存站点设置", brandingUpdated: "站点名称已更新",
     manageCategories: "分类管理", categoryHint: "服务分类只影响整理和筛选，不会修改域名、路由或客户端配置。", newCategory: "新建分类", categoryName: "分类名称", categoryCreated: "分类已创建", categoryDeleted: "分类已删除", editCategory: "分类", serviceCategory: "调整服务分类", restoreCategory: "恢复原分类", originalCategory: "原始分类", useCategory: "使用", builtInCategory: "内置", customCategory: "自定义", categoryInUse: "该分类仍有服务，请先移动这些服务", categoryDeleteConfirm: "删除这个空分类？",
-    unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点自检仅供参考；已配置服务会在同一行列出每台目标 IP 的三次聚合实测。", checkAgain: "重新检测", waitingResults: "正在等待节点返回检测结果...",
+    unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点页仅展示解锁机 Agent 参考状态；最终状态来自目标机的 media.ispvps.com IPv4 实测和 DNS/TLS 路径校验。", checkAgain: "重新检测", waitingResults: "正在等待目标机返回 IPv4 实测结果...",
   },
   en: {
     title: "Prism DNS Enhanced", online: "Controller connected", loginTitle: "Sign in to Prism Gateway", loginHint: "Use your Controller administrator account",
@@ -33,8 +33,8 @@ const translations = {
     addNode: "Add node", refresh: "Refresh", logout: "Sign out", totalServices: "Services", configured: "Configured", proxyNodes: "Proxy nodes",
     customServices: "Custom services", notConfigured: "Not configured", auto: "Automatic", manual: "Manual", open: "Configure", domains: "Domains",
     serviceConfig: "Configure service", currentRoute: "Current route", targetServer: "Target proxy", assign: "Save and switch", reset: "Reset to auto",
-    connectivity: "DNS unlock check", testing: "Testing...", triggerUnlock: "Run unlock check", customEdit: "Edit service", customDelete: "Delete service",
-    serviceName: "Service name", category: "Category", domainList: "Domain list", viewDomains: "View/edit domains", restoreDomains: "Restore default domains", domainOverrideHint: "A custom domain override is active. Restore to use the current catalog values.", save: "Save", cancel: "Cancel", deleteConfirm: "Delete this custom service?",
+    connectivity: "DNS unlock check", testing: "Testing...", triggerUnlock: "Run target audit", customEdit: "Edit service", customDelete: "Delete service", deleteService: "Permanently delete service",
+    serviceName: "Service name", category: "Category", domainList: "Domain list", viewDomains: "View/edit domains", restoreDomains: "Restore default domains", domainOverrideHint: "A custom domain override is active. Restore to use the current catalog values.", save: "Save", cancel: "Cancel", deleteConfirm: "Permanently delete this service?",
     nodeName: "Node name", role: "Node role", proxy: "Proxy agent", dns: "DNS client", address: "Connect IP / DNS address", country: "Region",
     group: "Group", priority: "Priority", smartMode: "Smart mode", standardMode: "Standard mode", createNode: "Create node", editNode: "Edit node", deleteNode: "Delete node", installCommand: "Agent install command", showInstallCommand: "Install command",
     nextStep: "Next step", back: "Back", copy: "Copy command", copied: "Copied", close: "Close", nodeHint: "Use letters, numbers, and spaces; dots, hyphens, and underscores become spaces.", groupHint: "Use letters, numbers, spaces, and commas; other separators become spaces.",
@@ -47,11 +47,11 @@ const translations = {
     totalTraffic: "Total unlock traffic", clientTraffic: "Unlock link traffic", clearTraffic: "Clear traffic", clearAllTraffic: "Clear all", trafficHint: "Each target IP counts local Prism DNS UDP/TCP 53 plus TCP 80/443 to selected unlock proxies. Whole-interface traffic is excluded.", trafficUpdated: "Traffic updated",
     clientState: "Data-plane status", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "Route probes",
     actualAudit: "Target audit", auditPending: "Not audited", targetAvailable: "Target passed", targetUncertain: "Probe inconclusive", targetProblem: "Target issue", targetCompatibility: "Target compatibility",
-    actualAvailable: "Verified passed", actualProblem: "Failed or unstable", referenceOnly: "Agent only", agentReference: "Agent self-check (reference only)", noTargetAudit: "No target audit yet",
+    actualAvailable: "Verified passed", actualProblem: "Failed or unstable", referenceOnly: "Agent only", agentReference: "Agent self-check (reference only)", noTargetAudit: "No target audit yet", auditNotCovered: "Not covered by script",
     accountSettings: "Account security", accountHint: "Verify the current credentials before changing the administrator username and password.", oldUsername: "Current username", oldPassword: "Current password", newUsername: "New username", newPassword: "New password", confirmPassword: "Confirm new password", updateAccount: "Update account", credentialsInvalid: "Current username or password is incorrect", passwordMismatch: "The new passwords do not match", accountUpdated: "Account updated. Sign in with the new credentials.",
     siteSettings: "Site settings", siteSettingsHint: "Customize the product name, supporting text, and browser tab title.", siteName: "Website name", browserTitle: "Browser tab title", siteTagline: "Website description", saveBranding: "Save site settings", brandingUpdated: "Site branding updated",
     manageCategories: "Manage categories", categoryHint: "Categories only organize and filter services. Domains, routes, and client configuration remain unchanged.", newCategory: "New category", categoryName: "Category name", categoryCreated: "Category created", categoryDeleted: "Category deleted", editCategory: "Category", serviceCategory: "Change service category", restoreCategory: "Restore original", originalCategory: "Original category", useCategory: "Use", builtInCategory: "Built-in", customCategory: "Custom", categoryInUse: "This category still contains services. Move them first.", categoryDeleteConfirm: "Delete this empty category?",
-    unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "Agent self-checks are reference-only. Configured services list each target IP's aggregated three-run audit on the same row.", checkAgain: "Check again", waitingResults: "Waiting for the node to return results...",
+    unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "The node page is reference-only. Final status comes from the target's IPv4 media.ispvps.com check and DNS/TLS path validation.", checkAgain: "Check again", waitingResults: "Waiting for the target's IPv4 audit...",
   }
 };
 
@@ -82,7 +82,7 @@ const state = {
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
-const iconAssetVersion = "1.5.9-grok-icons";
+const iconAssetVersion = "1.5.10-grok-icons";
 
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
@@ -422,6 +422,9 @@ function updateBackgroundIndicator() {
 function auditResultState(result) {
   const value = String(result || "").trim();
   if (!value) return {kind:"", label:t("auditPending"), detail:""};
+  if (/^NOT COVERED\b/i.test(value)) {
+    return {kind:"warn", label:t("auditNotCovered"), detail:value};
+  }
   if (/^YES\b|^PASS\b/i.test(value)) {
     return {kind:"good", label:state.lang === "zh" ? "完整应用链实测通过" : "Full application path verified", detail:value};
   }
@@ -459,11 +462,16 @@ function targetCompatibility(proxyId, service) {
   const observations = targetAuditObservations(proxyId, service);
   const measured = observations.filter(item => item.result);
   const passed = measured.filter(item => auditResultState(item.result).kind === "good").length;
+  const failed = measured.some(item => auditResultState(item.result).kind === "bad");
   let kind = "warn";
   if (measured.length && passed === measured.length && measured.length === observations.length) kind = "good";
-  else if (measured.length && passed === 0) kind = "bad";
+  else if (failed) kind = "bad";
   const label = observations.length ? `${t("actualAudit")} ${passed}/${observations.length}` : t("referenceOnly");
   return {observations, measured, passed, kind, label};
+}
+
+function targetAuditConfigs(proxyId) {
+  return state.ipConfigs.filter(config => Object.values(config.routes || {}).some(value => nodeID(value) === nodeID(proxyId)));
 }
 
 function proxyCompatibilitySummary(proxyId) {
@@ -792,8 +800,10 @@ function serviceTableRowHTML(service) {
   const statusClass = !configured ? "neutral" : status.kind === "warn" ? "warn" : status.kind === "bad" ? "bad" : "";
   const statusLabel = configured ? (status.kind === "bad" ? (state.lang === "zh" ? "异常" : "Issue") : (state.lang === "zh" ? "已配置" : "Configured")) : t("notConfigured");
   const auditLabel = status.kind === "good" ? (state.lang === "zh" ? "成功" : "Passed") : status.kind === "warn" ? (state.lang === "zh" ? "待确认" : "Review") : status.kind === "bad" ? (state.lang === "zh" ? "失败" : "Failed") : t("auditPending");
-  const customActions = service.custom ? `<button class="btn small icon service-custom-edit" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("customEdit"))}"><i class="bi bi-pencil"></i></button><button class="btn small icon danger service-custom-delete" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("customDelete"))}"><i class="bi bi-trash3"></i></button>` : "";
-  return `<tr class="${configured ? "configured" : ""}" data-service-id="${escapeHTML(service.id)}"><td><input class="service-select" type="checkbox" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}></td><td><button class="service-identity service-open" data-service-id="${escapeHTML(service.id)}">${serviceIconHTML(service)}<span><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</small></span></button></td><td><span class="table-status"><i class="status-dot ${statusClass}"></i>${escapeHTML(statusLabel)}</span></td><td><span class="result-badge ${status.kind || "neutral"}" title="${escapeHTML(result || status.raw || status.label)}">${escapeHTML(auditLabel)}</span></td><td>${node ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.country || node.public_ip || node.address || "-")}</small></span></div>` : `<span class="muted-cell">${t("notConfigured")}</span>`}</td><td><span class="last-audit" title="${escapeHTML(formatDate(targetConfig?.service_audited_at))}">${result ? escapeHTML(formatRelativeDate(targetConfig?.service_audited_at)) : t("auditPending")}</span></td><td><div class="table-actions">${configured ? `<button class="btn small icon service-audit-run" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "立即实测" : "Test now"}"><i class="bi bi-play-circle"></i></button>` : ""}<button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button><button class="btn small icon service-category-open" data-service-id="${escapeHTML(service.id)}" title="${t("editCategory")}"><i class="bi bi-three-dots"></i></button>${customActions}</div></td></tr>`;
+  const customActions = service.custom ? `<button class="btn small icon service-custom-edit" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("customEdit"))}"><i class="bi bi-pencil"></i></button>` : "";
+  const domainAction = `<button class="btn small icon service-domains-open" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("viewDomains"))}"><i class="bi bi-pencil-square"></i></button>`;
+  const deleteAction = `<button class="btn small icon danger service-delete${service.custom ? " service-custom-delete" : ""}" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("deleteService"))}"><i class="bi bi-trash3"></i></button>`;
+  return `<tr class="${configured ? "configured" : ""}" data-service-id="${escapeHTML(service.id)}"><td><input class="service-select" type="checkbox" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}></td><td><button class="service-identity service-open" data-service-id="${escapeHTML(service.id)}">${serviceIconHTML(service)}<span><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</small></span></button></td><td><span class="table-status"><i class="status-dot ${statusClass}"></i>${escapeHTML(statusLabel)}</span></td><td><span class="result-badge ${status.kind || "neutral"}" title="${escapeHTML(result || status.raw || status.label)}">${escapeHTML(auditLabel)}</span></td><td>${node ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.country || node.public_ip || node.address || "-")}</small></span></div>` : `<span class="muted-cell">${t("notConfigured")}</span>`}</td><td><span class="last-audit" title="${escapeHTML(formatDate(targetConfig?.service_audited_at))}">${result ? escapeHTML(formatRelativeDate(targetConfig?.service_audited_at)) : t("auditPending")}</span></td><td><div class="table-actions">${configured ? `<button class="btn small icon service-audit-run" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "立即实测" : "Test now"}"><i class="bi bi-play-circle"></i></button>` : ""}<button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button>${domainAction}<button class="btn small icon service-category-open" data-service-id="${escapeHTML(service.id)}" title="${t("editCategory")}"><i class="bi bi-three-dots"></i></button>${customActions}${deleteAction}</div></td></tr>`;
 }
 
 function contentHeaderHTML(title, hint, actions = "") {
@@ -888,34 +898,29 @@ function nodesHTML() {
   return `${header}<section class="node-grid">${state.nodes.map(node => {
     const online = isOnline(node); const compatibility = proxyCompatibilitySummary(node.id);
     const proxyDetail = compatibility.total ? `${compatibility.passed}/${compatibility.total}` : t("noTargetAudit");
+    const managedTarget = node.role === "proxy" && targetAuditConfigs(node.id).length > 0;
     const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail};
     return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${status.kind}" title="${escapeHTML(status.detail)}">${escapeHTML(status.label)}</span></div>
       <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("targetCompatibility")}</span><strong title="${escapeHTML(status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
-      <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${nodeID(node.id)}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}<button class="btn small node-test" data-node-id="${nodeID(node.id)}" ${node.role !== "proxy" ? "disabled" : ""}>${t("triggerUnlock")}</button><button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
+       <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${nodeID(node.id)}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}<button class="btn small node-test" data-node-id="${nodeID(node.id)}" ${node.role !== "proxy" || !managedTarget ? "disabled" : ""} title="${managedTarget ? "" : (state.lang === "zh" ? "请先在 IP 配置中绑定目标机" : "Bind a managed target IP first")}">${t("triggerUnlock")}</button><button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
 
 function nodeCheckHTML() {
   const node = state.nodes.find(item => nodeID(item.id) === nodeID(state.modal.nodeId));
-  const entries = unlockEntries(node);
-  const rowsData = entries.map(([name, value]) => {
-    const candidates = state.catalog.filter(item => serviceDetectorKey(item) === name);
-    const service = candidates.find(item => targetAuditObservations(node?.id, item).length) || candidates[0];
-    const compatibility = service ? targetCompatibility(node?.id, service) : {observations:[], measured:[], passed:0, kind:"warn", label:t("referenceOnly")};
-    return {name, value, compatibility};
-  });
+  const rowsData = state.catalog.filter(service => targetAuditObservations(node?.id, service).length).map(service => ({service, compatibility:targetCompatibility(node?.id, service)}));
   const actual = rowsData.filter(item => item.compatibility.observations.length);
   const available = actual.filter(item => item.compatibility.kind === "good");
   const problems = actual.filter(item => item.compatibility.kind !== "good");
-  const reference = rowsData.filter(item => !item.compatibility.observations.length);
-  const rows = rowsData.map(({name, value, compatibility}) => {
+  const pending = rowsData.filter(item => !item.compatibility.measured.length);
+  const rows = rowsData.map(({service, compatibility}) => {
     const targetLines = compatibility.observations.map(item => {
       const audit = auditResultState(item.result);
       return `<span title="${escapeHTML(audit.detail)}">${escapeHTML(item.ip)} · ${escapeHTML(audit.label)}</span>`;
     }).join("");
-    return `<div class="unlock-result-row"><div><strong>${escapeHTML(name)}</strong><span>${t("agentReference")} · ${escapeHTML(value)}</span>${targetLines}</div><span class="badge ${compatibility.kind}">${escapeHTML(compatibility.label)}</span></div>`;
+    return `<div class="unlock-result-row"><div>${serviceIconHTML(service)}<strong>${escapeHTML(displayServiceName(service))}</strong>${targetLines}</div><span class="badge ${compatibility.kind}">${escapeHTML(compatibility.label)}</span></div>`;
   }).join("");
-  return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("unlockResults")} · ${escapeHTML(node?.name || "-")}</h2><p>${t("unlockSourceHint")}</p></div><button class="btn icon modal-close">×</button></header><div class="modal-body"><div class="unlock-summary"><div><span>${t("actualAvailable")}</span><strong>${available.length}</strong></div><div><span>${t("actualProblem")}</span><strong>${problems.length}</strong></div><div><span>${t("referenceOnly")}</span><strong>${reference.length}</strong></div></div>${state.modal.running ? `<div class="unlock-wait"><div class="spinner"></div><span>${t("waitingResults")}</span></div>` : ""}<div class="unlock-results">${rows || `<div class="empty"><strong>${t("unknown")}</strong></div>`}</div>${state.modal.error ? `<div class="form-error">${escapeHTML(state.modal.error)}</div>` : ""}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close">${t("close")}</button><button class="btn primary" id="node-check-retry" ${state.modal.running ? "disabled" : ""}>${t("checkAgain")}</button></div></footer></section></div>`;
+  return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("unlockResults")} · ${escapeHTML(node?.name || "-")}</h2><p>${t("unlockSourceHint")}</p></div><button class="btn icon modal-close">×</button></header><div class="modal-body"><div class="unlock-summary"><div><span>${t("actualAvailable")}</span><strong>${available.length}</strong></div><div><span>${t("actualProblem")}</span><strong>${problems.length}</strong></div><div><span>${t("auditPending")}</span><strong>${pending.length}</strong></div></div>${state.modal.running ? `<div class="unlock-wait"><div class="spinner"></div><span>${t("waitingResults")}</span></div>` : ""}<div class="unlock-results">${rows || `<div class="empty"><strong>${targetAuditConfigs(node?.id).length ? t("auditPending") : t("noTargetAudit")}</strong></div>`}</div>${state.modal.error ? `<div class="form-error">${escapeHTML(state.modal.error)}</div>` : ""}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close">${t("close")}</button><button class="btn primary" id="node-check-retry" ${state.modal.running ? "disabled" : ""}>${t("checkAgain")}</button></div></footer></section></div>`;
 }
 
 function ipConfigNode(config) { return config ? state.nodes.find(node => nodeID(node.id) === nodeID(config.dns_node_id)) : null; }
@@ -1002,7 +1007,8 @@ function bindShell() {
     if (button && container.contains(button)) {
       const node = state.nodes.find(item => nodeID(item.id) === nodeID(button.dataset.nodeId));
       if (button.matches(".service-custom-edit")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) openServiceForm(service); return; }
-      if (button.matches(".service-custom-delete")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) deleteCustomService(service); return; }
+       if (button.matches(".service-domains-open")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) openServiceDomains(service.id); return; }
+       if (button.matches(".service-delete")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) deleteService(service); return; }
       if (button.matches(".node-test")) { event.preventDefault(); triggerNodeCheck(button.dataset.nodeId); return; }
       if (button.matches(".node-install")) { event.preventDefault(); openInstallCommand(button.dataset.nodeId); return; }
       if (button.matches(".node-manage-ip")) { event.preventDefault(); const existing = configForNode(node); openIPForm(existing, existing ? 2 : 1, node); return; }
@@ -1219,7 +1225,7 @@ function serviceModalHTML(service) {
      <div class="service-domain-box"><div class="service-domain-head"><div><strong>${t("domainList")}</strong><span>${service.domain_override ? t("domainOverrideHint") : `${service.domains.length} ${t("domains")}`}</span></div><button class="btn small" id="edit-service-domains" type="button">${t("viewDomains")}</button></div><div class="domain-chip-list">${visibleDomains.map(domain => `<code>${escapeHTML(domain)}</code>`).join("")}${hiddenDomainCount ? `<span class="domain-chip-more">+${hiddenDomainCount}</span>` : ""}</div>${service.domain_override ? `<button class="btn small" id="restore-service-domains" type="button">${t("restoreDomains")}</button>` : ""}</div>
      <div class="inline" style="margin-top:15px"><span class="badge ${manual ? "warn" : ""}">${manual ? t("manual") : t("auto")}</span><span class="hint">${t("currentRoute")}: ${escapeHTML(current?.name || "-")}</span></div>
      ${state.testResults ? testResultsHTML(state.testResults) : ""}</div>
-     <footer class="modal-foot"><div class="inline"><button class="btn small" id="edit-service-category" type="button">${t("serviceCategory")}</button>${service.custom ? `<button class="btn small" id="edit-custom" type="button">${t("customEdit")}</button><button class="btn small danger" id="delete-custom" type="button">${t("customDelete")}</button>` : ""}</div><div class="modal-foot-right"><button class="btn" id="test-service" type="button" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" type="button" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" type="button" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
+      <footer class="modal-foot"><div class="inline"><button class="btn small" id="edit-service-category" type="button">${t("serviceCategory")}</button>${service.custom ? `<button class="btn small" id="edit-custom" type="button">${t("customEdit")}</button>` : ""}<button class="btn small danger" id="delete-service" type="button">${t("deleteService")}</button></div><div class="modal-foot-right"><button class="btn" id="test-service" type="button" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" type="button" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" type="button" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
 }
 
 function serviceDomainFormHTML(service) {
@@ -1246,7 +1252,7 @@ function serviceFormHTML(service) {
 function serviceCategoryHTML() {
   const service = state.modal.service;
   const categories = catalogCategories();
-  return `<div class="modal-backdrop"><form class="modal medium panel" id="service-category-form"><header class="modal-head"><div><h2>${t("serviceCategory")}</h2><p>${escapeHTML(displayServiceName(service))}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="category-service-summary">${serviceIconHTML(service)}<div><strong>${escapeHTML(displayServiceName(service))}</strong><span>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</span></div></div><div class="field"><label>${t("category")}</label><select class="select" name="category">${categories.map(category => `<option value="${escapeHTML(category)}" ${category === service.category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select></div>${service.original_category ? `<div class="hint">${t("originalCategory")}: ${escapeHTML(displayCategory(service.original_category))}</div>` : ""}<div class="category-note">${t("categoryHint")}</div><button class="btn" id="open-category-manager" type="button">＋ ${t("newCategory")}</button><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div>${service.original_category ? `<button class="btn" id="restore-service-category" type="button" ${state.modal.busy ? "disabled" : ""}>${t("restoreCategory")}</button>` : ""}${service.custom ? `<button class="btn danger" id="delete-custom-category-view" type="button" ${state.modal.busy ? "disabled" : ""}>${t("customDelete")}</button>` : ""}</div><div class="modal-foot-right"><button class="btn modal-close" type="button" ${state.modal.busy ? "disabled" : ""}>${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy || !categories.length ? "disabled" : ""}>${t("save")}</button></div></footer></form></div>`;
+  return `<div class="modal-backdrop"><form class="modal medium panel" id="service-category-form"><header class="modal-head"><div><h2>${t("serviceCategory")}</h2><p>${escapeHTML(displayServiceName(service))}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="category-service-summary">${serviceIconHTML(service)}<div><strong>${escapeHTML(displayServiceName(service))}</strong><span>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</span></div></div><div class="field"><label>${t("category")}</label><select class="select" name="category">${categories.map(category => `<option value="${escapeHTML(category)}" ${category === service.category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select></div>${service.original_category ? `<div class="hint">${t("originalCategory")}: ${escapeHTML(displayCategory(service.original_category))}</div>` : ""}<div class="category-note">${t("categoryHint")}</div><button class="btn" id="open-category-manager" type="button">＋ ${t("newCategory")}</button><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div>${service.original_category ? `<button class="btn" id="restore-service-category" type="button" ${state.modal.busy ? "disabled" : ""}>${t("restoreCategory")}</button>` : ""}<button class="btn danger" id="delete-service-category-view" type="button" ${state.modal.busy ? "disabled" : ""}>${t("deleteService")}</button></div><div class="modal-foot-right"><button class="btn modal-close" type="button" ${state.modal.busy ? "disabled" : ""}>${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy || !categories.length ? "disabled" : ""}>${t("save")}</button></div></footer></form></div>`;
 }
 
 function categoryManagerHTML() {
@@ -1323,8 +1329,8 @@ function bindModal() {
   document.getElementById("restore-service-domains")?.addEventListener("click", restoreServiceDomains);
   document.getElementById("edit-custom")?.addEventListener("click", () => openServiceForm(state.modal.service));
   document.getElementById("edit-service-category")?.addEventListener("click", () => openServiceCategory(state.modal.service.id));
-  document.getElementById("delete-custom")?.addEventListener("click", deleteCustomService);
-  document.getElementById("delete-custom-category-view")?.addEventListener("click", deleteCustomService);
+  document.getElementById("delete-service")?.addEventListener("click", () => deleteService());
+  document.getElementById("delete-service-category-view")?.addEventListener("click", () => deleteService());
   document.getElementById("service-form")?.addEventListener("submit", saveCustomService);
   document.getElementById("service-domains-form")?.addEventListener("submit", saveServiceDomains);
   document.getElementById("service-category-form")?.addEventListener("submit", saveServiceCategory);
@@ -1604,30 +1610,37 @@ function serverHost(node) {
 }
 
 async function testService() {
-  const service = state.modal.service; const node = state.nodes.find(item => nodeID(item.id) === nodeID(state.modal.proxyId)); if (!node) return;
-  const button = document.getElementById("test-service"); button.disabled = true; button.textContent = t("testing");
+  const service = state.modal.service;
+  const proxyID = nodeID(state.modal.proxyId);
+  const node = state.nodes.find(item => nodeID(item.id) === proxyID);
+  if (!node) return;
+  const button = document.getElementById("test-service");
+  button.disabled = true;
+  button.textContent = t("testing");
   try {
-    const results = [];
-    const targetConfig = state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(state.dnsNodeId));
-    const targetResult = serviceResult(targetConfig, service);
-    const detector = serviceDetectorKey(service);
-    if (targetResult) {
-      results.push({domain:`${t("actualAudit")} · UnlockTests`, detail:targetResult, success:auditResultState(targetResult).kind === "good"});
-    } else if (detector) {
-      try {
-        const latest = await refreshNodeUnlock(node.id, true);
-        const value = parseUnlock(latest)[detector] || "No result";
-        results.push({domain:`UnlockTests · ${detector}`, detail:value, success:unlockPassed(value)});
-      } catch (error) {
-        results.push({domain:`UnlockTests · ${detector}`, detail:error.message, success:false});
-      }
+    const configs = targetAuditConfigs(proxyID).filter(config => {
+      const route = serviceRouteEntry(config, service);
+      return route && nodeID(route.value) === proxyID;
+    });
+    if (!configs.length) {
+      throw new Error(state.lang === "zh" ? "请先在 IP 配置中把此服务绑定到当前解锁机，并安装目标机 Agent" : "Bind this service to the selected proxy in IP configuration and install the target Agent first");
     }
-    const probeDomain = preferredServiceTestDomain(service);
-    const data = await api("/enhancer/api/connectivity", {method:"POST", body:JSON.stringify({proxy_server:serverHost(node), domains:probeDomain ? [probeDomain] : [], timeout_ms:12000})});
-    results.push(...(data.results || []));
+    const results = [];
+    for (const config of configs) {
+      const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(config.id)}/audit`, {method:"POST"});
+      const requestedAt = new Date(requested.service_audit_requested_at || Date.now()).getTime();
+      const latest = await waitForTargetServiceAudit(config.id, service.id, requestedAt);
+      const detail = serviceResult(latest, service);
+      results.push({domain:`${config.ip} · ${t("actualAudit")} · media.ispvps.com`, detail, success:auditResultState(detail).kind === "good"});
+    }
+    state.ipConfigs = await api("/enhancer/api/ip-configs");
     state.testResults = results;
     toast(t("testDone"), "good"); renderModal();
-  } catch (error) { toast(error.message, "error"); button.disabled = false; button.textContent = t("connectivity"); }
+  } catch (error) {
+    toast(error.message, "error");
+    button.disabled = false;
+    button.textContent = t("connectivity");
+  }
 }
 
 async function saveCustomService(event) {
@@ -1643,13 +1656,12 @@ async function saveCustomService(event) {
   } catch (error) { toast(error.message, "error"); }
 }
 
-async function deleteCustomService(service = state.modal?.service) {
-  const serviceID = customServiceID(service);
-  if (!service || !serviceID || !confirm(t("deleteConfirm"))) return;
+async function deleteService(service = state.modal?.service) {
+  if (!service || !confirm(t("deleteConfirm"))) return;
   try {
     const rule = serviceRule(service);
-    if (rule && serviceID === service.id) await api(`/api/rules/${rule.id}`, {method:"DELETE"});
-    await api(`/enhancer/api/custom-services/${serviceID}`, {method:"DELETE"}); toast(t("deleted"), "good"); closeModal(); await loadAll(true);
+    if (rule) await api(`/api/rules/${encodeURIComponent(rule.id)}`, {method:"DELETE"});
+    await api(`/enhancer/api/services/${encodeURIComponent(service.id)}`, {method:"DELETE"}); toast(t("deleted"), "good"); closeModal(); await loadAll(true);
   }
   catch (error) { toast(error.message, "error"); }
 }
@@ -1740,28 +1752,17 @@ async function triggerIPServiceAudit(serviceId) {
   try {
     const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(configID)}/audit`, {method:"POST"});
     const requestedAt = new Date(requested.service_audit_requested_at || Date.now()).getTime();
-    const started = Date.now();
-    let latest = requested;
-    while (Date.now() - started < 600000) {
-      await delay(2500);
-      const configs = await api("/enhancer/api/ip-configs");
-      state.ipConfigs = Array.isArray(configs) ? configs : state.ipConfigs;
-      latest = state.ipConfigs.find(config => config.id === configID) || latest;
+    const latest = await waitForTargetServiceAudit(configID, serviceId, requestedAt, config => {
       const activeModal = state.modal;
-      if (activeModal?.type !== "ip-form" || activeModal.config?.id !== configID) return;
-      activeModal.config = latest;
-      activeModal.routes = {...(latest.routes || activeModal.routes)};
-      updateIPServiceAuditUI(latest);
-      const auditedAt = new Date(latest.service_audited_at || 0).getTime();
-      const service = state.catalog.find(item => item.id === serviceId);
-      const latestResult = serviceResult(latest, service);
-      if (auditedAt >= requestedAt && latestResult) {
-        const audit = auditResultState(latestResult);
-        toast(audit.label || t("testDone"), audit.kind === "bad" ? "error" : audit.kind || "good");
-        return;
-      }
-    }
-    throw new Error(state.lang === "zh" ? "目标机尚未返回实测结果，请检查客户端在线状态" : "The target did not return an audit result");
+      if (activeModal?.type !== "ip-form" || activeModal.config?.id !== configID) return false;
+      activeModal.config = config;
+      activeModal.routes = {...(config.routes || activeModal.routes)};
+      updateIPServiceAuditUI(config);
+      return true;
+    });
+    const service = state.catalog.find(item => item.id === serviceId);
+    const audit = auditResultState(serviceResult(latest, service));
+    toast(audit.label || t("testDone"), audit.kind === "bad" ? "error" : audit.kind || "good");
   } catch (error) {
     toast(error.message, "error");
   } finally {
@@ -1770,6 +1771,23 @@ async function triggerIPServiceAudit(serviceId) {
       button.textContent = state.lang === "zh" ? "立即实测" : "Test now";
     });
   }
+}
+
+async function waitForTargetServiceAudit(configID, serviceID, requestedAt, onUpdate) {
+  const started = Date.now();
+  let latest = state.ipConfigs.find(config => config.id === configID) || null;
+  while (Date.now() - started < 600000) {
+    await delay(2500);
+    const configs = await api("/enhancer/api/ip-configs");
+    state.ipConfigs = Array.isArray(configs) ? configs : state.ipConfigs;
+    latest = state.ipConfigs.find(config => config.id === configID) || latest;
+    if (!latest) continue;
+    if (onUpdate && onUpdate(latest) === false) return latest;
+    const auditedAt = new Date(latest.service_audited_at || 0).getTime();
+    const service = state.catalog.find(item => nodeID(item.id) === nodeID(serviceID));
+    if (auditedAt >= requestedAt && serviceResult(latest, service)) return latest;
+  }
+  throw new Error(state.lang === "zh" ? "目标机尚未返回实测结果，请检查 Agent 在线状态" : "The target did not return an audit result");
 }
 
 async function deleteIPConfig() {
@@ -1890,20 +1908,29 @@ async function copyInstallCommand() {
 function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 
 async function refreshNodeUnlock(id, trigger = false) {
-  const previous = JSON.stringify(parseUnlock(state.nodes.find(node => nodeID(node.id) === nodeID(id))));
-  if (trigger) await api(`/api/nodes/${encodeURIComponent(id)}/check_unlock`, {method:"POST"});
-  const started = Date.now();
-  let latest = state.nodes.find(node => nodeID(node.id) === nodeID(id));
-  while (Date.now() - started < 45000) {
-    await delay(2000);
-    const nodes = await api("/enhancer/api/nodes");
-    state.nodes = Array.isArray(nodes) ? nodes : state.nodes;
-    latest = state.nodes.find(node => nodeID(node.id) === nodeID(id));
-    const current = JSON.stringify(parseUnlock(latest));
-    if (current !== "{}" && (current !== previous || Date.now() - started >= 6000)) return latest;
+  const configs = targetAuditConfigs(id);
+  if (!configs.length) throw new Error(state.lang === "zh" ? "该解锁机尚未绑定任何目标 IP" : "No managed target IP uses this proxy");
+  const requestedAt = new Map();
+  if (trigger) {
+    for (const config of configs) {
+      const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(config.id)}/audit`, {method:"POST"});
+      requestedAt.set(config.id, new Date(requested.service_audit_requested_at || Date.now()).getTime());
+    }
   }
-  if (!latest || !unlockEntries(latest).length) throw new Error(state.lang === "zh" ? "节点未在 45 秒内返回检测结果" : "The node did not return results within 45 seconds");
-  return latest;
+  const started = Date.now();
+  while (Date.now() - started < 600000) {
+    await delay(2500);
+    const configsLatest = await api("/enhancer/api/ip-configs");
+    state.ipConfigs = Array.isArray(configsLatest) ? configsLatest : state.ipConfigs;
+    const complete = configs.every(config => {
+      const latest = state.ipConfigs.find(item => item.id === config.id);
+      if (!latest?.service_audited_at) return false;
+      const auditedAt = new Date(latest.service_audited_at).getTime();
+      return auditedAt >= (requestedAt.get(config.id) || 0) && Object.keys(latest.service_results || {}).length > 0;
+    });
+    if (complete) return state.nodes.find(node => nodeID(node.id) === nodeID(id));
+  }
+  throw new Error(state.lang === "zh" ? "目标机未在 10 分钟内返回媒体实测结果，请检查 Agent 在线状态" : "Managed targets did not return media audit results within 10 minutes");
 }
 
 async function triggerNodeCheck(id) {

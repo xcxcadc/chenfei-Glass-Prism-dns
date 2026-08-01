@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.9"
+const uiVersion = "1.5.10"
 
 type App struct {
 	catalog      *CatalogManager
@@ -94,6 +94,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/catalog", app.handleCatalog)
 	mux.HandleFunc("/enhancer/api/custom-services", app.handleCustomServices)
 	mux.HandleFunc("/enhancer/api/custom-services/", app.handleCustomService)
+	mux.HandleFunc("/enhancer/api/services/", app.handleServiceDelete)
 	mux.HandleFunc("/enhancer/api/service-domains/", app.handleServiceDomains)
 	mux.HandleFunc("/enhancer/api/categories", app.handleCategories)
 	mux.HandleFunc("/enhancer/api/service-categories/", app.handleServiceCategory)
@@ -253,19 +254,94 @@ func (app *App) handleCustomService(writer http.ResponseWriter, request *http.Re
 		}
 		writeJSON(writer, http.StatusOK, saved)
 	case http.MethodDelete:
-		if err := app.store.Delete(id); errors.Is(err, os.ErrNotExist) {
+		service, ok := app.store.Get(id)
+		if !ok {
+			writeJSON(writer, http.StatusNotFound, map[string]string{"error": "服务不存在"})
+			return
+		}
+		if err := app.deleteServiceData(service); errors.Is(err, os.ErrNotExist) {
 			writeJSON(writer, http.StatusNotFound, map[string]string{"error": "服务不存在"})
 			return
 		} else if err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = app.preferences.ClearServiceCategory(id)
-		_ = app.preferences.ClearServiceDomains(id)
 		writer.WriteHeader(http.StatusNoContent)
 	default:
 		methodNotAllowed(writer, http.MethodPut, http.MethodDelete)
 	}
+}
+
+func (app *App) handleServiceDelete(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodDelete {
+		methodNotAllowed(writer, http.MethodDelete)
+		return
+	}
+	if !app.authorize(request.Context(), request.Header.Get("Authorization")) {
+		writeJSON(writer, http.StatusUnauthorized, map[string]string{"error": "登录已失效"})
+		return
+	}
+	id := strings.TrimPrefix(request.URL.Path, "/enhancer/api/services/")
+	if id == "" || strings.Contains(id, "/") {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "无效的服务 ID"})
+		return
+	}
+	service, ok := app.catalog.Service(request.Context(), id)
+	if !ok {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "服务不存在"})
+		return
+	}
+	if service.Custom {
+		customID := customServiceIDFromService(service)
+		if customID == "" {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "无效的自定义服务"})
+			return
+		}
+		if saved, exists := app.store.Get(customID); exists {
+			service = saved
+		}
+	}
+	if err := app.deleteServiceData(service); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeJSON(writer, http.StatusNotFound, map[string]string{"error": "服务不存在"})
+			return
+		}
+		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (app *App) deleteServiceData(service Service) error {
+	if _, err := app.ipStore.RemoveService(service); err != nil {
+		return err
+	}
+	if service.Custom {
+		customID := customServiceIDFromService(service)
+		if customID == "" {
+			return errors.New("invalid custom service")
+		}
+		if err := app.store.Delete(customID); err != nil {
+			return err
+		}
+		if err := app.preferences.ClearServiceCategory(customID); err != nil {
+			return err
+		}
+		return app.preferences.ClearServiceDomains(customID)
+	}
+	return app.preferences.DeleteService(service.ID, service.Aliases)
+}
+
+func customServiceIDFromService(service Service) string {
+	if strings.HasPrefix(service.ID, "custom-") {
+		return service.ID
+	}
+	for _, alias := range service.Aliases {
+		if strings.HasPrefix(alias, "custom-") {
+			return alias
+		}
+	}
+	return ""
 }
 
 func (app *App) handleServiceDomains(writer http.ResponseWriter, request *http.Request) {

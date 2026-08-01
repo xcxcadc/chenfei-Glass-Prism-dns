@@ -341,6 +341,62 @@ func (store *IPConfigStore) ReplaceRoutes(id string, routes map[string]string) (
 	return record.public(), nil
 }
 
+func (store *IPConfigStore) RemoveService(service Service) (int, error) {
+	serviceIDs := uniqueServiceIDs(service.ID, service.Aliases)
+	if len(serviceIDs) == 0 {
+		return 0, errors.New("service id is required")
+	}
+	deleted := make(map[string]struct{}, len(serviceIDs))
+	for _, serviceID := range serviceIDs {
+		deleted[serviceID] = struct{}{}
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	changed := make(map[string]ipConfigRecord)
+	now := time.Now().UTC()
+	for id, record := range store.configs {
+		routes := cloneStringMap(record.Routes)
+		routeChanged := false
+		for serviceID := range deleted {
+			if _, ok := routes[serviceID]; ok {
+				delete(routes, serviceID)
+				routeChanged = true
+			}
+		}
+		resultChanged := false
+		results := cloneStringMap(record.ServiceResults)
+		for serviceID := range deleted {
+			if _, ok := results[serviceID]; ok {
+				delete(results, serviceID)
+				resultChanged = true
+			}
+		}
+		if !routeChanged && !resultChanged {
+			continue
+		}
+		changed[id] = cloneIPConfigRecord(record)
+		if routeChanged {
+			store.applyNormalizedRoutes(&record, routes, now)
+		} else {
+			record.ServiceResults = results
+			if len(results) == 0 {
+				record.ServiceResults = nil
+			}
+		}
+		store.configs[id] = record
+	}
+	if len(changed) == 0 {
+		return 0, nil
+	}
+	if err := store.saveLocked(); err != nil {
+		for id, record := range changed {
+			store.configs[id] = record
+		}
+		return 0, err
+	}
+	return len(changed), nil
+}
+
 func (store *IPConfigStore) NormalizeRouteConflicts(services []Service) (int, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()

@@ -72,6 +72,42 @@ func TestCatalogPreferenceStorePersistsDomainOverridesAndLegacyAliases(t *testin
 	}
 }
 
+func TestCatalogPreferenceStorePermanentlyDeletesServiceAndAliases(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog-preferences.json")
+	store, err := NewCatalogPreferenceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetServiceCategory("canonical-service", "Custom"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetServiceDomains("legacy-service", []string{"legacy.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteService("canonical-service", []string{"legacy-service"}); err != nil {
+		t.Fatal(err)
+	}
+
+	services := store.Apply([]Service{
+		{ID: "canonical-service", Aliases: []string{"legacy-service"}, Name: "Deleted", Domains: []string{"deleted.example"}},
+		{ID: "kept-service", Name: "Kept", Domains: []string{"kept.example"}},
+	})
+	if len(services) != 1 || services[0].ID != "kept-service" {
+		t.Fatalf("deleted service remained in catalog: %+v", services)
+	}
+
+	reloaded, err := NewCatalogPreferenceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if services := reloaded.Apply([]Service{{ID: "canonical-service", Aliases: []string{"legacy-service"}}}); len(services) != 0 {
+		t.Fatalf("deleted service returned after reload: %+v", services)
+	}
+	if err := reloaded.SetServiceDomains("canonical-service", []string{}); err == nil {
+		t.Fatal("empty domain override should be rejected")
+	}
+}
+
 func TestCatalogSnapshotIncludesEmptyCustomCategories(t *testing.T) {
 	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
 	preferences, _ := NewCatalogPreferenceStore(filepath.Join(t.TempDir(), "catalog-preferences.json"))

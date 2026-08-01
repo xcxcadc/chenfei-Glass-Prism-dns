@@ -6,7 +6,7 @@
 |---|---|---|
 | Controller 数据库 | `/opt/prism/data.db` | 管理员账号、节点、密钥、规则和运行状态 |
 | Controller 环境 | `/opt/prism/.env` | JWT 密钥与 Controller 环境配置 |
-| Enhancer 数据目录 | `/var/lib/prism-enhancer` | 自定义服务与分类、IP 配置、路由、流量、节点中文名称/地区、品牌设置、传输信息和服务图标缓存 |
+| Enhancer 数据目录 | `/var/lib/prism-enhancer` | 自定义服务与分类、内置服务域名覆盖及永久删除标记、IP 配置、路由、流量、节点中文名称/地区、品牌设置、传输信息和服务图标缓存 |
 
 迁移面板时必须同时迁移这三项。只复制 `data.db` 会丢失 IP 配置、流量、服务分类、中文名称、地区和站点标题。
 

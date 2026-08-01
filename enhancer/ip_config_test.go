@@ -104,8 +104,8 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if !strings.Contains(bootstrapResponse.Body.String(), `"route_domains":["netflix.com"]`) {
 		t.Fatalf("bootstrap did not include every routed domain: %s", bootstrapResponse.Body.String())
 	}
-	if !strings.Contains(bootstrapResponse.Body.String(), `"unlock_test":"Netflix"`) {
-		t.Fatalf("bootstrap did not include UnlockTests provider: %s", bootstrapResponse.Body.String())
+	if !strings.Contains(bootstrapResponse.Body.String(), `"media_source":"https://media.ispvps.com"`) || !strings.Contains(bootstrapResponse.Body.String(), `"media_tests":["Netflix"]`) {
+		t.Fatalf("bootstrap did not include media.ispvps.com checks: %s", bootstrapResponse.Body.String())
 	}
 	if !strings.Contains(bootstrapResponse.Body.String(), `"traffic_peers":["198.51.100.20","2001:db8::20"]`) {
 		t.Fatalf("bootstrap did not preserve both proxy address families: %s", bootstrapResponse.Body.String())
@@ -547,6 +547,95 @@ func TestPreferredProbeDomainsIncludesGeminiApplicationDependencies(t *testing.T
 	}
 }
 
+func TestUnlockTestProvidersUseMediaISPVPSLabels(t *testing.T) {
+	tests := []struct {
+		name string
+		want []string
+	}{
+		{name: "Gemini", want: []string{"Google Gemini"}},
+		{name: "Disney+", want: []string{"Disney+"}},
+		{name: "YouTube", want: []string{"YouTube Premium"}},
+		{name: "Netflix", want: []string{"Netflix"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := unlockTestProviders(Service{Name: test.name})
+			if strings.Join(got, "\x00") != strings.Join(test.want, "\x00") {
+				t.Fatalf("media labels for %q = %v, want %v", test.name, got, test.want)
+			}
+		})
+	}
+}
+
+func TestMediaTestSpecSeparatesRequiredAndAlternativeLabels(t *testing.T) {
+	youtube := mediaTestSpecForService(Service{Name: "YouTube"})
+	if strings.Join(youtube.Required, "\x00") != "YouTube Premium" || len(youtube.Any) != 0 {
+		t.Fatalf("YouTube media spec = %+v, want only YouTube Premium required", youtube)
+	}
+	bilibili := mediaTestSpecForService(Service{Name: "Bilibili"})
+	if len(bilibili.Required) != 0 || strings.Join(bilibili.Any, "\x00") != "BiliBili China Mainland Only\x00BiliBili Hongkong/Macau/Taiwan\x00Bilibili Taiwan Only" {
+		t.Fatalf("Bilibili media spec = %+v, want alternative regional labels", bilibili)
+	}
+	claude := mediaTestSpecForService(Service{Name: "Claude"})
+	if strings.Join(claude.Required, "\x00") != "Claude" || len(claude.Any) != 0 {
+		t.Fatalf("Claude should be tested as an exact media.ispvps.com label: %+v", claude)
+	}
+}
+
+func TestMediaTestSpecAcceptsCatalogAliases(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		label string
+	}{
+		{name: "Hulu", label: "Hulu"},
+		{name: "HBO Max", label: "HBO Max"},
+		{name: "Peacock TV", label: "Peacock TV"},
+		{name: "Amazon Prime Video", label: "Amazon Prime Video"},
+		{name: "OpenAI", label: "ChatGPT"},
+	} {
+		spec := mediaTestSpecForService(Service{Name: test.name})
+		if len(spec.Required) != 1 || spec.Required[0] != test.label {
+			t.Fatalf("media alias %q = %+v, want %q", test.name, spec, test.label)
+		}
+	}
+}
+
+func TestMediaTestSpecCoversRegionalCatalogLabels(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		label string
+	}{
+		{name: "Abema", label: "Abema.TV"},
+		{name: "Bilibili", label: "BiliBili Hongkong/Macau/Taiwan"},
+		{name: "Hulu Japan", label: "Hulu Japan"},
+		{name: "Viu.TV", label: "Viu.TV"},
+		{name: "YouTube", label: "YouTube Premium"},
+	} {
+		spec := mediaTestSpecForService(Service{Name: test.name})
+		labels := append(append([]string(nil), spec.Required...), spec.Any...)
+		if !contains(labels, test.label) {
+			t.Fatalf("regional media label %q = %+v, want %q", test.name, spec, test.label)
+		}
+	}
+}
+
+func TestMediaTestSpecUsesDomainsForCustomNames(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		domain string
+		label  string
+	}{
+		{name: "我的 AI 服务", domain: "gemini.google.com", label: "Google Gemini"},
+		{name: "视频服务", domain: "*.youtube.com", label: "YouTube Premium"},
+		{name: "自定义流媒体", domain: "disneyplus.com", label: "Disney+"},
+	} {
+		spec := mediaTestSpecForService(Service{Name: test.name, Domains: []string{test.domain}})
+		if len(spec.Required) != 1 || spec.Required[0] != test.label {
+			t.Fatalf("domain mapping %q/%q = %+v, want %q", test.name, test.domain, spec, test.label)
+		}
+	}
+}
+
 func TestPreferredProbeDomainsUsesReachableOpenAIDependencyHosts(t *testing.T) {
 	service := Service{Name: "ChatGPT / OpenAI", Domains: []string{
 		"chatgpt.com",
@@ -570,8 +659,8 @@ func TestPreferredProbeDomainsUsesReachableOpenAIDependencyHosts(t *testing.T) {
 
 func TestCopilotImageCreatorUsesItsOwnPathChecks(t *testing.T) {
 	service := Service{Name: "Microsoft Copilot Image Creator", Domains: []string{"copilot.microsoft.com"}}
-	if providers := unlockTestProviders(service); len(providers) != 0 {
-		t.Fatalf("unsupported shared provider must not override path checks: %#v", providers)
+	if providers := unlockTestProviders(service); len(providers) != 1 || providers[0] != service.Name {
+		t.Fatalf("custom media label should be tested explicitly: %#v", providers)
 	}
 	if domains := preferredProbeDomains(service); len(domains) != 1 || domains[0] != "copilot.microsoft.com" {
 		t.Fatalf("expected the Copilot page probe, got %#v", domains)
