@@ -16,6 +16,7 @@
 - 目标机实测只更新报告，WAF、超时或第三方检测波动都不会自动切换 Proxy；每项服务始终使用用户最后一次保存的 IPv4 节点。
 - Proxy 每 5 秒同步面板已纳管目标 IPv4 白名单，仅放行这些地址访问 IPv4 DNS 53 与 SNI 80/443，并拒绝 IPv6 访问这些 Prism 端口；其他 IPv6 端口不受影响，同机 MTProxy 可继续使用。
 - 目标机如果 XrayR、V2bX、sing-box、Hysteria、TUIC 等代理进程自行把客户端 DNS 发往 `8.8.8.8:53` 或 `1.1.1.1:53`，路由守卫会按 systemd cgroup 将这些 DNS 请求转交给本机 Prism Agent；只增加 Prism 自有 nftables 表，不改动代理程序配置或 Docker。
+- XrayR 如果开启 `ControllerConfig.EnableDNS: true`，安装器会先备份 `/etc/XrayR/config.yml`，切换为读取系统 DNS 后仅重启一次 XrayR；V2bX、MTProxy、Docker 和其他业务配置不改动。
 - 前端新增、编辑和删除自定义服务，支持任意名称、分类和域名列表；普通域名使用 `example.com`，泛域名使用 `*.example.com`，保存、重新打开和迁移后均保留原格式。
 - 所有内置和自定义服务均可在服务表格或配置弹窗中编辑域名、增删域名并恢复域名库默认值；“彻底删除服务”会同步删除规则、目标 IP 路由、审计结果和无用解锁机引用，内置服务会写入永久隐藏列表，不会在下一次域名库同步时复现。
 - 服务库与 IP 服务选择器共用统一搜索，可按名称、中文别名、分类、服务 ID 或域名进行精确和模糊匹配，并忽略大小写及常见分隔符。

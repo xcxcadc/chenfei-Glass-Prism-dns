@@ -39,13 +39,15 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **真实兼容性优先** - 每项已选服务依次验证精确 A 映射、AAAA 抑制、TLS/SNI 握手和代表页面/服务方项目；服务方明确返回 `NO`、`Banned`、WAF 或稳定性不足时直接显示不可用
 - **IP 配置闭环** - 添加目标 IP，批量选择服务及对应解锁机，自动创建 DNS 节点和服务覆盖
 - **配置自动生效** - 增强层持久化逐节点路由并由专用 dnsmasq 应用；10 秒守卫检查配置哈希、DNS 监听和代理进程 DNS 接管，保存后安全刷新本地 IPv4 路由，300 秒抽测每项服务代表域名
-- **代理内置 DNS 接管** - 对 XrayR、V2bX、sing-box、Hysteria、TUIC 等活动 systemd 代理进程建立独立 nftables cgroup 规则，将其发往公共 DNS 的请求交给本机 Prism Agent；不修改代理配置、Docker 或同机其他服务
+- **代理 DNS 统一接管** - 对 XrayR、V2bX、sing-box、Hysteria、TUIC 等活动 systemd 代理进程建立独立 DNS cgroup 规则，将请求交给本机 Prism Agent；XrayR 启用自定义 DNS 时会先备份并切换为读取系统 DNS，不修改 Docker、MTProxy 或 V2bX 配置
 - **受限网络传输** - 目标机可通过加密 TCP SNI 传输连接解锁机；客户端每 60 秒同步并用真实 HTTPS 路径检查隧道，SSH 自身仍以 15 秒保活、3 次失联判定，发现“TCP 假在线”时只重建该隧道
 - **四阶段全域名实测** - 每项服务逐一核对全部路由域名和应用依赖，结果给出 `DNS x/x`、`TLS/SNI y/y`、页面成功数和服务方结论；TLS 连续三次至少两次成功才通过
-- **共存守护** - 仅监控并恢复 `prism-agent`，不会重启或覆盖同机 MTProxy、XrayR、V2bX
+- **共存守护** - 仅监控并恢复 Prism 自有服务；XrayR 仅在从自定义 DNS 切换到系统 DNS 时重启一次，同机 MTProxy、V2bX、Docker 不受影响
 - **服务品牌图标** - 服务卡片和 IP 选择器立即显示本地占位并异步替换为对应品牌图标；图标 URL 带版本指纹，发布后不会继续命中旧缓存，服务与图标映射持久化后可直接复用
 - **客户端管理脚本** - 安装 DNS Agent、测试本机 DNS、接管/备份/恢复系统 DNS
 - **流量统计** - 每个目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到所选解锁机的 TCP 80/443；不统计整机网卡流量
+
+- **XrayR 系统 DNS** - 系统 DNS 模式下，XrayR 的自定义 DNS 会先备份 `/etc/XrayR/config.yml` 并切换为读取 `/etc/resolv.conf`，随后只重启一次 XrayR；V2bX、MTProxy、Docker 和其他业务配置不改动
 - **账户安全** - 点击右上角用户名，验证旧账号后修改管理员用户名和密码
 
 ### 路由模式

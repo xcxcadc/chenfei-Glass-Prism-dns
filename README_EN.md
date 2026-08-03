@@ -45,6 +45,8 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Service Brand Icons** - Service cards and the IP picker show an immediate local placeholder, replace it with the matching brand icon, and use versioned asset URLs so corrected icons appear immediately instead of reusing stale browser cache
 - **Client Management Script** - Installs the DNS Agent, tests local DNS, and takes over, backs up, or restores system DNS
 - **Traffic Accounting** - Per target IP, counts local Prism DNS UDP/TCP 53 plus TCP 80/443 exchanged with selected proxy IPs; whole-interface traffic is excluded
+
+- **XrayR System DNS** - In system-DNS mode, if XrayR has custom DNS enabled, the installer backs up `/etc/XrayR/config.yml`, switches XrayR to `/etc/resolv.conf`, and restarts XrayR once; V2bX, MTProxy, Docker, and other service configurations are untouched
 - **Account Security** - Click the username in the top bar to change the administrator username and password after verifying the current credentials
 
 ### Routing Modes

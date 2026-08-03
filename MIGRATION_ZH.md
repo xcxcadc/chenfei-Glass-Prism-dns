@@ -134,7 +134,7 @@ journalctl -u prism-controller -u prism-enhancer --since "-10 min" --no-pager
 3. 不要删除并重建原节点或 IP 配置，否则会生成新的节点密钥和专属令牌。
 4. 确认新地址可访问后，再关闭旧面板。
 
-重新执行安装命令只更新 Prism Agent、面板地址和守卫配置，不会修改 MTProxy、XrayR 或 V2bX。稳定安装器会验证并锁定上游 Agent `v1.2.1`，避免迁移后被 `v1.3` 被动熔断回退公网 DNS；安装和卸载过程会自动解除旧文件锁。Proxy 的 IPv4 DNS/SNI 授权白名单会在新面板恢复后 5 秒刷新；IPv6 仅拒绝 Prism 的 53/80/443，MTProxy 等其他端口不受影响。
+重新执行安装命令会更新 Prism Agent、面板地址和守卫配置；如果 XrayR 开启自定义 DNS，安装器会先备份配置并切换为读取系统 DNS，仅重启一次 XrayR，不会修改 MTProxy、V2bX 或 Docker。稳定安装器会验证并锁定上游 Agent `v1.2.1`，避免迁移后被 `v1.3` 被动熔断回退公网 DNS；安装和卸载过程会自动解除旧文件锁。Proxy 的 IPv4 DNS/SNI 授权白名单会在新面板恢复后 5 秒刷新；IPv6 仅拒绝 Prism 的 53/80/443，MTProxy 等其他端口不受影响。
 
 ## 六、失败回滚
 

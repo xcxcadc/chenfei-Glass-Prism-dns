@@ -272,7 +272,7 @@ fi
 if awk '$1 == "nameserver" && ($2 == "127.0.0.1" || $2 == "::1") {found=1} END {exit !found}' /etc/resolv.conf 2>/dev/null; then
   SYSTEM_DNS_READY=true
 else
-  HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE；}系统 DNS 未使用 Prism"
+  HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE; }System DNS is not using Prism"
 fi
 route_ready() {
   local domain="$1" answer peer
@@ -386,8 +386,9 @@ run_service_audit() {
   }
   media_result_is_positive() {
     local value="${1,,}"
+    local positive_pattern='^(yes|pass)([[:space:]()]|$)'
     value="${value#"${value%%[![:space:]]*}"}"
-    [[ "$value" =~ ^(yes|pass)([[:space:](]|$) ]]
+    [[ "$value" =~ $positive_pattern ]]
   }
   media_summary_for_probe() {
     local label value details="" last="" required_failed=0 required_passed=0
@@ -562,7 +563,7 @@ run_service_audit() {
       fi
     done
     if ((${#optional_failures[@]} > 0)); then
-      local old_ifs="$IFS"
+      old_ifs="$IFS"
       IFS=,
       optional_failure_csv="${optional_failures[*]}"
       IFS="$old_ifs"
@@ -621,6 +622,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 CONFIG_FILE="/var/lib/prismdns/client.conf"
+STATE_DIR="/var/lib/prismdns"
 HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
@@ -632,6 +634,7 @@ DNSMASQ_ROUTES="/etc/prismdns/dnsmasq-routes.conf"
 LOCAL_DNS_SERVICE="prismdns-local-dns.service"
 LOCAL_DNS_TABLE="prismdns_local_dns"
 DNS_GUARD_TABLE="prismdns_dns_guard"
+DNS_GUARD_IPTABLES_CHAIN="PRISMDNS_DNS_GUARD"
 DNS_GUARD_HASH_FILE="/var/lib/prismdns/dns-guard.sha256"
 DNS_GUARD_STATE_FILE="/var/lib/prismdns/dns-guard.state"
 PROXY_DNS_PORT=5353
@@ -665,6 +668,24 @@ ensure_system_dns() {
   mv -f "$temporary" /etc/resolv.conf
 }
 ensure_system_dns
+ensure_system_dns_consumers() {
+  local config=/etc/XrayR/config.yml backup_dir unit
+  [[ -f "$config" ]] || return 0
+  if ! grep -Eq '^[[:space:]]+EnableDNS:[[:space:]]*true([[:space:]]*(#.*))?$' "$config"; then
+    return 0
+  fi
+  backup_dir="$STATE_DIR/backups/system-dns"
+  install -d -m 700 "$backup_dir"
+  cp -a "$config" "$backup_dir/config-$(date +%Y%m%d%H%M%S).yml"
+  sed -i -E 's/^([[:space:]]+EnableDNS:)[[:space:]]*true([[:space:]]*(#.*))?$/\1 false\2/' "$config"
+  for unit in XrayR.service xrayr.service; do
+    if systemctl is-active --quiet "$unit" 2>/dev/null; then
+      systemctl restart "$unit"
+      return 0
+    fi
+  done
+}
+ensure_system_dns_consumers
 ensure_local_dns_service() {
   command -v dnsmasq >/dev/null 2>&1 || return 1
   install -d -m 755 /etc/prismdns
@@ -738,7 +759,7 @@ LOCAL_DNS_NFT
   fi
 }
 collect_dns_guard_cgroups() {
-  local unit descriptor control_group path cgroup_id
+  local unit descriptor control_group path
   while IFS= read -r unit; do
     [[ -n "$unit" ]] || continue
     case "$unit" in
@@ -752,26 +773,73 @@ collect_dns_guard_cgroups() {
     [[ "$control_group" == /* ]] || continue
     path="/sys/fs/cgroup${control_group}"
     [[ -d "$path" ]] || continue
-    cgroup_id=$(stat -c '%i' "$path" 2>/dev/null || true)
-    [[ "$cgroup_id" =~ ^[0-9]+$ ]] || continue
-    printf '%s\n' "$cgroup_id"
+    printf '%s\n' "$control_group"
   done < <(systemctl list-units --type=service --state=running --no-legend --no-pager 2>/dev/null | awk '{print $1}' | sort -u)
+}
+clear_dns_guard_rules() {
+  local firewall chain
+  for firewall in iptables ip6tables; do
+    command -v "$firewall" >/dev/null 2>&1 || continue
+    chain="$DNS_GUARD_IPTABLES_CHAIN"
+    [[ "$firewall" == "ip6tables" ]] && chain="${DNS_GUARD_IPTABLES_CHAIN}6"
+    while "$firewall" -t nat -C OUTPUT -j "$chain" >/dev/null 2>&1; do
+      "$firewall" -t nat -D OUTPUT -j "$chain" >/dev/null 2>&1 || break
+    done
+    "$firewall" -t nat -F "$chain" >/dev/null 2>&1 || true
+    "$firewall" -t nat -X "$chain" >/dev/null 2>&1 || true
+  done
+  nft delete table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1 || true
+}
+configure_iptables_dns_guard() {
+  local firewall="$1" chain="$2" path
+  command -v "$firewall" >/dev/null 2>&1 || return 1
+  "$firewall" -t nat -N "$chain" >/dev/null 2>&1 || true
+  "$firewall" -t nat -F "$chain" >/dev/null 2>&1 || return 1
+  while "$firewall" -t nat -C OUTPUT -j "$chain" >/dev/null 2>&1; do
+    "$firewall" -t nat -D OUTPUT -j "$chain" >/dev/null 2>&1 || return 1
+  done
+  "$firewall" -t nat -I OUTPUT 1 -j "$chain" >/dev/null 2>&1 || return 1
+  for path in "${DNS_GUARD_CGROUPS[@]}"; do
+    "$firewall" -t nat -A "$chain" -m cgroup --path "$path" -p udp --dport 53 -j REDIRECT --to-ports "$PROXY_DNS_PORT" >/dev/null 2>&1 || return 1
+    "$firewall" -t nat -A "$chain" -m cgroup --path "$path" -p tcp --dport 53 -j REDIRECT --to-ports "$PROXY_DNS_PORT" >/dev/null 2>&1 || return 1
+  done
+  return 0
+}
+iptables_dns_guard_ready() {
+  local path
+  command -v iptables >/dev/null 2>&1 || return 1
+  iptables -t nat -C OUTPUT -j "$DNS_GUARD_IPTABLES_CHAIN" >/dev/null 2>&1 || return 1
+  for path in "${DNS_GUARD_CGROUPS[@]}"; do
+    iptables -t nat -S "$DNS_GUARD_IPTABLES_CHAIN" 2>/dev/null | grep -F -- "--path $path" >/dev/null || return 1
+  done
 }
 ensure_dns_guard() {
   local -a cgroups=()
   local fingerprint previous rules_tmp cgroup_id
   mapfile -t cgroups < <(collect_dns_guard_cgroups | sort -u)
+  DNS_GUARD_CGROUPS=("${cgroups[@]}")
   fingerprint=$(printf '%s\n' "${cgroups[@]}" | sha256sum | awk '{print $1}')
   previous=$(cat "$DNS_GUARD_HASH_FILE" 2>/dev/null || true)
-  if [[ "$fingerprint" == "$previous" ]] && nft list table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1; then
+  if [[ "$fingerprint" == "$previous" ]] && iptables_dns_guard_ready; then
     return 0
   fi
   if ((${#cgroups[@]} == 0)); then
-    nft delete table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1 || true
+    clear_dns_guard_rules
     printf 'required=0\nready=1\n' > "$DNS_GUARD_STATE_FILE"
     printf '%s\n' "$fingerprint" > "$DNS_GUARD_HASH_FILE"
     return 0
   fi
+  clear_dns_guard_rules
+  if configure_iptables_dns_guard iptables "$DNS_GUARD_IPTABLES_CHAIN"; then
+    printf '%s\n' "$fingerprint" > "$DNS_GUARD_HASH_FILE"
+    printf 'required=1\nready=1\n' > "$DNS_GUARD_STATE_FILE"
+    return 0
+  fi
+  mapfile -t cgroups < <(collect_dns_guard_cgroups | while IFS= read -r path; do stat -c '%i' "/sys/fs/cgroup$path" 2>/dev/null || true; done | sort -u)
+  ((${#cgroups[@]} > 0)) || {
+    printf 'required=1\nready=0\n' > "$DNS_GUARD_STATE_FILE"
+    return 1
+  }
   rules_tmp=$(mktemp /var/lib/prismdns/dns-guard.XXXXXX)
   {
     printf 'table inet %s {\n' "$DNS_GUARD_TABLE"
@@ -782,7 +850,6 @@ ensure_dns_guard() {
     done
     printf '  }\n}\n'
   } > "$rules_tmp"
-  nft delete table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1 || true
   if nft -f "$rules_tmp"; then
     printf '%s\n' "$fingerprint" > "$DNS_GUARD_HASH_FILE"
     printf 'required=1\nready=1\n' > "$DNS_GUARD_STATE_FILE"
@@ -866,7 +933,7 @@ ensure_agent_mode() {
 if ensure_local_dns_service && render_local_routes && ensure_dns_guard; then
   :
 else
-  nft delete table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1 || true
+  clear_dns_guard_rules
   printf 'required=1\nready=0\n' > "$DNS_GUARD_STATE_FILE"
 fi
 ensure_agent_mode
