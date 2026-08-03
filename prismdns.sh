@@ -165,7 +165,7 @@ COUNTER_VERSION="dns-sni-ports-v11-persistent-component-rx-tx"
 AUDIT_INTERVAL=21600
 MEDIA_CHECK_URL="https://media.ispvps.com"
 MEDIA_CHECK_TIMEOUT=900
-AUDIT_VERSION="media-ispvps-ipv4-browser-path-v1"
+AUDIT_VERSION="media-ispvps-ipv4-browser-path-v2"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
 HEALTH_CACHE_INTERVAL=1800
 [[ -f "$CONFIG_FILE" ]] || exit 0
@@ -386,9 +386,10 @@ run_service_audit() {
   }
   media_result_is_positive() {
     local value="${1,,}"
-    local positive_pattern='^(yes|pass)([[:space:]()]|$)'
+    local positive_pattern='(^|[[:space:][:punct:]])(yes|pass)([[:space:][:punct:]]|$)'
+    local negative_pattern='(^|[[:space:][:punct:]])(no|fail|failed|unsupport|unsupported|banned|restricted)([[:space:][:punct:]]|$)'
     value="${value#"${value%%[![:space:]]*}"}"
-    [[ "$value" =~ $positive_pattern ]]
+    [[ ! "$value" =~ $negative_pattern && "$value" =~ $positive_pattern ]]
   }
   media_summary_for_probe() {
     local label value details="" last="" required_failed=0 required_passed=0
@@ -626,7 +627,7 @@ STATE_DIR="/var/lib/prismdns"
 HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
-AUDIT_VERSION="media-ispvps-ipv4-browser-path-v1"
+AUDIT_VERSION="media-ispvps-ipv4-browser-path-v2"
 HEALTH_CHECK_FILE="/var/lib/prismdns/route-health.timestamp"
 HEALTH_CHECK_INTERVAL=300
 DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
@@ -1096,6 +1097,7 @@ After=network-online.target prism-agent.service
 
 [Service]
 Type=oneshot
+TimeoutStartSec=15min
 Environment=PRISM_RUN_SERVICE_AUDIT=1
 ExecStart=/usr/local/lib/prismdns/report-traffic.sh
 EOF

@@ -186,6 +186,9 @@ function serviceRouteEntry(config, service) {
   }
   return null;
 }
+function isConfiguredForTarget(service, config = configForNode(selectedDNS())) {
+  return !!serviceRouteEntry(config, service)?.value;
+}
 function serviceResult(config, service) {
   if (!config?.service_results || !service) return "";
   for (const id of serviceIDs(service)) {
@@ -743,9 +746,7 @@ function servicesHTML() {
   const targetNode = selectedDNS();
   const targetConfig = configForNode(targetNode);
   const totalTraffic = state.ipConfigs.reduce((total, config) => total + Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0), 0);
-  const configuredServices = state.catalog.filter(service => {
-    return !!routedNodeForService(service);
-  });
+  const configuredServices = state.catalog.filter(service => isConfiguredForTarget(service, targetConfig));
   const configured = configuredServices.length;
   const targetHealth = targetNode ? clientState(targetConfig, targetNode) : {kind:"warn", label:t("pending"), detail:t("selectDNS")};
   const targetIP = targetConfig?.ip || targetNode?.public_ip || targetNode?.address || "-";
@@ -755,10 +756,10 @@ function servicesHTML() {
     const node = routedNodeForService(service);
     const status = serviceStatus(service, node);
     if (state.nodeFilter && nodeID(node?.id) !== nodeID(state.nodeFilter)) return false;
-    if (state.statusFilter === "configured" && !node) return false;
+    if (state.statusFilter === "configured" && !isConfiguredForTarget(service, targetConfig)) return false;
     if (state.statusFilter === "available" && status.kind !== "good") return false;
     if (state.statusFilter === "issue" && !["warn", "bad"].includes(status.kind)) return false;
-    if (state.statusFilter === "unconfigured" && node) return false;
+    if (state.statusFilter === "unconfigured" && isConfiguredForTarget(service, targetConfig)) return false;
     return true;
   });
   const pageCount = Math.max(1, Math.ceil(filtered.length / state.pageSize));
@@ -778,6 +779,7 @@ function servicesHTML() {
         <select class="select compact-select" id="category-filter"><option value="">${t("allCategories")}</option>${categories.map(category => `<option value="${escapeHTML(category)}" ${state.category === category ? "selected" : ""}>${escapeHTML(displayCategory(category))}</option>`).join("")}</select>
         <select class="select compact-select" id="status-filter"><option value="">${state.lang === "zh" ? "全部状态" : "All statuses"}</option><option value="available" ${state.statusFilter === "available" ? "selected" : ""}>${state.lang === "zh" ? "实测可用" : "Verified"}</option><option value="issue" ${state.statusFilter === "issue" ? "selected" : ""}>${state.lang === "zh" ? "异常/待确认" : "Issues"}</option><option value="configured" ${state.statusFilter === "configured" ? "selected" : ""}>${t("configured")}</option><option value="unconfigured" ${state.statusFilter === "unconfigured" ? "selected" : ""}>${t("notConfigured")}</option></select>
         <select class="select compact-select" id="node-filter"><option value="">${state.lang === "zh" ? "全部节点" : "All nodes"}</option>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(state.nodeFilter) === nodeID(node.id) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select>
+        <button class="btn ${state.statusFilter === "configured" ? "primary" : ""}" id="show-configured-services" ${targetConfig ? "" : "disabled"}><i class="bi bi-check2-circle"></i>${state.lang === "zh" ? `已配置服务 ${configured}` : `Configured ${configured}`}</button>
         <span class="toolbar-spacer"></span>
         <select class="select compact-select" id="batch-action"><option value="">${state.lang === "zh" ? "批量操作" : "Bulk actions"}</option><option value="select-page">${state.lang === "zh" ? "选择当前页" : "Select page"}</option><option value="clear">${state.lang === "zh" ? "取消选择" : "Clear selection"}</option><option value="configure">${state.lang === "zh" ? "配置所选服务" : "Configure selected"}</option></select>
         <button class="btn" id="clear-filter"><i class="bi bi-arrow-counterclockwise"></i>${state.lang === "zh" ? "重置" : "Reset"}</button>
@@ -959,6 +961,7 @@ function bindShell() {
   search?.addEventListener("input", event => { if (!searchComposing) scheduleServiceSearch(event.target); });
   document.getElementById("category-filter")?.addEventListener("change", event => { state.category = event.target.value; state.page = 1; render(); });
   document.getElementById("status-filter")?.addEventListener("change", event => { state.statusFilter = event.target.value; state.page = 1; render(); });
+  document.getElementById("show-configured-services")?.addEventListener("click", () => { state.statusFilter = state.statusFilter === "configured" ? "" : "configured"; state.page = 1; render(); });
   document.getElementById("node-filter")?.addEventListener("change", event => { state.nodeFilter = event.target.value; state.page = 1; render(); });
   document.getElementById("dns-select")?.addEventListener("change", async event => { state.dnsNodeId = event.target.value; localStorage.setItem("enhancer_dns", state.dnsNodeId); await loadRoutingState(); render(); });
   document.getElementById("clear-filter")?.addEventListener("click", () => { state.search = ""; state.category = ""; state.statusFilter = ""; state.nodeFilter = ""; state.page = 1; render(); });
