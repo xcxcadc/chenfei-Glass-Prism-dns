@@ -23,6 +23,14 @@ require_root() {
 prepare_fresh_install() {
     [ "${PRISM_FRESH_INSTALL:-0}" = "1" ] || return 0
     [ "${PRISM_CONFIRM_FRESH:-}" = "YES" ] || fail "PRISM_FRESH_INSTALL requires PRISM_CONFIRM_FRESH=YES"
+    case "$INSTALL_DIR" in
+        /opt/prism|/opt/prism/*) ;;
+        *) fail "全新安装仅允许清理 /opt/prism 下的 Prism 目录" ;;
+    esac
+    case "$DATA_DIR" in
+        /var/lib/prism-enhancer|/var/lib/prism-enhancer/*) ;;
+        *) fail "全新安装仅允许清理 /var/lib/prism-enhancer 下的 Prism 目录" ;;
+    esac
     info "清理本机已有 Prism 数据，开始全新安装"
     systemctl stop "$ENHANCER_SERVICE" "$CONTROLLER_SERVICE" 2>/dev/null || true
     rm -f "${INSTALL_DIR}/data.db" "${INSTALL_DIR}/.env" "${INSTALL_DIR}/initial-password"
