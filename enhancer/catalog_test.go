@@ -58,6 +58,26 @@ func TestEnsureBuiltInServicesAddsGrokOnce(t *testing.T) {
 	}
 }
 
+func TestGrokCarriesXAIKeywordAndCIDRRules(t *testing.T) {
+	services := ensureBuiltInServices(nil)
+	if len(services) != 1 {
+		t.Fatalf("expected one built-in service, got %d", len(services))
+	}
+	grok := services[0]
+	if !contains(grok.Domains, "twitter.com") || !contains(grok.Domains, "x.com") {
+		t.Fatalf("xAI domains missing: %#v", grok.Domains)
+	}
+	if !contains(grok.DomainKeywords, "twitter") {
+		t.Fatalf("xAI domain keyword missing: %#v", grok.DomainKeywords)
+	}
+	if contains(grok.Domains, "twitter") {
+		t.Fatalf("keyword was incorrectly kept as a suffix domain: %#v", grok.Domains)
+	}
+	if !contains(grok.CIDRs, "192.133.76.0/22") || !contains(grok.CIDRs, "69.195.160.0/19") {
+		t.Fatalf("xAI CIDR rules missing: %#v", grok.CIDRs)
+	}
+}
+
 func TestCustomServiceStorePersists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services.json")
 	store, err := NewCustomServiceStore(path)
@@ -125,6 +145,20 @@ func TestNormalizeCustomDomainsRejectsMalformedWildcards(t *testing.T) {
 		if _, err := normalizeCustomDomains([]string{value}); err == nil {
 			t.Fatalf("expected %q to be rejected", value)
 		}
+	}
+}
+
+func TestNormalizeCustomRules(t *testing.T) {
+	keywords, err := normalizeCustomDomainKeywords([]string{"Twitter", "twitter"})
+	if err != nil || len(keywords) != 1 || keywords[0] != "twitter" {
+		t.Fatalf("unexpected keywords: %#v, %v", keywords, err)
+	}
+	cidrs, err := normalizeCustomCIDRs([]string{"192.133.76.1/22", "199.59.148.0/22"})
+	if err != nil || len(cidrs) != 2 || cidrs[0] != "192.133.76.0/22" {
+		t.Fatalf("unexpected CIDRs: %#v, %v", cidrs, err)
+	}
+	if _, err := normalizeCustomCIDRs([]string{"not-a-cidr"}); err == nil {
+		t.Fatal("invalid CIDR should be rejected")
 	}
 }
 

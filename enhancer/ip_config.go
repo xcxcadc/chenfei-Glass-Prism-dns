@@ -241,7 +241,7 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 	probes := make([]map[string]any, 0, len(serviceIDs))
 	for _, serviceID := range serviceIDs {
 		service, ok := services[serviceID]
-		if !ok || len(service.Domains) == 0 {
+		if !ok || (len(service.Domains) == 0 && len(service.DomainKeywords) == 0 && len(service.CIDRs) == 0) {
 			continue
 		}
 		probes = append(probes, map[string]any{
@@ -254,6 +254,8 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 			"media_tests":    unlockTestProviders(service),
 			"probe_domains":  preferredProbeDomains(service),
 			"route_domains":  routingDomains(service.Domains),
+			"domain_keywords": normalizeDomainKeywords(service.DomainKeywords),
+			"route_cidrs":     normalizeCIDRs(service.CIDRs),
 			"traffic_peers":  append([]string(nil), proxyPeers[routes[serviceID]]...),
 		})
 	}

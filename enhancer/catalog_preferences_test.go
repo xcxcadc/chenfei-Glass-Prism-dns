@@ -72,6 +72,34 @@ func TestCatalogPreferenceStorePersistsDomainOverridesAndLegacyAliases(t *testin
 	}
 }
 
+func TestCatalogPreferenceStorePersistsKeywordAndCIDROverrides(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "catalog-preferences.json")
+	store, err := NewCatalogPreferenceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetServiceRules("grok", []string{"x.com"}, []string{"Twitter"}, []string{"192.133.76.0/22"}); err != nil {
+		t.Fatal(err)
+	}
+	service := store.Apply([]Service{{
+		ID: "grok", Name: "Grok", Domains: []string{"grok.com"}, DomainKeywords: []string{"default"}, CIDRs: []string{"198.51.100.0/24"},
+	}})[0]
+	if !service.DomainOverride || len(service.DomainKeywords) != 1 || service.DomainKeywords[0] != "twitter" || len(service.CIDRs) != 1 || service.CIDRs[0] != "192.133.76.0/22" {
+		t.Fatalf("rule override was not applied: %#v", service)
+	}
+	reloaded, err := NewCatalogPreferenceStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reloaded.ClearServiceRules("grok"); err != nil {
+		t.Fatal(err)
+	}
+	service = reloaded.Apply([]Service{{ID: "grok", Domains: []string{"grok.com"}, DomainKeywords: []string{"default"}, CIDRs: []string{"198.51.100.0/24"}}})[0]
+	if service.DomainOverride || len(service.DomainKeywords) != 1 || service.DomainKeywords[0] != "default" || len(service.CIDRs) != 1 || service.CIDRs[0] != "198.51.100.0/24" {
+		t.Fatalf("rule override was not restored: %#v", service)
+	}
+}
+
 func TestCatalogPreferenceStorePermanentlyDeletesServiceAndAliases(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog-preferences.json")
 	store, err := NewCatalogPreferenceStore(path)

@@ -56,7 +56,17 @@ func (store *CustomServiceStore) Upsert(service Service) (Service, error) {
 	if err != nil {
 		return Service{}, err
 	}
+	keywords, err := normalizeCustomDomainKeywords(service.DomainKeywords)
+	if err != nil {
+		return Service{}, err
+	}
+	cidrs, err := normalizeCustomCIDRs(service.CIDRs)
+	if err != nil {
+		return Service{}, err
+	}
 	service.Domains = domains
+	service.DomainKeywords = keywords
+	service.CIDRs = cidrs
 	service.Custom = true
 	if service.Name == "" {
 		return Service{}, errors.New("service name is required")
@@ -69,8 +79,8 @@ func (store *CustomServiceStore) Upsert(service Service) (Service, error) {
 		return Service{}, err
 	}
 	service.Category = category
-	if len(service.Domains) == 0 {
-		return Service{}, errors.New("at least one valid domain is required")
+	if len(service.Domains) == 0 && len(service.DomainKeywords) == 0 && len(service.CIDRs) == 0 {
+		return Service{}, errors.New("at least one valid domain, keyword, or CIDR is required")
 	}
 	if service.ID == "" {
 		service.ID = customServiceID(service.Name)
@@ -129,10 +139,20 @@ func (store *CustomServiceStore) load() error {
 		if err != nil {
 			return fmt.Errorf("validate custom service %q: %w", service.Name, err)
 		}
-		if len(domains) == 0 {
-			return fmt.Errorf("validate custom service %q: at least one valid domain is required", service.Name)
+		keywords, keywordErr := normalizeCustomDomainKeywords(service.DomainKeywords)
+		if keywordErr != nil {
+			return fmt.Errorf("validate custom service %q: %w", service.Name, keywordErr)
+		}
+		cidrs, cidrErr := normalizeCustomCIDRs(service.CIDRs)
+		if cidrErr != nil {
+			return fmt.Errorf("validate custom service %q: %w", service.Name, cidrErr)
+		}
+		if len(domains) == 0 && len(keywords) == 0 && len(cidrs) == 0 {
+			return fmt.Errorf("validate custom service %q: at least one valid domain, keyword, or CIDR is required", service.Name)
 		}
 		service.Domains = domains
+		service.DomainKeywords = keywords
+		service.CIDRs = cidrs
 		service.Custom = true
 		store.services[service.ID] = service
 	}

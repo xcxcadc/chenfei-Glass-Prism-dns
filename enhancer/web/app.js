@@ -7,7 +7,7 @@ const translations = {
     customServices: "自定义服务", notConfigured: "未配置", auto: "自动选择", manual: "手动", open: "配置", domains: "域名",
     serviceConfig: "配置服务", currentRoute: "当前路由", targetServer: "目标解锁机", assign: "保存并切换", reset: "恢复自动",
     connectivity: "DNS 解锁检测", testing: "正在检测...", triggerUnlock: "运行目标机实测", customEdit: "编辑服务", customDelete: "删除服务", deleteService: "彻底删除服务",
-    serviceName: "服务名称", category: "分类", domainList: "域名列表", viewDomains: "查看/编辑域名", restoreDomains: "恢复默认域名", domainOverrideHint: "已保存自定义域名覆盖；恢复后使用域名库当前值。", save: "保存", cancel: "取消", deleteConfirm: "确认彻底删除这个服务？",
+    serviceName: "服务名称", category: "分类", domainList: "域名列表", domainKeywordList: "域名关键词", cidrList: "IP-CIDR 网段", ruleHint: "每行一条；域名支持泛域名，关键词和 CIDR 会按原规则类型下发。", viewDomains: "查看/编辑域名与规则", restoreDomains: "恢复默认规则", domainOverrideHint: "已保存自定义规则覆盖；恢复后使用域名库当前值。", save: "保存", cancel: "取消", deleteConfirm: "确认彻底删除这个服务？",
     nodeName: "节点名称", role: "节点类型", proxy: "解锁机", dns: "DNS 客户端", address: "连接 IP / DNS 地址", country: "地区",
     group: "分组", priority: "优先级", smartMode: "智能模式", standardMode: "标准模式", createNode: "创建节点", editNode: "编辑节点", deleteNode: "删除节点", installCommand: "Agent 安装命令", showInstallCommand: "安装命令",
     nextStep: "下一步", back: "上一步", copy: "复制命令", copied: "已复制", close: "关闭", nodeHint: "支持字母、数字和空格；点、短横线、下划线会自动转换为空格。", groupHint: "支持字母、数字、空格和逗号；其他分隔符会自动转换为空格。",
@@ -34,7 +34,7 @@ const translations = {
     customServices: "Custom services", notConfigured: "Not configured", auto: "Automatic", manual: "Manual", open: "Configure", domains: "Domains",
     serviceConfig: "Configure service", currentRoute: "Current route", targetServer: "Target proxy", assign: "Save and switch", reset: "Reset to auto",
     connectivity: "DNS unlock check", testing: "Testing...", triggerUnlock: "Run target audit", customEdit: "Edit service", customDelete: "Delete service", deleteService: "Permanently delete service",
-    serviceName: "Service name", category: "Category", domainList: "Domain list", viewDomains: "View/edit domains", restoreDomains: "Restore default domains", domainOverrideHint: "A custom domain override is active. Restore to use the current catalog values.", save: "Save", cancel: "Cancel", deleteConfirm: "Permanently delete this service?",
+    serviceName: "Service name", category: "Category", domainList: "Domain list", domainKeywordList: "Domain keywords", cidrList: "IP-CIDR networks", ruleHint: "One rule per line. Domains support wildcards; keywords and CIDRs retain their rule types.", viewDomains: "View/edit domains and rules", restoreDomains: "Restore default rules", domainOverrideHint: "A custom rule override is active. Restore to use the current catalog values.", save: "Save", cancel: "Cancel", deleteConfirm: "Permanently delete this service?",
     nodeName: "Node name", role: "Node role", proxy: "Proxy agent", dns: "DNS client", address: "Connect IP / DNS address", country: "Region",
     group: "Group", priority: "Priority", smartMode: "Smart mode", standardMode: "Standard mode", createNode: "Create node", editNode: "Edit node", deleteNode: "Delete node", installCommand: "Agent install command", showInstallCommand: "Install command",
     nextStep: "Next step", back: "Back", copy: "Copy command", copied: "Copied", close: "Close", nodeHint: "Use letters, numbers, and spaces; dots, hyphens, and underscores become spaces.", groupHint: "Use letters, numbers, spaces, and commas; other separators become spaces.",
@@ -82,7 +82,7 @@ const state = {
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
-const iconAssetVersion = "1.5.10-grok-icons";
+const iconAssetVersion = "1.5.11-xai-rules";
 
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
@@ -156,7 +156,7 @@ function unlockEntries(node) {
 }
 function unlockPassed(value) { return /^YES\b/i.test(String(value || "").trim()); }
 function serviceDetectorKey(service) {
-  const value = `${service.name} ${service.domains.join(" ")}`.toLowerCase();
+  const value = `${service.name} ${(service.domains || []).join(" ")} ${(service.domain_keywords || []).join(" ")} ${(service.cidrs || []).join(" ")}`.toLowerCase();
   const tests = [
     ["OpenAI", ["openai", "chatgpt"]], ["Gemini", ["gemini", "bard"]], ["Claude", ["claude", "anthropic"]],
     ["Copilot", ["copilot", "github.dev"]], ["Perplexity", ["perplexity"]], ["Meta AI", ["meta.ai", "llama"]], ["Suno", ["suno"]],
@@ -167,6 +167,10 @@ function serviceDetectorKey(service) {
   ];
   const match = tests.find(([, keywords]) => keywords.some(keyword => value.includes(keyword)));
   return match ? match[0] : "";
+}
+
+function serviceRuleCount(service) {
+  return (service.domains || []).length + (service.domain_keywords || []).length + (service.cidrs || []).length;
 }
 function serviceRule(service) {
   const ids = serviceIDs(service);
@@ -1232,7 +1236,7 @@ function serviceModalHTML(service) {
 }
 
 function serviceDomainFormHTML(service) {
-  return `<div class="modal-backdrop"><form class="modal medium panel" id="service-domains-form"><header class="modal-head"><div><h2>${t("viewDomains")}</h2><p>${escapeHTML(displayServiceName(service))}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" required spellcheck="false">${escapeHTML((service.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名；泛域名请使用 *.example.com，也支持逗号和分号分隔。" : "One domain per line. Use *.example.com for wildcards; commas and semicolons are accepted."}</span></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("save")}</button></div></footer></form></div>`;
+  return `<div class="modal-backdrop"><form class="modal medium panel" id="service-domains-form"><header class="modal-head"><div><h2>${t("viewDomains")}</h2><p>${escapeHTML(displayServiceName(service))}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" spellcheck="false">${escapeHTML((service.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名；泛域名请使用 *.example.com，也支持逗号和分号分隔。" : "One domain per line. Use *.example.com for wildcards; commas and semicolons are accepted."}</span></div><div class="field"><label>${t("domainKeywordList")}</label><textarea class="textarea" name="domain_keywords" spellcheck="false">${escapeHTML((service.domain_keywords || []).join("\n"))}</textarea><span class="hint">${t("ruleHint")}</span></div><div class="field"><label>${t("cidrList")}</label><textarea class="textarea" name="cidrs" spellcheck="false" placeholder="192.0.2.0/24\n2001:db8::/32">${escapeHTML((service.cidrs || []).join("\n"))}</textarea><span class="hint">${t("ruleHint")}</span></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("save")}</button></div></footer></form></div>`;
 }
 
 function testResultsHTML(results) {
@@ -1248,7 +1252,9 @@ function serviceFormHTML(service) {
   return `<div class="modal-backdrop"><form class="modal medium panel" id="service-form"><header class="modal-head"><div><h2>${service ? t("customEdit") : t("addService")}</h2></div><button class="btn icon modal-close" type="button">×</button></header>
     <div class="modal-body form-stack"><div class="field"><label>${t("serviceName")}</label><input class="input" name="name" value="${escapeHTML(service?.name || "")}" required maxlength="80"></div>
     <div class="field"><label>${t("category")}</label><input class="input" name="category" list="service-category-options" value="${escapeHTML(service?.category || (state.lang === "zh" ? "自定义服务" : "Custom services"))}" maxlength="64"><datalist id="service-category-options">${categoryOptions}</datalist></div>
-    <div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" placeholder="example.com&#10;*.example.com" required>${escapeHTML((service?.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名；泛域名请写成 *.example.com，也支持逗号或分号分隔。" : "One domain per line. Use *.example.com for wildcards; commas and semicolons are also accepted."}</span></div></div>
+    <div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" placeholder="example.com&#10;*.example.com">${escapeHTML((service?.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名；泛域名请写成 *.example.com，也支持逗号或分号分隔。" : "One domain per line. Use *.example.com for wildcards; commas and semicolons are also accepted."}</span></div>
+    <div class="field"><label>${t("domainKeywordList")}</label><textarea class="textarea" name="domain_keywords" placeholder="twitter">${escapeHTML((service?.domain_keywords || []).join("\n"))}</textarea></div>
+    <div class="field"><label>${t("cidrList")}</label><textarea class="textarea" name="cidrs" placeholder="192.0.2.0/24">${escapeHTML((service?.cidrs || []).join("\n"))}</textarea></div></div>
     <footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit">${t("save")}</button></div></footer></form></div>`;
 }
 
@@ -1422,11 +1428,13 @@ async function saveServiceDomains(event) {
   const service = state.modal.service;
   const form = new FormData(event.currentTarget);
   const domains = String(form.get("domains") || "").split(/\r?\n|,|;/);
+  const domain_keywords = String(form.get("domain_keywords") || "").split(/\r?\n|,|;/);
+  const cidrs = String(form.get("cidrs") || "").split(/\r?\n|,|;/);
   state.modal.busy = true;
   state.modal.error = "";
   renderModal();
   try {
-    await api(`/enhancer/api/service-domains/${encodeURIComponent(service.id)}`, {method:"PUT", body:JSON.stringify({domains})});
+    await api(`/enhancer/api/service-domains/${encodeURIComponent(service.id)}`, {method:"PUT", body:JSON.stringify({domains, domain_keywords, cidrs})});
     state.modal = null;
     await loadAll(true);
     toast(t("saved"), "good");
@@ -1648,7 +1656,7 @@ async function testService() {
 
 async function saveCustomService(event) {
   event.preventDefault(); const form = new FormData(event.currentTarget); const existing = state.modal.service;
-  const payload = {name:form.get("name"), category:form.get("category"), domains:String(form.get("domains")).split(/\r?\n|,|;/)};
+  const payload = {name:form.get("name"), category:form.get("category"), domains:String(form.get("domains") || "").split(/\r?\n|,|;/), domain_keywords:String(form.get("domain_keywords") || "").split(/\r?\n|,|;/), cidrs:String(form.get("cidrs") || "").split(/\r?\n|,|;/)};
   try {
     const existingID = customServiceID(existing);
     const path = existingID ? `/enhancer/api/custom-services/${existingID}` : "/enhancer/api/custom-services";

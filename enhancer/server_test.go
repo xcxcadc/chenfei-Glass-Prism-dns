@@ -32,7 +32,7 @@ func TestRuleSetHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := store.Upsert(Service{Name: "Custom", Domains: []string{"example.com", "*.example.com", "*.cdn.example.com"}})
+	service, err := store.Upsert(Service{Name: "Custom", Domains: []string{"example.com", "*.example.com", "*.cdn.example.com"}, DomainKeywords: []string{"Twitter"}, CIDRs: []string{"192.133.76.0/22"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +58,9 @@ func TestRuleSetHandler(t *testing.T) {
 	}
 	if strings.Count(string(body), "DOMAIN-SUFFIX,example.com") != 1 {
 		t.Fatalf("duplicate compiled suffix rule: %s", body)
+	}
+	if !strings.Contains(string(body), "DOMAIN-KEYWORD,twitter") || !strings.Contains(string(body), "IP-CIDR,192.133.76.0/22") {
+		t.Fatalf("keyword or CIDR rules were not compiled: %s", body)
 	}
 }
 

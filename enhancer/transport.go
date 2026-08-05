@@ -81,6 +81,8 @@ type transportEgressService struct {
 	ServiceID     string   `json:"service_id"`
 	Name          string   `json:"name"`
 	Domains       []string `json:"domains"`
+	DomainKeywords []string `json:"domain_keywords,omitempty"`
+	CIDRs         []string `json:"cidrs,omitempty"`
 	ProbeDomains  []string `json:"probe_domains"`
 	IPv6Candidate bool     `json:"ipv6_candidate,omitempty"`
 }
@@ -355,6 +357,8 @@ func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []trans
 			ServiceID:     service.ID,
 			Name:          service.Name,
 			Domains:       routingDomains(service.Domains),
+			DomainKeywords: normalizeDomainKeywords(service.DomainKeywords),
+			CIDRs:         normalizeCIDRs(service.CIDRs),
 			ProbeDomains:  preferredProbeDomains(service),
 			IPv6Candidate: service.Name == "Gemini" || service.Name == "Google AI Studio",
 		})

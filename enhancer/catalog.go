@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"regexp"
 	"sort"
 	"strings"
@@ -53,12 +54,46 @@ var (
 		"www.gstatic.com",
 	}
 	grokDomains = []string{
+		"ads-twitter.com",
+		"cms-twdigitalassets.com",
+		"periscope.tv",
+		"pscp.tv",
+		"t.co",
+		"tellapart.com",
+		"tweetdeck.com",
+		"twimg.co",
+		"twimg.com",
+		"twimg.org",
+		"twitpic.com",
+		"twitter.biz",
+		"twitter.com",
+		"twitter.jp",
+		"twittercommunity.com",
+		"twitterflightschool.com",
+		"twitterinc.com",
+		"twitteroauth.com",
+		"twitterstat.us",
+		"twtrdns.net",
+		"twttr.com",
+		"twttr.net",
+		"twvid.com",
+		"vine.co",
+		"x.com",
 		"grok.com",
 		"www.grok.com",
 		"x.ai",
 		"api.x.ai",
 		"grok.x.com",
 		"accounts.x.com",
+	}
+	grokDomainKeywords = []string{"twitter"}
+	grokCIDRs = []string{
+		"192.133.76.0/22",
+		"199.59.148.0/22",
+		"199.96.56.0/21",
+		"202.160.128.0/22",
+		"209.237.192.0/19",
+		"69.195.160.0/19",
 	}
 	serviceDomainSupplements = map[string][]string{
 		"FR:France.tv": {
@@ -124,6 +159,12 @@ var (
 			"global.ssl.fastly.net",
 		},
 	}
+	serviceDomainKeywordSupplements = map[string][]string{
+		"Grok": grokDomainKeywords,
+	}
+	serviceCIDRSupplements = map[string][]string{
+		"Grok": grokCIDRs,
+	}
 	retiredServices = map[string]struct{}{
 		"Crackle":  {},
 		"FR:Salto": {},
@@ -137,6 +178,8 @@ type Service struct {
 	Category         string   `json:"category"`
 	OriginalCategory string   `json:"original_category,omitempty"`
 	Domains          []string `json:"domains"`
+	DomainKeywords   []string `json:"domain_keywords,omitempty"`
+	CIDRs            []string `json:"cidrs,omitempty"`
 	Custom           bool     `json:"custom"`
 	DomainOverride   bool     `json:"domain_override,omitempty"`
 	Aliases          []string `json:"aliases,omitempty"`
@@ -199,6 +242,11 @@ func ParseSmartDNS(reader io.Reader) ([]Service, error) {
 			continue
 		}
 		service.Domains = normalizeDomains(append(service.Domains, serviceDomainSupplements[service.Name]...))
+		if service.Name == "Grok" {
+			service.Domains = excludeDomain(service.Domains, "twitter")
+		}
+		service.DomainKeywords = normalizeDomainKeywords(append(service.DomainKeywords, serviceDomainKeywordSupplements[service.Name]...))
+		service.CIDRs = normalizeCIDRs(append(service.CIDRs, serviceCIDRSupplements[service.Name]...))
 		result = append(result, *service)
 	}
 	return result, nil
@@ -211,11 +259,19 @@ func ensureBuiltInServices(services []Service) []Service {
 			Name:     "Grok",
 			Category: "AI Platform",
 			Domains:  normalizeDomains(grokDomains),
+			DomainKeywords: normalizeDomainKeywords(grokDomainKeywords),
+			CIDRs: normalizeCIDRs(grokCIDRs),
 		},
 	} {
 		present := false
-		for _, existing := range services {
+		for index, existing := range services {
 			if serviceIdentityKey(existing.Name) == serviceIdentityKey(service.Name) {
+				services[index].Domains = normalizeDomains(append(existing.Domains, service.Domains...))
+				if services[index].Name == "Grok" {
+					services[index].Domains = excludeDomain(services[index].Domains, "twitter")
+				}
+				services[index].DomainKeywords = normalizeDomainKeywords(append(existing.DomainKeywords, service.DomainKeywords...))
+				services[index].CIDRs = normalizeCIDRs(append(existing.CIDRs, service.CIDRs...))
 				present = true
 				break
 			}
@@ -301,6 +357,17 @@ func normalizeDomains(domains []string) []string {
 	return collectDomains(domains, normalizeDomain)
 }
 
+func excludeDomain(domains []string, excluded string) []string {
+	excluded = routingDomain(excluded)
+	result := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		if routingDomain(domain) != excluded {
+			result = append(result, domain)
+		}
+	}
+	return result
+}
+
 func normalizeCustomDomains(domains []string) ([]string, error) {
 	values := splitDomainValues(domains)
 	if len(values) > 1000 {
@@ -321,6 +388,92 @@ func normalizeCustomDomains(domains []string) ([]string, error) {
 	}
 	sort.Strings(result)
 	return result, nil
+}
+
+func normalizeDomainKeywords(keywords []string) []string {
+	return collectRuleValues(keywords, normalizeDomainKeyword)
+}
+
+func normalizeCustomDomainKeywords(keywords []string) ([]string, error) {
+	values := splitDomainValues(keywords)
+	if len(values) > 1000 {
+		return nil, fmt.Errorf("domain keyword count exceeds 1000")
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		keyword := normalizeDomainKeyword(value)
+		if keyword == "" {
+			return nil, fmt.Errorf("invalid domain keyword %q", strings.TrimSpace(value))
+		}
+		result = append(result, keyword)
+	}
+	return uniqueSortedStrings(result), nil
+}
+
+func normalizeDomainKeyword(value string) string {
+	keyword := strings.ToLower(strings.TrimSpace(value))
+	if keyword == "" || len(keyword) > 128 {
+		return ""
+	}
+	for index := 0; index < len(keyword); index++ {
+		character := keyword[index]
+		if !(character >= 'a' && character <= 'z') && !(character >= '0' && character <= '9') && character != '-' && character != '_' && character != '.' {
+			return ""
+		}
+	}
+	return keyword
+}
+
+func normalizeCIDRs(cidrs []string) []string {
+	return collectRuleValues(cidrs, normalizeCIDR)
+}
+
+func normalizeCustomCIDRs(cidrs []string) ([]string, error) {
+	values := splitDomainValues(cidrs)
+	if len(values) > 1000 {
+		return nil, fmt.Errorf("CIDR count exceeds 1000")
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		cidr := normalizeCIDR(value)
+		if cidr == "" {
+			return nil, fmt.Errorf("invalid CIDR %q", strings.TrimSpace(value))
+		}
+		result = append(result, cidr)
+	}
+	return uniqueSortedStrings(result), nil
+}
+
+func normalizeCIDR(value string) string {
+	_, network, err := net.ParseCIDR(strings.TrimSpace(value))
+	if err != nil || network == nil {
+		return ""
+	}
+	return network.String()
+}
+
+func collectRuleValues(values []string, normalize func(string) string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range splitDomainValues(values) {
+		if normalized := normalize(value); normalized != "" {
+			result = append(result, normalized)
+		}
+	}
+	return uniqueSortedStrings(result)
+}
+
+func uniqueSortedStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func routingDomains(domains []string) []string {

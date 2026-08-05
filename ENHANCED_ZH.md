@@ -3,7 +3,7 @@
 本 Fork 在原 Controller 前增加一个独立、可审计的增强层。原 Controller 和 Agent 仍使用上游发布的二进制，增强层负责简体中文界面、服务级路由、自定义域名与分类、动态规则集、目标机媒体脚本结果展示、账户安全和解锁链路统计。
 
 - 仓库：[xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns)
-- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.10)
+- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.11)
 
 ## 主要能力
 
@@ -19,6 +19,7 @@
 - XrayR 如果开启 `ControllerConfig.EnableDNS: true`，安装器会先备份 `/etc/XrayR/config.yml`，切换为读取系统 DNS 后仅重启一次 XrayR；V2bX、MTProxy、Docker 和其他业务配置不改动。
 - 前端新增、编辑和删除自定义服务，支持任意名称、分类和域名列表；普通域名使用 `example.com`，泛域名使用 `*.example.com`，保存、重新打开和迁移后均保留原格式。
 - 所有内置和自定义服务均可在服务表格或配置弹窗中编辑域名、增删域名并恢复域名库默认值；“彻底删除服务”会同步删除规则、目标 IP 路由、审计结果和无用解锁机引用，内置服务会写入永久隐藏列表，不会在下一次域名库同步时复现。
+- 服务规则编辑器同时支持域名后缀、域名关键词和 IPv4/IPv6 `IP-CIDR`；规则列表、Agent 同步和传输配置会保留原始规则类型。Grok 默认包含 xAI/Twitter 域名、`twitter` 关键词及六段上游 CIDR。
 - 服务库与 IP 服务选择器共用统一搜索，可按名称、中文别名、分类、服务 ID 或域名进行精确和模糊匹配，并忽略大小写及常见分隔符。
 - 服务库可新建自定义分类，并把任意内置或自定义服务移动到任意分类；移动只覆盖显示分类，不改变稳定服务 ID、域名规则、IP 路由或客户端配置，可一键恢复原分类。
 - 自定义服务自动生成兼容 Prism 的 `DOMAIN-SUFFIX` 规则集；泛域名在面板中保留 `*.`，下发时转换为基础后缀并去重，避免把无效的 `DOMAIN-SUFFIX,*.example.com` 发送给 Agent。

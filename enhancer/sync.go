@@ -46,21 +46,38 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 	services := app.catalog.Snapshot(response.Request.Context(), false).Services
 	serviceByID := make(map[string]Service, len(services))
 	managedDomains := make(map[string]struct{})
+	managedKeywords := make(map[string]struct{})
+	managedCIDRs := make(map[string]struct{})
 	for _, service := range services {
 		serviceByID[service.ID] = service
 		for _, domain := range routingDomains(service.Domains) {
 			managedDomains[domain] = struct{}{}
+		}
+		for _, keyword := range normalizeDomainKeywords(service.DomainKeywords) {
+			managedKeywords[keyword] = struct{}{}
+		}
+		for _, cidr := range normalizeCIDRs(service.CIDRs) {
+			managedCIDRs[cidr] = struct{}{}
 		}
 	}
 	for key, value := range rules {
 		rule, _ := value.(map[string]any)
 		name, _ := rule["name"].(string)
 		if strings.Contains(key, "/enhancer/rules/") || strings.HasPrefix(name, "enhancer:") || strings.Contains(name, "/enhancer/rules/") {
+			if pattern, ok := rule["pattern"].(string); ok {
+				delete(overrides, pattern)
+			}
 			delete(rules, key)
 		}
 	}
 	for domain := range managedDomains {
 		delete(overrides, domain)
+	}
+	for keyword := range managedKeywords {
+		delete(overrides, keyword)
+	}
+	for cidr := range managedCIDRs {
+		delete(overrides, cidr)
 	}
 
 	routes := cloneStringMap(record.Routes)
@@ -96,6 +113,30 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 				delete(overrides, domain)
 			} else {
 				overrides[domain] = proxyID
+			}
+		}
+		for _, keyword := range normalizeDomainKeywords(service.DomainKeywords) {
+			name := "enhancer:" + service.ID
+			rules[name+":keyword:"+keyword] = map[string]any{
+				"pattern": keyword, "ips": peers, "strategy": "", "name": name, "type": "DOMAIN-KEYWORD",
+				"priority": 100, "check": false, "node_id": "",
+			}
+			if _, tunneled := app.transport.EffectiveProxyIP(record.ID, proxyID); tunneled {
+				delete(overrides, keyword)
+			} else {
+				overrides[keyword] = proxyID
+			}
+		}
+		for _, cidr := range normalizeCIDRs(service.CIDRs) {
+			name := "enhancer:" + service.ID
+			rules[name+":cidr:"+cidr] = map[string]any{
+				"pattern": cidr, "ips": peers, "strategy": "", "name": name, "type": "IP-CIDR",
+				"priority": 100, "check": false, "node_id": "",
+			}
+			if _, tunneled := app.transport.EffectiveProxyIP(record.ID, proxyID); tunneled {
+				delete(overrides, cidr)
+			} else {
+				overrides[cidr] = proxyID
 			}
 		}
 	}

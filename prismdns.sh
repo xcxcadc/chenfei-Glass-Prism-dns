@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.10"
+VERSION="1.5.11"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -310,7 +310,7 @@ dns_guard_ok() {
   [[ "$required" != "1" || "$ready" == "1" ]]
 }
 ROUTE_HEALTH_KEY=$(jq -Sc '
-  {mode:"agent-smart-dual-stack-v1",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))}
+  {mode:"agent-smart-dual-stack-v1",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))}
 ' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 NOW=$(date +%s)
 USE_HEALTH_CACHE=false
@@ -606,7 +606,7 @@ if [[ "${PRISM_SKIP_SERVICE_AUDIT:-0}" != "1" ]] &&
     jq -Sc '{
       service_audit_requested_at:(.service_audit_requested_at // ""),
       traffic_peers:((.traffic_peers // []) | sort),
-      health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
+      health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))
     }' <<<"$BOOTSTRAP"
   } | sha256sum | awk '{print $1}')
   LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)
@@ -942,7 +942,7 @@ CURRENT_HASH=$(jq -Sc '{
   mode:"agent-smart-dual-stack-v1",
   smart:(.smart // true),
   traffic_peers:((.traffic_peers // []) | sort),
-  health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
+  health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))
 }' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 LAST_HASH=$(cat "$HASH_FILE" 2>/dev/null || true)
 NOW=$(date +%s)
@@ -951,7 +951,7 @@ AUDIT_HASH=$({
   jq -Sc '{
     service_audit_requested_at:(.service_audit_requested_at // ""),
     traffic_peers:((.traffic_peers // []) | sort),
-  health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,traffic_peers}] | sort_by(.service_id))
+  health_probes:([.health_probes[]? | {service_id,media_required,media_any,media_tests,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))
   }' <<<"$BOOTSTRAP"
 } | sha256sum | awk '{print $1}')
 LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)

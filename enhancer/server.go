@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.10"
+const uiVersion = "1.5.11"
 
 type App struct {
 	catalog      *CatalogManager
@@ -200,7 +200,7 @@ func (app *App) handleCustomServices(writer http.ResponseWriter, request *http.R
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		if err := app.preferences.ClearServiceDomains(saved.ID); err != nil {
+		if err := app.preferences.ClearServiceRules(saved.ID); err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -248,7 +248,7 @@ func (app *App) handleCustomService(writer http.ResponseWriter, request *http.Re
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		if err := app.preferences.ClearServiceDomains(saved.ID); err != nil {
+		if err := app.preferences.ClearServiceRules(saved.ID); err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -327,7 +327,7 @@ func (app *App) deleteServiceData(service Service) error {
 		if err := app.preferences.ClearServiceCategory(customID); err != nil {
 			return err
 		}
-		return app.preferences.ClearServiceDomains(customID)
+		return app.preferences.ClearServiceRules(customID)
 	}
 	return app.preferences.DeleteService(service.ID, service.Aliases)
 }
@@ -362,18 +362,32 @@ func (app *App) handleServiceDomains(writer http.ResponseWriter, request *http.R
 	switch request.Method {
 	case http.MethodPut:
 		var payload struct {
-			Domains []string `json:"domains"`
+			Domains  *[]string `json:"domains"`
+			Keywords *[]string `json:"domain_keywords"`
+			CIDRs    *[]string `json:"cidrs"`
 		}
 		if err := decodeJSON(request, &payload); err != nil {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		if err := app.preferences.SetServiceDomains(service.ID, payload.Domains); err != nil {
+		domains := service.Domains
+		keywords := service.DomainKeywords
+		cidrs := service.CIDRs
+		if payload.Domains != nil {
+			domains = *payload.Domains
+		}
+		if payload.Keywords != nil {
+			keywords = *payload.Keywords
+		}
+		if payload.CIDRs != nil {
+			cidrs = *payload.CIDRs
+		}
+		if err := app.preferences.SetServiceRules(service.ID, domains, keywords, cidrs); err != nil {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 	case http.MethodDelete:
-		if err := app.preferences.ClearServiceDomains(service.ID); err != nil {
+		if err := app.preferences.ClearServiceRules(service.ID); err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -540,6 +554,12 @@ func (app *App) handleRuleSet(writer http.ResponseWriter, request *http.Request)
 	_, _ = fmt.Fprintf(writer, "# %s | %s\n", service.Category, service.Name)
 	for _, domain := range routingDomains(service.Domains) {
 		_, _ = fmt.Fprintf(writer, "DOMAIN-SUFFIX,%s\n", domain)
+	}
+	for _, keyword := range normalizeDomainKeywords(service.DomainKeywords) {
+		_, _ = fmt.Fprintf(writer, "DOMAIN-KEYWORD,%s\n", keyword)
+	}
+	for _, cidr := range normalizeCIDRs(service.CIDRs) {
+		_, _ = fmt.Fprintf(writer, "IP-CIDR,%s\n", cidr)
 	}
 }
 

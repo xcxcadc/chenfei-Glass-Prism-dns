@@ -126,6 +126,8 @@ func mergeServices(base, custom []Service) []Service {
 		if index, exists := indexes[key]; exists {
 			merged := &result[index]
 			merged.Domains = normalizeDomains(append(merged.Domains, service.Domains...))
+			merged.DomainKeywords = normalizeDomainKeywords(append(merged.DomainKeywords, service.DomainKeywords...))
+			merged.CIDRs = normalizeCIDRs(append(merged.CIDRs, service.CIDRs...))
 			if service.Custom {
 				merged.Custom = true
 			}
@@ -139,6 +141,8 @@ func mergeServices(base, custom []Service) []Service {
 			return
 		}
 		service.Domains = normalizeDomains(service.Domains)
+		service.DomainKeywords = normalizeDomainKeywords(service.DomainKeywords)
+		service.CIDRs = normalizeCIDRs(service.CIDRs)
 		indexes[key] = len(result)
 		result = append(result, service)
 	}

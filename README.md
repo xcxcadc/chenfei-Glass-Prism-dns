@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名与分类、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前面板增强层版本为 `1.5.10`，客户端工具版本为 `1.5.10`，加密传输版本为 `2.3.0`；完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.10)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名与分类、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前面板增强层版本为 `1.5.11`，客户端工具版本为 `1.5.11`，加密传输版本为 `2.3.0`；完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.11)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
@@ -28,6 +28,7 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **简体中文增强界面** - 默认中文，可切换英文和深浅主题
 - **细化服务域名库** - 运行时动态解析 `stream.smartdns.list` 的最新有效服务；已停止运营的 Crackle、Salto、GYAO 不再参与路由
 - **服务域名与删除管理** - 任意内置或自定义服务都可在前端编辑域名、增删域名并恢复域名库默认值；服务操作栏和配置弹窗提供彻底删除，删除会移除规则、目标 IP 路由、实测结果，并持久化隐藏内置服务，后续同步不会自动恢复
+- **多类型分流规则** - 服务规则编辑器同时支持域名后缀、域名关键词和 IPv4/IPv6 `IP-CIDR`；规则列表与 Agent 同步会保留 `DOMAIN-SUFFIX`、`DOMAIN-KEYWORD`、`IP-CIDR` 类型。内置 Grok 已加入 xAI/Twitter 域名、`twitter` 关键词及上游六段 CIDR 规则
 - **统一服务搜索** - 服务库和 IP 服务选择器均支持名称、中文别名、分类、服务 ID 与域名的精确或模糊搜索，忽略大小写及常见分隔符
 - **分类自由编排** - 可新建自定义分类，把内置或自定义服务移动到任意分类并随时恢复原分类；分类调整不改变服务 ID、域名或已下发路由
 - **服务级手动路由** - 每个受管目标 IP 的每项服务显式绑定到任意解锁机；只有保存配置才会改变出口，受管路由不跟随 Smart/Fallback 或检测结果自动跳转

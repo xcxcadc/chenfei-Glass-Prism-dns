@@ -21,7 +21,7 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	defer upstream.Close()
 
 	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
-	service, err := customStore.Upsert(Service{Name: "Persistent", Domains: []string{"example.com", "*.example.com", "*.cdn.example.com"}})
+	service, err := customStore.Upsert(Service{Name: "Persistent", Domains: []string{"example.com", "*.example.com", "*.cdn.example.com"}, DomainKeywords: []string{"twitter"}, CIDRs: []string{"192.133.76.0/22"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,8 +60,8 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	if _, exists := payload.RuleOverrides["*.example.com"]; exists {
 		t.Fatalf("wildcard leaked into agent overrides: %+v", payload.RuleOverrides)
 	}
-	if payload.RuleOverrides["stale.example"] != "old-proxy" || payload.RuleOverrides["example.net"] != "public-proxy" {
-		t.Fatalf("unmanaged overrides changed: %+v", payload.RuleOverrides)
+	if _, exists := payload.RuleOverrides["stale.example"]; exists || payload.RuleOverrides["example.net"] != "public-proxy" {
+		t.Fatalf("stale managed overrides were not removed or unmanaged overrides changed: %+v", payload.RuleOverrides)
 	}
 	rule := payload.Rules["enhancer:"+service.ID+":example.com"]
 	if rule == nil || rule["pattern"] != "example.com" {
@@ -76,6 +76,14 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	}
 	if _, exists := payload.Rules["public:example.net"]; !exists {
 		t.Fatal("unmanaged rule was removed")
+	}
+	keywordRule := payload.Rules["enhancer:"+service.ID+":keyword:twitter"]
+	if keywordRule == nil || keywordRule["type"] != "DOMAIN-KEYWORD" || payload.RuleOverrides["twitter"] != "proxy-1" {
+		t.Fatalf("keyword rule was not synchronized: %+v, %+v", keywordRule, payload.RuleOverrides)
+	}
+	cidrRule := payload.Rules["enhancer:"+service.ID+":cidr:192.133.76.0/22"]
+	if cidrRule == nil || cidrRule["type"] != "IP-CIDR" || payload.RuleOverrides["192.133.76.0/22"] != "proxy-1" {
+		t.Fatalf("CIDR rule was not synchronized: %+v, %+v", cidrRule, payload.RuleOverrides)
 	}
 	if !payload.Smart {
 		t.Fatal("managed DNS sync must preserve Agent smart mode")
