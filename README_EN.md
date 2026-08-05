@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel enhancer `1.5.12`, client tool `1.5.12`, and encrypted transport `2.3.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.12).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel enhancer `1.5.13`, client tool `1.5.13`, and encrypted transport `2.3.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.13).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -142,7 +142,7 @@ After installation:
 
 ### Fresh Installation and Data Sanitization
 
-The repository contains only program code, installer scripts, and frontend assets. It does not contain runtime databases, node secrets, credentials, IP routes, traffic records, or data from the current server. A new-server install creates empty stores and generates a new JWT secret and initial password; it never copies this panel's nodes or service configuration.
+The repository contains only program code, installer scripts, and frontend assets. It does not contain runtime databases, node secrets, credentials, IP routes, traffic records, or data from the current server. A new-server install creates empty stores and generates a new JWT secret and initial password; it never copies this panel's nodes or service configuration. After login, the icon can be replaced with a transparent PNG from `Settings -> Site settings`; the runtime file is stored at `/var/lib/prism-enhancer/branding-icon.png`.
 
 To explicitly perform a sanitized fresh install on a host that previously ran Prism, first confirm that its old panel data is no longer needed, then run:
 

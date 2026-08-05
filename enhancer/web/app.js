@@ -22,7 +22,7 @@ const translations = {
     actualAudit: "目标机实测", auditPending: "待实测", targetAvailable: "目标机可用", targetUncertain: "探测待确认", targetProblem: "目标机异常", targetCompatibility: "目标机兼容性",
     actualAvailable: "实测可用", actualProblem: "异常或波动", referenceOnly: "仅节点自检", agentReference: "节点自检（仅参考）", noTargetAudit: "尚无目标机实测", auditNotCovered: "脚本未覆盖",
     accountSettings: "账户安全", accountHint: "验证旧账号后修改管理员用户名和密码。", oldUsername: "旧用户名", oldPassword: "旧密码", newUsername: "新用户名", newPassword: "新密码", confirmPassword: "确认新密码", updateAccount: "更新账户", credentialsInvalid: "旧用户名或旧密码不正确", passwordMismatch: "两次输入的新密码不一致", accountUpdated: "账户已更新，请使用新账号重新登录",
-    siteSettings: "站点设置", siteSettingsHint: "自定义左上角产品名称、说明文字和浏览器标签标题。", siteName: "网页名称", browserTitle: "页面标签名称", siteTagline: "网页说明", saveBranding: "保存站点设置", brandingUpdated: "站点名称已更新",
+    siteSettings: "站点设置", siteSettingsHint: "自定义左上角产品名称、说明文字和浏览器标签标题。", siteName: "网页名称", browserTitle: "页面标签名称", siteTagline: "网页说明", saveBranding: "保存站点设置", brandingUpdated: "站点名称已更新", iconTitle: "站点图标", iconHint: "仅支持带透明背景的 PNG，最大 2 MB。上传后会立即替换浏览器图标和账户安全图标。", chooseIcon: "上传 PNG 图标", restoreIcon: "恢复默认图标", iconUpdated: "图标已更新", iconRestored: "已恢复默认图标", restoreIconConfirm: "恢复默认透明图标？", iconTypeError: "请选择 PNG 图标文件", iconSizeError: "图标不能超过 2 MB",
     manageCategories: "分类管理", categoryHint: "服务分类只影响整理和筛选，不会修改域名、路由或客户端配置。", newCategory: "新建分类", categoryName: "分类名称", categoryCreated: "分类已创建", categoryDeleted: "分类已删除", editCategory: "分类", serviceCategory: "调整服务分类", restoreCategory: "恢复原分类", originalCategory: "原始分类", useCategory: "使用", builtInCategory: "内置", customCategory: "自定义", categoryInUse: "该分类仍有服务，请先移动这些服务", categoryDeleteConfirm: "删除这个空分类？",
     unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点页仅展示解锁机 Agent 参考状态；最终状态来自目标机的 media.ispvps.com IPv4 实测和 DNS/TLS 路径校验。", checkAgain: "重新检测", waitingResults: "正在等待目标机返回 IPv4 实测结果...",
   },
@@ -49,7 +49,7 @@ const translations = {
     actualAudit: "Target audit", auditPending: "Not audited", targetAvailable: "Target passed", targetUncertain: "Probe inconclusive", targetProblem: "Target issue", targetCompatibility: "Target compatibility",
     actualAvailable: "Verified passed", actualProblem: "Failed or unstable", referenceOnly: "Agent only", agentReference: "Agent self-check (reference only)", noTargetAudit: "No target audit yet", auditNotCovered: "Not covered by script",
     accountSettings: "Account security", accountHint: "Verify the current credentials before changing the administrator username and password.", oldUsername: "Current username", oldPassword: "Current password", newUsername: "New username", newPassword: "New password", confirmPassword: "Confirm new password", updateAccount: "Update account", credentialsInvalid: "Current username or password is incorrect", passwordMismatch: "The new passwords do not match", accountUpdated: "Account updated. Sign in with the new credentials.",
-    siteSettings: "Site settings", siteSettingsHint: "Customize the product name, supporting text, and browser tab title.", siteName: "Website name", browserTitle: "Browser tab title", siteTagline: "Website description", saveBranding: "Save site settings", brandingUpdated: "Site branding updated",
+    siteSettings: "Site settings", siteSettingsHint: "Customize the product name, supporting text, and browser tab title.", siteName: "Website name", browserTitle: "Browser tab title", siteTagline: "Website description", saveBranding: "Save site settings", brandingUpdated: "Site branding updated", iconTitle: "Site icon", iconHint: "PNG with transparency only, up to 2 MB. It replaces the browser and account-security icons immediately.", chooseIcon: "Upload PNG icon", restoreIcon: "Restore default icon", iconUpdated: "Icon updated", iconRestored: "Default icon restored", restoreIconConfirm: "Restore the default transparent icon?", iconTypeError: "Choose a PNG icon file", iconSizeError: "The icon must be 2 MB or smaller",
     manageCategories: "Manage categories", categoryHint: "Categories only organize and filter services. Domains, routes, and client configuration remain unchanged.", newCategory: "New category", categoryName: "Category name", categoryCreated: "Category created", categoryDeleted: "Category deleted", editCategory: "Category", serviceCategory: "Change service category", restoreCategory: "Restore original", originalCategory: "Original category", useCategory: "Use", builtInCategory: "Built-in", customCategory: "Custom", categoryInUse: "This category still contains services. Move them first.", categoryDeleteConfirm: "Delete this empty category?",
     unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "The node page is reference-only. Final status comes from the target's IPv4 media.ispvps.com check and DNS/TLS path validation.", checkAgain: "Check again", waitingResults: "Waiting for the target's IPv4 audit...",
   }
@@ -82,7 +82,10 @@ const state = {
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
-const iconAssetVersion = "1.5.12-prism-mark";
+const iconAssetVersion = "1.5.13-prism-mark";
+
+function brandingIconURL() { return `/enhancer/api/branding/icon?v=${encodeURIComponent(state.branding?.icon_version || iconAssetVersion)}`; }
+function updateBrandingIcon() { document.querySelector('link[rel="icon"]')?.setAttribute("href", brandingIconURL()); }
 
 function browserTitle() { return String(state.branding.browser_title || t("title")); }
 function siteTagline() { return String(state.branding.site_tagline || (state.lang === "zh" ? "全局解锁编排" : "Global orchestration")); }
@@ -538,6 +541,7 @@ async function loadBranding() {
     if (!response.ok) return;
     const branding = await response.json();
     state.branding = branding && typeof branding === "object" ? branding : state.branding;
+    updateBrandingIcon();
   } catch {}
 }
 
@@ -1211,12 +1215,12 @@ function renderModal() {
 
 function brandingModalHTML() {
   const branding = state.branding || {};
-  return `<div class="modal-backdrop"><form class="modal medium panel" id="branding-form"><header class="modal-head"><div><h2>${t("siteSettings")}</h2><p>${t("siteSettingsHint")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("siteName")}</label><input class="input" name="site_name" value="${escapeHTML(branding.site_name || siteName())}" required maxlength="48" autocomplete="off"></div><div class="field"><label>${t("browserTitle")}</label><input class="input" name="browser_title" value="${escapeHTML(branding.browser_title || browserTitle())}" required maxlength="96" autocomplete="off"></div><div class="field"><label>${t("siteTagline")}</label><input class="input" name="site_tagline" value="${escapeHTML(branding.site_tagline || siteTagline())}" maxlength="120" autocomplete="off"></div><div class="branding-preview"><span>${t("siteName")}</span><strong id="branding-preview-name">${escapeHTML(siteName())}</strong><small id="branding-preview-tagline">${escapeHTML(siteTagline())}</small></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button" ${state.modal.busy ? "disabled" : ""}>${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("saveBranding")}</button></div></footer></form></div>`;
+  return `<div class="modal-backdrop"><form class="modal medium panel" id="branding-form"><header class="modal-head"><div><h2>${t("siteSettings")}</h2><p>${t("siteSettingsHint")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("siteName")}</label><input class="input" name="site_name" value="${escapeHTML(branding.site_name || siteName())}" required maxlength="48" autocomplete="off"></div><div class="field"><label>${t("browserTitle")}</label><input class="input" name="browser_title" value="${escapeHTML(branding.browser_title || browserTitle())}" required maxlength="96" autocomplete="off"></div><div class="field"><label>${t("siteTagline")}</label><input class="input" name="site_tagline" value="${escapeHTML(branding.site_tagline || siteTagline())}" maxlength="120" autocomplete="off"></div><div class="branding-icon-editor"><div><strong>${t("iconTitle")}</strong><span class="hint">${t("iconHint")}</span></div><div class="branding-icon-row"><img id="branding-icon-preview" class="branding-icon-preview" src="${brandingIconURL()}" alt=""><div class="inline-actions"><label class="btn small ${state.modal.busy ? "disabled" : ""}" for="branding-icon-file">${t("chooseIcon")}</label><input id="branding-icon-file" type="file" accept="image/png" hidden ${state.modal.busy ? "disabled" : ""}><button class="btn small" id="restore-branding-icon" type="button" ${state.modal.busy ? "disabled" : ""}>${t("restoreIcon")}</button></div></div></div><div class="branding-preview"><span>${t("siteName")}</span><strong id="branding-preview-name">${escapeHTML(siteName())}</strong><small id="branding-preview-tagline">${escapeHTML(siteTagline())}</small></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button" ${state.modal.busy ? "disabled" : ""}>${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("saveBranding")}</button></div></footer></form></div>`;
 }
 
 function accountModalHTML() {
   const username = state.user.username || "admin";
-  return `<div class="modal-backdrop"><form class="modal medium panel" id="account-form"><header class="modal-head"><div class="account-modal-title"><img class="account-security-mark" src="/assets/favicon.png?v=${iconAssetVersion}" alt=""><div><h2>${t("accountSettings")}</h2><p>${t("accountHint")}</p></div></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="form-columns"><div class="field"><label>${t("oldUsername")}</label><input class="input" name="old_username" value="${escapeHTML(username)}" required autocomplete="username" autocapitalize="off" spellcheck="false"></div><div class="field"><label>${t("oldPassword")}</label><input class="input" type="password" name="old_password" required autocomplete="current-password"></div></div><div class="field"><label>${t("newUsername")}</label><input class="input" name="new_username" value="${escapeHTML(username)}" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" autocomplete="off" autocapitalize="off" spellcheck="false"><span class="hint">${state.lang === "zh" ? "3-20 位字母、数字或下划线" : "3-20 letters, numbers, or underscores"}</span></div><div class="form-columns"><div class="field"><label>${t("newPassword")}</label><input class="input" type="password" name="new_password" required minlength="6" autocomplete="new-password"></div><div class="field"><label>${t("confirmPassword")}</label><input class="input" type="password" name="confirm_password" required minlength="6" autocomplete="new-password"></div></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button" ${state.modal.busy ? "disabled" : ""}>${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("updateAccount")}</button></div></footer></form></div>`;
+  return `<div class="modal-backdrop"><form class="modal medium panel" id="account-form"><header class="modal-head"><div class="account-modal-title"><img class="account-security-mark" src="${brandingIconURL()}" alt=""><div><h2>${t("accountSettings")}</h2><p>${t("accountHint")}</p></div></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="form-columns"><div class="field"><label>${t("oldUsername")}</label><input class="input" name="old_username" value="${escapeHTML(username)}" required autocomplete="username" autocapitalize="off" spellcheck="false"></div><div class="field"><label>${t("oldPassword")}</label><input class="input" type="password" name="old_password" required autocomplete="current-password"></div></div><div class="field"><label>${t("newUsername")}</label><input class="input" name="new_username" value="${escapeHTML(username)}" required minlength="3" maxlength="20" pattern="[A-Za-z0-9_]+" autocomplete="off" autocapitalize="off" spellcheck="false"><span class="hint">${state.lang === "zh" ? "3-20 位字母、数字或下划线" : "3-20 letters, numbers, or underscores"}</span></div><div class="form-columns"><div class="field"><label>${t("newPassword")}</label><input class="input" type="password" name="new_password" required minlength="6" autocomplete="new-password"></div><div class="field"><label>${t("confirmPassword")}</label><input class="input" type="password" name="confirm_password" required minlength="6" autocomplete="new-password"></div></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button" ${state.modal.busy ? "disabled" : ""}>${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("updateAccount")}</button></div></footer></form></div>`;
 }
 
 function serviceModalHTML(service) {
@@ -1405,6 +1409,11 @@ function bindModal() {
     document.getElementById("branding-preview-name").textContent = String(form.get("site_name") || "");
     document.getElementById("branding-preview-tagline").textContent = String(form.get("site_tagline") || "");
   });
+  document.getElementById("branding-icon-file")?.addEventListener("change", event => {
+    const file = event.target.files?.[0];
+    if (file) uploadBrandingIcon(file);
+  });
+  document.getElementById("restore-branding-icon")?.addEventListener("click", restoreBrandingIcon);
   filterIPServiceOptions();
 }
 
@@ -1537,9 +1546,54 @@ async function updateBranding(event) {
   state.modal.busy = true; state.modal.error = ""; renderModal();
   try {
     state.branding = await api("/enhancer/api/branding", {method:"PUT", body:JSON.stringify(payload)});
+    updateBrandingIcon();
     state.modal = null;
     render();
     toast(t("brandingUpdated"), "good");
+  } catch (error) {
+    state.modal.busy = false;
+    state.modal.error = error.message;
+    renderModal();
+  }
+}
+
+async function uploadBrandingIcon(file) {
+  const lowerName = String(file.name || "").toLowerCase();
+  if ((file.type && file.type !== "image/png") || !lowerName.endsWith(".png")) {
+    state.modal.error = t("iconTypeError");
+    renderModal();
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    state.modal.error = t("iconSizeError");
+    renderModal();
+    return;
+  }
+  const form = new FormData();
+  form.append("icon", file);
+  state.modal.busy = true; state.modal.error = ""; renderModal();
+  try {
+    state.branding = await api("/enhancer/api/branding/icon", {method:"PUT", body:form});
+    updateBrandingIcon();
+    state.modal.busy = false;
+    renderModal();
+    toast(t("iconUpdated"), "good");
+  } catch (error) {
+    state.modal.busy = false;
+    state.modal.error = error.message;
+    renderModal();
+  }
+}
+
+async function restoreBrandingIcon() {
+  if (!confirm(t("restoreIconConfirm"))) return;
+  state.modal.busy = true; state.modal.error = ""; renderModal();
+  try {
+    state.branding = await api("/enhancer/api/branding/icon", {method:"DELETE"});
+    updateBrandingIcon();
+    state.modal.busy = false;
+    renderModal();
+    toast(t("iconRestored"), "good");
   } catch (error) {
     state.modal.busy = false;
     state.modal.error = error.message;

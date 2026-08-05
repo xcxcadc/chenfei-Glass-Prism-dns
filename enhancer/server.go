@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.12"
+const uiVersion = "1.5.13"
 
 type App struct {
 	catalog      *CatalogManager
@@ -101,6 +101,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/connectivity", app.handleConnectivity)
 	mux.HandleFunc("/enhancer/api/account", app.handleAccountUpdate)
 	mux.HandleFunc("/enhancer/api/branding", app.handleBranding)
+	mux.HandleFunc("/enhancer/api/branding/icon", app.handleBrandingIcon)
 	mux.HandleFunc("/enhancer/api/nodes", app.handleEnhancedNodes)
 	mux.HandleFunc("/enhancer/api/nodes/", app.handleEnhancedNode)
 	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
@@ -120,7 +121,7 @@ func (app *App) Handler() http.Handler {
 
 func (app *App) handleRoot(writer http.ResponseWriter, request *http.Request) {
 	if request.URL.Path == "/favicon.ico" && request.Method == http.MethodGet {
-		icon, err := fs.ReadFile(app.web, "favicon.png")
+		icon, err := app.brandingIcon()
 		if err != nil {
 			http.Error(writer, "favicon unavailable", http.StatusNotFound)
 			return

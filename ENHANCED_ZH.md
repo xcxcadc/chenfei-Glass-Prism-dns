@@ -3,7 +3,7 @@
 本 Fork 在原 Controller 前增加一个独立、可审计的增强层。原 Controller 和 Agent 仍使用上游发布的二进制，增强层负责简体中文界面、服务级路由、自定义域名与分类、动态规则集、目标机媒体脚本结果展示、账户安全和解锁链路统计。
 
 - 仓库：[xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns)
-- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.12)
+- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.13)
 
 ## 主要能力
 
@@ -71,7 +71,7 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 
 仓库发布内容已脱敏：只包含程序代码、安装脚本和前端资源，不包含运行时数据库、节点密钥、账号密码、IP 配置、流量记录或任何当前服务器数据。新服务器执行一键安装时会创建空白数据，并生成新的 JWT 密钥和初始密码。
 
-面板浏览器标签、首页图标和“账户安全”窗口使用 `enhancer/web/favicon.png`。如需替换品牌图标，直接用同尺寸 PNG 覆盖该文件后重新构建发布即可；也可以替换为其他 PNG，前端会通过 `/assets/favicon.png` 读取。运行中的旧浏览器缓存可用 `Ctrl+F5` 刷新。
+面板浏览器标签、首页图标和“账户安全”窗口使用透明 PNG 图标。默认资源位于 `enhancer/web/favicon.png`；登录后进入“设置中心 → 站点设置”，即可上传带透明背景的 PNG（最大 2 MB），上传后立即替换并持久化到 `/var/lib/prism-enhancer/branding-icon.png`，也可以点击“恢复默认图标”。如需从源码替换默认图标，直接覆盖该文件后重新构建发布即可。运行中的旧浏览器缓存可用 `Ctrl+F5` 刷新。
 
 如需在曾安装过 Prism 的主机上明确清空 Prism 数据并重新初始化，执行以下命令：
 
