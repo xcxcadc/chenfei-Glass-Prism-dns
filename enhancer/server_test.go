@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -465,5 +466,18 @@ func TestWebAssetsExposeVersionAndDisableCaching(t *testing.T) {
 	}
 	if csp := response.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "img-src 'self' data: https:") {
 		t.Fatalf("CSP blocks external service icon fallbacks: %q", csp)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("favicon returned %d", response.Code)
+	}
+	if response.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("favicon has unexpected content type: %q", response.Header().Get("Content-Type"))
+	}
+	if !bytes.HasPrefix(response.Body.Bytes(), []byte{0x89, 'P', 'N', 'G'}) {
+		t.Fatalf("favicon is not a PNG")
 	}
 }

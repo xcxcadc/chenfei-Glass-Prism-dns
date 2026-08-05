@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.11"
+VERSION="1.5.12"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"

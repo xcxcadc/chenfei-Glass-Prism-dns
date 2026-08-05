@@ -19,7 +19,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.11"
+const uiVersion = "1.5.12"
 
 type App struct {
 	catalog      *CatalogManager
@@ -120,7 +120,14 @@ func (app *App) Handler() http.Handler {
 
 func (app *App) handleRoot(writer http.ResponseWriter, request *http.Request) {
 	if request.URL.Path == "/favicon.ico" && request.Method == http.MethodGet {
-		writer.WriteHeader(http.StatusNoContent)
+		icon, err := fs.ReadFile(app.web, "favicon.png")
+		if err != nil {
+			http.Error(writer, "favicon unavailable", http.StatusNotFound)
+			return
+		}
+		writer.Header().Set("Content-Type", "image/png")
+		writer.Header().Set("Cache-Control", "public, max-age=86400, immutable")
+		_, _ = writer.Write(icon)
 		return
 	}
 	if request.URL.Path == "/" && request.Method == http.MethodGet {

@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel enhancer `1.5.11`, client tool `1.5.11`, and encrypted transport `2.3.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.11).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel enhancer `1.5.12`, client tool `1.5.12`, and encrypted transport `2.3.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.12).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -139,6 +139,19 @@ After installation:
 - Username: `admin`
 - Password: Displayed after installation
 - Custom service data: `/var/lib/prism-enhancer/custom-services.json`
+
+### Fresh Installation and Data Sanitization
+
+The repository contains only program code, installer scripts, and frontend assets. It does not contain runtime databases, node secrets, credentials, IP routes, traffic records, or data from the current server. A new-server install creates empty stores and generates a new JWT secret and initial password; it never copies this panel's nodes or service configuration.
+
+To explicitly perform a sanitized fresh install on a host that previously ran Prism, first confirm that its old panel data is no longer needed, then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/enhanced_install.sh \\
+  | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
+```
+
+This mode removes only Prism's `/opt/prism/data.db`, `/opt/prism/.env`, initial-password file, and `/var/lib/prism-enhancer/`. It does not remove or modify Docker, XrayR, V2bX, MTProxy, or other services. Restoring an existing panel is always explicit through [MIGRATION_ZH.md](MIGRATION_ZH.md); the installer never imports old data automatically.
 
 ### Manual Installation
 

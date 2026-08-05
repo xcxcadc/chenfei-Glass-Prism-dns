@@ -3,7 +3,7 @@
 本 Fork 在原 Controller 前增加一个独立、可审计的增强层。原 Controller 和 Agent 仍使用上游发布的二进制，增强层负责简体中文界面、服务级路由、自定义域名与分类、动态规则集、目标机媒体脚本结果展示、账户安全和解锁链路统计。
 
 - 仓库：[xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns)
-- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.11)
+- 最新版本：[GitHub Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.12)
 
 ## 主要能力
 
@@ -66,6 +66,21 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main
 该逻辑不写死任何现有 IP、域名或节点 ID。以后从面板新增的解锁机和被解锁机，只要执行页面首次生成的客户端命令，就会默认获得相同的 IPv4 优先、AAAA 抑制、共享域名联动、只读实测、5 秒授权、缓存清理、流量统计和健康上报能力。无 `flock` 的精简系统会自动使用原子目录锁降级。
 
 `1.4.5` 回归使用运行时最新有效服务目录，并对每台目标机逐项验证 DNS、AAAA、TLS/SNI、代表页面和服务方结论。Gemini 检测覆盖登录态实际使用的账户能力、One Google、静态资源和应用 API 域名；即时检测不再只截取前 10 个域名，而是并发验证完整应用链后才显示通过。面板不会把解锁机自身自检结果伪装成目标机可用，不会因第三方检测波动自动切换节点，也不会把共享域名拆到互相覆盖的出口。Crackle、Salto、GYAO 已停止运营，不再进入有效服务目录。
+
+## 发布、图标与全新安装
+
+仓库发布内容已脱敏：只包含程序代码、安装脚本和前端资源，不包含运行时数据库、节点密钥、账号密码、IP 配置、流量记录或任何当前服务器数据。新服务器执行一键安装时会创建空白数据，并生成新的 JWT 密钥和初始密码。
+
+面板浏览器标签、首页图标和“账户安全”窗口使用 `enhancer/web/favicon.png`。如需替换品牌图标，直接用同尺寸 PNG 覆盖该文件后重新构建发布即可；也可以替换为其他 PNG，前端会通过 `/assets/favicon.png` 读取。运行中的旧浏览器缓存可用 `Ctrl+F5` 刷新。
+
+如需在曾安装过 Prism 的主机上明确清空 Prism 数据并重新初始化，执行以下命令：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/enhanced_install.sh \\
+  | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
+```
+
+该模式只清理 `/opt/prism/data.db`、`/opt/prism/.env`、初始密码文件和 `/var/lib/prism-enhancer/`，不会删除或修改 Docker、XrayR、V2bX、MTProxy 等其他业务。需要保留旧面板时，必须按 `MIGRATION_ZH.md` 显式备份和恢复；安装脚本不会自动带入旧数据。
 
 ## 解锁检测与账户安全
 

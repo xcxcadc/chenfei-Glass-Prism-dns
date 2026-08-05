@@ -20,6 +20,15 @@ require_root() {
     command -v systemctl >/dev/null 2>&1 || fail "当前系统不支持 systemd"
 }
 
+prepare_fresh_install() {
+    [ "${PRISM_FRESH_INSTALL:-0}" = "1" ] || return 0
+    [ "${PRISM_CONFIRM_FRESH:-}" = "YES" ] || fail "PRISM_FRESH_INSTALL requires PRISM_CONFIRM_FRESH=YES"
+    info "清理本机已有 Prism 数据，开始全新安装"
+    systemctl stop "$ENHANCER_SERVICE" "$CONTROLLER_SERVICE" 2>/dev/null || true
+    rm -f "${INSTALL_DIR}/data.db" "${INSTALL_DIR}/.env" "${INSTALL_DIR}/initial-password"
+    rm -rf -- "$DATA_DIR"
+}
+
 detect_arch() {
     case "$(uname -m)" in
         x86_64|amd64) echo "amd64" ;;
@@ -98,6 +107,7 @@ EOF
 
 main() {
     require_root
+    prepare_fresh_install
     validate_port "$PUBLIC_PORT"
     validate_port "$CORE_PORT"
     [ "$PUBLIC_PORT" != "$CORE_PORT" ] || fail "公开端口和内部端口不能相同"
