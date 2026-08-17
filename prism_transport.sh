@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="2.3.0"
+VERSION="2.3.1"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -181,6 +181,14 @@ EOF
   fail "adaptive egress did not open its loopback listeners"
 }
 
+proxy_egress_ready() {
+  [[ "$ROLE" == "proxy" ]] || return 0
+  [[ -x "$EGRESS_BINARY" ]] &&
+    systemctl is-active --quiet "$EGRESS_SERVICE" 2>/dev/null &&
+    ss -lnt 2>/dev/null | awk -v http=":$EGRESS_HTTP_PORT" -v https=":$EGRESS_HTTPS_PORT" \
+      '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'
+}
+
 post_json() {
   local endpoint="$1" body="$2"
   curl -fsSL --connect-timeout 8 --max-time 20 \
@@ -193,9 +201,7 @@ proxy_registration() {
   local host_key body egress_ready=false
   ssh-keygen -A >/dev/null 2>&1 || true
   host_key=$(awk '{print $1" "$2}' /etc/ssh/ssh_host_ed25519_key.pub)
-  if systemctl is-active --quiet "$EGRESS_SERVICE" 2>/dev/null &&
-    ss -lnt 2>/dev/null | awk -v http=":$EGRESS_HTTP_PORT" -v https=":$EGRESS_HTTPS_PORT" \
-      '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'; then
+  if proxy_egress_ready; then
     egress_ready=true
   fi
   body=$(jq -nc \
@@ -282,7 +288,7 @@ apply_proxy_authorization() {
     echo '    ip saddr @clients4 udp dport 53 accept'
     echo '    meta nfproto ipv4 tcp dport { 53, 80, 443 } drop'
     echo '    meta nfproto ipv4 udp dport 53 drop'
-    echo '    meta nfproto ipv6 tcp dport { 53, 80, 443 } drop'
+    echo '    meta nfproto ipv6 tcp dport 53 drop'
     echo '    meta nfproto ipv6 udp dport 53 drop'
     echo '  }'
     echo '}'
@@ -533,6 +539,7 @@ sync_transport() {
   [[ -n "$CREDENTIAL" ]] || fail "transport credential is missing"
   ensure_dependencies
   if [[ "$ROLE" == "proxy" ]]; then
+    proxy_egress_ready || install_proxy_egress
     sync_proxy
   else
     ensure_client_keypair

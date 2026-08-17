@@ -247,6 +247,9 @@ func evaluateService(ctx context.Context, service servicePolicy) bool {
 }
 
 func preferIPv6Result(service servicePolicy, ipv4, ipv6 probeResult) bool {
+	if !service.IPv6Candidate {
+		return false
+	}
 	if !ipv6.Reachable {
 		return false
 	}

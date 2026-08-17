@@ -45,16 +45,16 @@ func TestTransportStoreBuildsReadyPair(t *testing.T) {
 	if err := store.RegisterClient("ip-a", clientKey, &readyProxies); err != nil {
 		t.Fatal(err)
 	}
-	proxyIP, ready := store.EffectiveProxyIP("ip-a", "proxy-a")
-	if !ready || proxyIP != clientConfig.Peers[0].ProxyIP {
-		t.Fatalf("unexpected ready transport: %q %v", proxyIP, ready)
+	transportIP, ready := store.EffectiveProxyIP("ip-a", "proxy-a")
+	if !ready || transportIP != clientConfig.Peers[0].ProxyIP {
+		t.Fatalf("unexpected ready transport: %q %v", transportIP, ready)
 	}
 	reloaded, err := NewTransportStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reloadedProxyIP, ok := reloaded.EffectiveProxyIP("ip-a", "proxy-a"); !ok || reloadedProxyIP != proxyIP {
-		t.Fatalf("transport readiness was not persisted: %q %v", reloadedProxyIP, ok)
+	if reloadedTransportIP, ok := reloaded.EffectiveProxyIP("ip-a", "proxy-a"); !ok || reloadedTransportIP != transportIP {
+		t.Fatalf("transport readiness was not persisted: %q %v", reloadedTransportIP, ok)
 	}
 }
 

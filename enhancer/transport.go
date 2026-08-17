@@ -78,13 +78,13 @@ type transportPeer struct {
 }
 
 type transportEgressService struct {
-	ServiceID     string   `json:"service_id"`
-	Name          string   `json:"name"`
-	Domains       []string `json:"domains"`
+	ServiceID      string   `json:"service_id"`
+	Name           string   `json:"name"`
+	Domains        []string `json:"domains"`
 	DomainKeywords []string `json:"domain_keywords,omitempty"`
-	CIDRs         []string `json:"cidrs,omitempty"`
-	ProbeDomains  []string `json:"probe_domains"`
-	IPv6Candidate bool     `json:"ipv6_candidate,omitempty"`
+	CIDRs          []string `json:"cidrs,omitempty"`
+	ProbeDomains   []string `json:"probe_domains"`
+	IPv6Candidate  bool     `json:"ipv6_candidate,omitempty"`
 }
 
 type transportConfig struct {
@@ -354,13 +354,13 @@ func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []trans
 			continue
 		}
 		result = append(result, transportEgressService{
-			ServiceID:     service.ID,
-			Name:          service.Name,
-			Domains:       routingDomains(service.Domains),
+			ServiceID:      service.ID,
+			Name:           service.Name,
+			Domains:        routingDomains(service.Domains),
 			DomainKeywords: normalizeDomainKeywords(service.DomainKeywords),
-			CIDRs:         normalizeCIDRs(service.CIDRs),
-			ProbeDomains:  preferredProbeDomains(service),
-			IPv6Candidate: service.Name == "Gemini" || service.Name == "Google AI Studio",
+			CIDRs:          normalizeCIDRs(service.CIDRs),
+			ProbeDomains:   preferredProbeDomains(service),
+			IPv6Candidate:  false,
 		})
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].ServiceID < result[right].ServiceID })

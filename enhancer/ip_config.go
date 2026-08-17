@@ -248,7 +248,7 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 			"service_id":      service.ID,
 			"name":            service.Name,
 			"domain":          preferredProbeDomain(service),
-			"media_source":    "https://media.ispvps.com",
+			"media_source":    "bash <(curl -L -s check.unlock.media) -M 4",
 			"media_required":  mediaTestSpecForService(service).Required,
 			"media_any":       mediaTestSpecForService(service).Any,
 			"media_tests":     unlockTestProviders(service),

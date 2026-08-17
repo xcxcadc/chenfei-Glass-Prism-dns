@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.13"
+VERSION="1.5.15"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -152,6 +152,7 @@ install_traffic_reporter() {
   cat > /usr/local/lib/prismdns/report-traffic.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+STATE_DIR="/var/lib/prismdns"
 CONFIG_FILE="/var/lib/prismdns/client.conf"
 PEER_HASH_FILE="/var/lib/prismdns/traffic-peers.sha256"
 TRAFFIC_STATE_FILE="/var/lib/prismdns/traffic-cumulative.json"
@@ -163,9 +164,11 @@ NFT_TABLE="prismdns_traffic"
 DNS_GUARD_STATE_FILE="/var/lib/prismdns/dns-guard.state"
 COUNTER_VERSION="dns-sni-ports-v11-persistent-component-rx-tx"
 AUDIT_INTERVAL=21600
-MEDIA_CHECK_URL="https://media.ispvps.com"
+BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
+MEDIA_CHECK_URL="http://check.unlock.media"
+MEDIA_CHECK_FALLBACK_URL="https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh"
 MEDIA_CHECK_TIMEOUT=900
-AUDIT_VERSION="media-ispvps-ipv4-browser-path-v2"
+AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v1"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
 HEALTH_CACHE_INTERVAL=1800
 [[ -f "$CONFIG_FILE" ]] || exit 0
@@ -184,6 +187,10 @@ TRAFFIC_STATE_ID=$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')
 if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
   exit 0
 fi
+BOOTSTRAP_TMP=$(mktemp "$STATE_DIR/bootstrap.json.XXXXXX")
+printf '%s\n' "$BOOTSTRAP" >"$BOOTSTRAP_TMP"
+chmod 600 "$BOOTSTRAP_TMP"
+mv -f "$BOOTSTRAP_TMP" "$BOOTSTRAP_FILE"
 mapfile -t PEERS < <(jq -r '.traffic_peers[]?' <<<"$BOOTSTRAP" | sort -u)
 mapfile -t PEERS4 < <(printf '%s\n' "${PEERS[@]}" | awk 'index($0, ":") == 0 && length($0) > 0')
 mapfile -t PEERS6 < <(printf '%s\n' "${PEERS[@]}" | awk 'index($0, ":") > 0')
@@ -399,11 +406,11 @@ run_service_audit() {
     mapfile -t required_labels < <(jq -r '.media_required[]? | select(length > 0)' <<<"$1")
     mapfile -t any_labels < <(jq -r '.media_any[]? | select(length > 0)' <<<"$1")
     if [[ -n "$media_error" ]]; then
-      printf 'FAIL (media.ispvps.com IPv4 check unavailable: %s)\n' "$media_error"
+      printf 'FAIL (check.unlock.media IPv4 check unavailable: %s)\n' "$media_error"
       return
     fi
     if ((${#required_labels[@]} == 0 && ${#any_labels[@]} == 0)); then
-      printf 'NOT COVERED (media.ispvps.com has no matching service check)\n'
+      printf 'NOT COVERED (check.unlock.media has no matching service check)\n'
       return
     fi
     for label in "${required_labels[@]}"; do
@@ -457,20 +464,30 @@ run_service_audit() {
     fi
 
     if [[ -n "$missing_labels" ]]; then
-      printf 'NOT COVERED (media.ispvps.com IPv4 labels not returned: %s; %s)\n' "$missing_labels" "$details"
+      printf 'NOT COVERED (check.unlock.media IPv4 labels not returned: %s; %s)\n' "$missing_labels" "$details"
     elif ((required_failed > 0 || (${#any_labels[@]} > 0 && any_passed == 0))); then
-      printf 'FAIL (media.ispvps.com IPv4 required %d/%d; alternatives %d/%d; %s)\n' \
+      printf 'FAIL (check.unlock.media IPv4 required %d/%d; alternatives %d/%d; %s)\n' \
         "$required_passed" "${#required_labels[@]}" "$any_passed" \
         "$alternative_total" "${details:-${last:-$any_last}}"
     else
-      printf 'PASS (media.ispvps.com IPv4 required %d/%d; alternatives %d/%d; %s)\n' \
+      printf 'PASS (check.unlock.media IPv4 required %d/%d; alternatives %d/%d; %s)\n' \
         "$required_passed" "${#required_labels[@]}" "$any_passed" \
         "$alternative_total" "${details:-all required labels positive}"
     fi
   }
+  download_media_check_script() {
+    local url
+    : >"$media_script"
+    for url in "$MEDIA_CHECK_URL" "$MEDIA_CHECK_FALLBACK_URL"; do
+      if curl -4 -fsSL --connect-timeout 10 --max-time 45 "$url" | sed 's/\r$//' >"$media_script" && [[ -s "$media_script" ]]; then
+        return 0
+      fi
+    done
+    return 1
+  }
   media_script=$(mktemp /run/prismdns-media-check.XXXXXX)
-  if ! curl -4 -fsSL --connect-timeout 10 --max-time 30 "$MEDIA_CHECK_URL" | sed 's/\r$//' >"$media_script"; then
-    media_error="download failed"
+  if ! download_media_check_script; then
+    media_error="download failed from check.unlock.media and GitHub fallback"
   elif [[ ! -s "$media_script" ]]; then
     media_error="download returned an empty script"
   else
@@ -587,7 +604,7 @@ run_service_audit() {
     if [[ -n "$optional_failure_csv" ]]; then
       diagnostic_summary="${diagnostic_summary}; optional dependency unavailable: $optional_failure_csv"
     fi
-    result="${provider_summary:-FAIL (media.ispvps.com returned no result)}; diagnostics: ${diagnostic_summary}"
+    result="${provider_summary:-FAIL (check.unlock.media returned no result)}; diagnostics: ${diagnostic_summary}"
     results=$(jq -c --arg id "$service_id" --arg result "$result" '. + {($id):$result}' <<<"$results")
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
   if [[ "$(jq 'length' <<<"$results")" -gt 0 ]]; then
@@ -627,7 +644,8 @@ STATE_DIR="/var/lib/prismdns"
 HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
-AUDIT_VERSION="media-ispvps-ipv4-browser-path-v2"
+BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
+AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v1"
 HEALTH_CHECK_FILE="/var/lib/prismdns/route-health.timestamp"
 HEALTH_CHECK_INTERVAL=300
 DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
@@ -655,6 +673,10 @@ fi
 if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 5 --max-time 10 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
   exit 0
 fi
+BOOTSTRAP_TMP=$(mktemp "$STATE_DIR/bootstrap.json.XXXXXX")
+printf '%s\n' "$BOOTSTRAP" >"$BOOTSTRAP_TMP"
+chmod 600 "$BOOTSTRAP_TMP"
+mv -f "$BOOTSTRAP_TMP" "$BOOTSTRAP_FILE"
 ensure_system_dns() {
   [[ -f /var/lib/prismdns/system-dns.enabled ]] || return 0
   if awk '$1 == "nameserver" && ($2 == "127.0.0.1" || $2 == "::1") {found=1} END {exit !found}' /etc/resolv.conf 2>/dev/null; then

@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel enhancer `1.5.13`, client tool `1.5.13`, and encrypted transport `2.3.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/enhancer-v1.5.13).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel enhancer `1.5.20`, client tool `1.5.15`, and encrypted transport `2.3.1`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -22,7 +22,7 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **External Ruleset Support** - Import external ruleset files for quick configuration of common services
 - **Streaming Unlock Detection** - Auto-detect unlock status for Netflix, Disney+, HBO Max, and 20+ services
 - **AI Services Unlock Detection** - Auto-detect availability of OpenAI, Claude, Gemini, Copilot and other AI services
-- **Dual-Stack Node Management** - The panel still manages IPv4/IPv6 nodes, while managed unlock routes always use proxy IPv4 and suppress AAAA for selected services
+- **Dual-Stack Node Management** - The panel still manages IPv4/IPv6 nodes, while managed unlock routes always use proxy IPv4, never auto-switch egress to IPv6, and suppress AAAA for selected services
 - **Real-time Monitoring** - SSE-based live node status updates
 - **Modern Console** - Table-based orchestration and overview cards with seven functional pages for services, nodes, target IPs, catalog sync, audit logs, alerts, and settings; responsive desktop/mobile layouts with light/dark themes and Chinese/English
 - **Chinese Enhanced UI** - Simplified Chinese by default, with English and theme switching
@@ -35,8 +35,8 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Stable Agent Data Plane** - The installer pins upstream Agent `v1.2.1`, preventing the `v1.3` passive circuit breaker from replacing a fixed unlock VIP with public DNS after WAF responses, refused connections, or batch audits
 - **Overlapping-Domain Linking** - Services sharing parent, child, or wildcard domains automatically use one proxy; the latest selection wins
 - **Audits Never Change Routes** - Target audits update reports only; WAF responses, timeouts, and third-party detector instability never switch the proxy selected by the user
-- **Five-Second Allowlist** - Proxies refresh managed target IPv4 addresses every five seconds, restrict IPv4 DNS 53 plus SNI 80/443, and reject IPv6 on those Prism ports; unrelated IPv6 ports remain untouched for co-hosted MTProxy
-- **Two-Layer Unlock Audit** - Proxy-side Agent checks remain reference-only; each target runs the IPv4 `media.ispvps.com` media script plus DNS/TLS/SNI path checks
+- **Five-Second Allowlist** - Proxies refresh managed target IPv4 addresses every five seconds, restrict IPv4 DNS 53 plus SNI 80/443, reject IPv6 DNS 53 only, and do not intercept IPv6 80/443 so co-hosted MTProxy or other IPv6 services keep working
+- **Two-Layer Unlock Audit** - Proxy-side Agent checks remain reference-only; each target runs the IPv4 `check.unlock.media` media script plus DNS/TLS/SNI path checks
 - **Target Compatibility First** - Every selected service validates exact A mapping, AAAA suppression, TLS/SNI handshakes, and a representative page/provider check; explicit `NO`, `Banned`, WAF, or unstable provider results fail clearly
 - **IP Configuration Workflow** - Add a target IP, choose services and proxy agents, then create DNS nodes and overrides automatically
 - **Automatic Route Application** - The enhancer persists per-node routes and generates dedicated dnsmasq rules; a 10-second guard atomically applies saved changes and checks the DNS listener, while a 300-second sample checks one representative domain per selected service
@@ -101,7 +101,7 @@ flowchart LR
 
 Automatically detect unlock status for the following services:
 
-Node Management keeps proxy Agent self-checks as reference only. IP Configs runs the IPv4 command `bash <(curl -L -s media.ispvps.com) -M 4` on the actual target server and stores the raw result per selected service, alongside full DNS/TLS/SNI path checks. Services missing from the script are reported as not covered rather than passed. Target audits run after route changes and refresh periodically without changing the selected proxy.
+Node Management keeps proxy Agent self-checks as reference only. IP Configs runs the IPv4 command `bash <(curl -L -s check.unlock.media) -M 4` on the actual target server and stores the raw result per selected service, alongside full DNS/TLS/SNI path checks. Services missing from the script are reported as not covered rather than passed. Target audits run after route changes and refresh periodically without changing the selected proxy.
 
 **Streaming Services**
 - Netflix, Disney+, HBO Max, Amazon Prime Video

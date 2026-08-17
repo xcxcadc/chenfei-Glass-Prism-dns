@@ -24,7 +24,7 @@ const translations = {
     accountSettings: "账户安全", accountHint: "验证旧账号后修改管理员用户名和密码。", oldUsername: "旧用户名", oldPassword: "旧密码", newUsername: "新用户名", newPassword: "新密码", confirmPassword: "确认新密码", updateAccount: "更新账户", credentialsInvalid: "旧用户名或旧密码不正确", passwordMismatch: "两次输入的新密码不一致", accountUpdated: "账户已更新，请使用新账号重新登录",
     siteSettings: "站点设置", siteSettingsHint: "自定义左上角产品名称、说明文字和浏览器标签标题。", siteName: "网页名称", browserTitle: "页面标签名称", siteTagline: "网页说明", saveBranding: "保存站点设置", brandingUpdated: "站点名称已更新", iconTitle: "站点图标", iconHint: "仅支持带透明背景的 PNG，最大 2 MB。上传后会立即替换浏览器图标和账户安全图标。", chooseIcon: "上传 PNG 图标", restoreIcon: "恢复默认图标", iconUpdated: "图标已更新", iconRestored: "已恢复默认图标", restoreIconConfirm: "恢复默认透明图标？", iconTypeError: "请选择 PNG 图标文件", iconSizeError: "图标不能超过 2 MB",
     manageCategories: "分类管理", categoryHint: "服务分类只影响整理和筛选，不会修改域名、路由或客户端配置。", newCategory: "新建分类", categoryName: "分类名称", categoryCreated: "分类已创建", categoryDeleted: "分类已删除", editCategory: "分类", serviceCategory: "调整服务分类", restoreCategory: "恢复原分类", originalCategory: "原始分类", useCategory: "使用", builtInCategory: "内置", customCategory: "自定义", categoryInUse: "该分类仍有服务，请先移动这些服务", categoryDeleteConfirm: "删除这个空分类？",
-    unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点页仅展示解锁机 Agent 参考状态；最终状态来自目标机的 media.ispvps.com IPv4 实测和 DNS/TLS 路径校验。", checkAgain: "重新检测", waitingResults: "正在等待目标机返回 IPv4 实测结果...",
+    unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点页仅展示解锁机 Agent 参考状态；最终状态来自目标机的 check.unlock.media IPv4 实测和 DNS/TLS 路径校验。", checkAgain: "重新检测", waitingResults: "正在等待目标机返回 IPv4 实测结果...",
   },
   en: {
     title: "Prism DNS Enhanced", online: "Controller connected", loginTitle: "Sign in to Prism Gateway", loginHint: "Use your Controller administrator account",
@@ -51,7 +51,7 @@ const translations = {
     accountSettings: "Account security", accountHint: "Verify the current credentials before changing the administrator username and password.", oldUsername: "Current username", oldPassword: "Current password", newUsername: "New username", newPassword: "New password", confirmPassword: "Confirm new password", updateAccount: "Update account", credentialsInvalid: "Current username or password is incorrect", passwordMismatch: "The new passwords do not match", accountUpdated: "Account updated. Sign in with the new credentials.",
     siteSettings: "Site settings", siteSettingsHint: "Customize the product name, supporting text, and browser tab title.", siteName: "Website name", browserTitle: "Browser tab title", siteTagline: "Website description", saveBranding: "Save site settings", brandingUpdated: "Site branding updated", iconTitle: "Site icon", iconHint: "PNG with transparency only, up to 2 MB. It replaces the browser and account-security icons immediately.", chooseIcon: "Upload PNG icon", restoreIcon: "Restore default icon", iconUpdated: "Icon updated", iconRestored: "Default icon restored", restoreIconConfirm: "Restore the default transparent icon?", iconTypeError: "Choose a PNG icon file", iconSizeError: "The icon must be 2 MB or smaller",
     manageCategories: "Manage categories", categoryHint: "Categories only organize and filter services. Domains, routes, and client configuration remain unchanged.", newCategory: "New category", categoryName: "Category name", categoryCreated: "Category created", categoryDeleted: "Category deleted", editCategory: "Category", serviceCategory: "Change service category", restoreCategory: "Restore original", originalCategory: "Original category", useCategory: "Use", builtInCategory: "Built-in", customCategory: "Custom", categoryInUse: "This category still contains services. Move them first.", categoryDeleteConfirm: "Delete this empty category?",
-    unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "The node page is reference-only. Final status comes from the target's IPv4 media.ispvps.com check and DNS/TLS path validation.", checkAgain: "Check again", waitingResults: "Waiting for the target's IPv4 audit...",
+    unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "The node page is reference-only. Final status comes from the target's IPv4 check.unlock.media check and DNS/TLS path validation.", checkAgain: "Check again", waitingResults: "Waiting for the target's IPv4 audit...",
   }
 };
 
@@ -1768,7 +1768,7 @@ async function testService() {
       const requestedAt = new Date(requested.service_audit_requested_at || Date.now()).getTime();
       const latest = await waitForTargetServiceAudit(config.id, service.id, requestedAt);
       const detail = serviceResult(latest, service);
-      results.push({domain:`${config.ip} · ${t("actualAudit")} · media.ispvps.com`, detail, success:auditResultState(detail).kind === "good"});
+      results.push({domain:`${config.ip} · ${t("actualAudit")} · check.unlock.media`, detail, success:auditResultState(detail).kind === "good"});
     }
     state.ipConfigs = await api("/enhancer/api/ip-configs");
     state.testResults = results;

@@ -71,6 +71,14 @@ func TestPreferIPv6OnlyWhenItImprovesThePath(t *testing.T) {
 	}
 }
 
+func TestPreferIPv6DisabledByDefault(t *testing.T) {
+	if preferIPv6Result(servicePolicy{},
+		probeResult{Reachable: true, Code: 403},
+		probeResult{Reachable: true, Code: 200}) {
+		t.Fatal("IPv4 must remain preferred unless IPv6 is explicitly enabled")
+	}
+}
+
 func TestNormalizeServices(t *testing.T) {
 	services := normalizeServices([]servicePolicy{{
 		ID: " gemini ", Name: " Gemini ", Domains: []string{"*.Google.com", "google.com", ""},

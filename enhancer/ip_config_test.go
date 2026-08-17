@@ -104,8 +104,8 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if !strings.Contains(bootstrapResponse.Body.String(), `"route_domains":["netflix.com"]`) {
 		t.Fatalf("bootstrap did not include every routed domain: %s", bootstrapResponse.Body.String())
 	}
-	if !strings.Contains(bootstrapResponse.Body.String(), `"media_source":"https://media.ispvps.com"`) || !strings.Contains(bootstrapResponse.Body.String(), `"media_tests":["Netflix"]`) {
-		t.Fatalf("bootstrap did not include media.ispvps.com checks: %s", bootstrapResponse.Body.String())
+	if !strings.Contains(bootstrapResponse.Body.String(), `check.unlock.media`) || !strings.Contains(bootstrapResponse.Body.String(), `"media_tests":["Netflix"]`) {
+		t.Fatalf("bootstrap did not include check.unlock.media checks: %s", bootstrapResponse.Body.String())
 	}
 	if !strings.Contains(bootstrapResponse.Body.String(), `"traffic_peers":["198.51.100.20","2001:db8::20"]`) {
 		t.Fatalf("bootstrap did not preserve both proxy address families: %s", bootstrapResponse.Body.String())
@@ -648,7 +648,7 @@ func TestMediaTestSpecSeparatesRequiredAndAlternativeLabels(t *testing.T) {
 	}
 	claude := mediaTestSpecForService(Service{Name: "Claude"})
 	if strings.Join(claude.Required, "\x00") != "Claude" || len(claude.Any) != 0 {
-		t.Fatalf("Claude should be tested as an exact media.ispvps.com label: %+v", claude)
+		t.Fatalf("Claude should be tested as an exact check.unlock.media label: %+v", claude)
 	}
 }
 
