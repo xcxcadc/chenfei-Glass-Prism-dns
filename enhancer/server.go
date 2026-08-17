@@ -1,17 +1,20 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -19,7 +22,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.13"
+const uiVersion = "1.5.14"
 
 type App struct {
 	catalog      *CatalogManager
@@ -84,8 +87,45 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		controllerDB: databasePath,
 	}
 	app.transport, _ = NewTransportStore("")
-	proxy.ModifyResponse = app.modifyUpstreamResponse
+	proxy.ModifyResponse = app.modifyProxyResponse
 	return app, nil
+}
+
+func (app *App) modifyProxyResponse(response *http.Response) error {
+	if app.rewriteUpstreamHTMLError(response) {
+		return nil
+	}
+	return app.modifyUpstreamResponse(response)
+}
+
+func (app *App) rewriteUpstreamHTMLError(response *http.Response) bool {
+	if response == nil || response.Request == nil || response.StatusCode < 400 {
+		return false
+	}
+	if !strings.HasPrefix(response.Request.URL.Path, "/api/") {
+		return false
+	}
+	contentType := strings.ToLower(response.Header.Get("Content-Type"))
+	if !strings.Contains(contentType, "text/html") {
+		return false
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 256<<10))
+	if err != nil {
+		return false
+	}
+	_ = response.Body.Close()
+	message := sanitizeErrorText(string(body), fmt.Sprintf("Controller 返回 %s", response.Status))
+	payload, err := json.Marshal(map[string]string{"error": message})
+	if err != nil {
+		return false
+	}
+	response.Body = io.NopCloser(bytes.NewReader(payload))
+	response.ContentLength = int64(len(payload))
+	response.Header.Set("Content-Length", fmt.Sprint(len(payload)))
+	response.Header.Set("Content-Type", "application/json; charset=utf-8")
+	response.Header.Del("Content-Encoding")
+	response.Header.Del("ETag")
+	return true
 }
 
 func (app *App) Handler() http.Handler {
@@ -627,6 +667,41 @@ func writeJSON(writer http.ResponseWriter, status int, value any) {
 	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 	writer.WriteHeader(status)
 	_ = json.NewEncoder(writer).Encode(value)
+}
+
+var htmlScriptPattern = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>`)
+var htmlTagPattern = regexp.MustCompile(`(?is)<[^>]+>`)
+
+func sanitizeErrorText(value, fallback string) string {
+	message := strings.TrimSpace(value)
+	if message == "" {
+		return fallback
+	}
+	looksLikeHTML := strings.Contains(strings.ToLower(message[:min(len(message), 512)]), "<!doctype") ||
+		strings.Contains(strings.ToLower(message[:min(len(message), 512)]), "<html") ||
+		strings.Contains(strings.ToLower(message[:min(len(message), 512)]), "<script")
+	if looksLikeHTML {
+		lower := strings.ToLower(message)
+		switch {
+		case strings.Contains(lower, "502") && strings.Contains(lower, "bad gateway"):
+			return "上游 Controller/CDN 暂时返回 502 Bad Gateway，请稍后重试或检查面板到 Controller 的连接"
+		case strings.Contains(lower, "504") || strings.Contains(lower, "gateway timeout"):
+			return "上游 Controller/CDN 请求超时，请稍后重试或检查网络连通性"
+		case strings.Contains(lower, "403") || strings.Contains(lower, "forbidden"):
+			return "上游 Controller/CDN 拒绝访问，请检查访问权限或安全组规则"
+		}
+		message = htmlScriptPattern.ReplaceAllString(message, " ")
+		message = htmlTagPattern.ReplaceAllString(message, " ")
+	}
+	message = strings.Join(strings.Fields(message), " ")
+	if message == "" {
+		return fallback
+	}
+	runes := []rune(message)
+	if len(runes) > 180 {
+		message = string(runes[:180]) + "..."
+	}
+	return message
 }
 
 func methodNotAllowed(writer http.ResponseWriter, methods ...string) {

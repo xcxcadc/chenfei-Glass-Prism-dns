@@ -245,18 +245,18 @@ func (app *App) healthProbes(ctx context.Context, record ipConfigRecord) []map[s
 			continue
 		}
 		probes = append(probes, map[string]any{
-			"service_id":     service.ID,
-			"name":           service.Name,
-			"domain":         preferredProbeDomain(service),
-			"media_source":   "https://media.ispvps.com",
-			"media_required": mediaTestSpecForService(service).Required,
-			"media_any":      mediaTestSpecForService(service).Any,
-			"media_tests":    unlockTestProviders(service),
-			"probe_domains":  preferredProbeDomains(service),
-			"route_domains":  routingDomains(service.Domains),
+			"service_id":      service.ID,
+			"name":            service.Name,
+			"domain":          preferredProbeDomain(service),
+			"media_source":    "https://media.ispvps.com",
+			"media_required":  mediaTestSpecForService(service).Required,
+			"media_any":       mediaTestSpecForService(service).Any,
+			"media_tests":     unlockTestProviders(service),
+			"probe_domains":   preferredProbeDomains(service),
+			"route_domains":   routingDomains(service.Domains),
 			"domain_keywords": normalizeDomainKeywords(service.DomainKeywords),
 			"route_cidrs":     normalizeCIDRs(service.CIDRs),
-			"traffic_peers":  append([]string(nil), proxyPeers[routes[serviceID]]...),
+			"traffic_peers":   append([]string(nil), proxyPeers[routes[serviceID]]...),
 		})
 	}
 	return probes
@@ -922,13 +922,13 @@ func (app *App) upstreamJSON(ctx context.Context, authorization, method, path st
 		var message map[string]any
 		_ = json.Unmarshal(data, &message)
 		if value := valueString(message["error"]); value != "" {
-			return errors.New(value)
+			return errors.New(sanitizeErrorText(value, fmt.Sprintf("Controller 返回 %s", response.Status)))
 		}
-		return fmt.Errorf("Controller 返回 %s", response.Status)
+		return errors.New(sanitizeErrorText(string(data), fmt.Sprintf("Controller 返回 %s", response.Status)))
 	}
 	if target != nil && len(data) > 0 {
 		if err := json.Unmarshal(data, target); err != nil {
-			return fmt.Errorf("解析 Controller 响应: %w", err)
+			return fmt.Errorf("解析 Controller 响应: %s", sanitizeErrorText(string(data), err.Error()))
 		}
 	}
 	return nil

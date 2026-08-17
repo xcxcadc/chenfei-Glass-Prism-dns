@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -479,5 +480,66 @@ func TestWebAssetsExposeVersionAndDisableCaching(t *testing.T) {
 	}
 	if !bytes.HasPrefix(response.Body.Bytes(), []byte{0x89, 'P', 'N', 'G'}) {
 		t.Fatalf("favicon is not a PNG")
+	}
+}
+
+func TestReverseProxyRewritesHTMLAPIErrors(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		writer.WriteHeader(http.StatusBadGateway)
+		_, _ = writer.Write([]byte(`<!DOCTYPE html><html><head><title>502 Bad Gateway</title><script>window.bad=true</script></head><body>CDN failed</body></html>`))
+	}))
+	defer upstream.Close()
+
+	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	catalog := NewCatalogManager("http://127.0.0.1:1/unavailable", upstream.Client(), store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, _ := NewApp(upstream.URL, catalog, store, ipStore, upstream.Client())
+
+	request := httptest.NewRequest(http.MethodGet, "/api/rules", nil)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("expected upstream status to be preserved, got %d", response.Code)
+	}
+	if !strings.Contains(response.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected JSON error response, got %q", response.Header().Get("Content-Type"))
+	}
+	var payload map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("proxy response is not JSON: %v, body=%s", err, response.Body.String())
+	}
+	if strings.Contains(payload["error"], "<!DOCTYPE") || strings.Contains(payload["error"], "<script") {
+		t.Fatalf("HTML leaked into proxied API error: %q", payload["error"])
+	}
+	if !strings.Contains(payload["error"], "502 Bad Gateway") {
+		t.Fatalf("error lost useful status context: %q", payload["error"])
+	}
+}
+
+func TestUpstreamJSONSanitizesHTMLInErrorField(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusBadGateway)
+		_, _ = writer.Write([]byte(`{"error":"<!DOCTYPE html><html><title>502 Bad Gateway</title><script>alert(1)</script><body>Dooki CDN</body></html>"}`))
+	}))
+	defer upstream.Close()
+
+	store, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	catalog := NewCatalogManager("http://127.0.0.1:1/unavailable", upstream.Client(), store)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	app, _ := NewApp(upstream.URL, catalog, store, ipStore, upstream.Client())
+
+	err := app.upstreamJSON(context.Background(), "Bearer valid", http.MethodGet, "/api/rules", nil, nil)
+	if err == nil {
+		t.Fatal("expected upstream error")
+	}
+	message := err.Error()
+	if strings.Contains(message, "<!DOCTYPE") || strings.Contains(message, "<script") {
+		t.Fatalf("HTML leaked into upstream error: %q", message)
+	}
+	if !strings.Contains(message, "502 Bad Gateway") {
+		t.Fatalf("error lost useful status context: %q", message)
 	}
 }

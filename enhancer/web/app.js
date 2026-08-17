@@ -81,8 +81,27 @@ const state = {
 
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
+function cleanErrorMessage(value) {
+  let message = String(value || "").trim();
+  if (!message) return t("failed");
+  const head = message.slice(0, 700).toLowerCase();
+  if (head.includes("<!doctype") || head.includes("<html") || head.includes("<script")) {
+    if (head.includes("502") && head.includes("bad gateway")) {
+      return state.lang === "zh" ? "上游 Controller/CDN 暂时返回 502 Bad Gateway，请稍后重试或检查连接。" : "The upstream Controller/CDN returned 502 Bad Gateway. Retry later or check connectivity.";
+    }
+    if (head.includes("504") || head.includes("gateway timeout")) {
+      return state.lang === "zh" ? "上游 Controller/CDN 请求超时，请稍后重试或检查网络。" : "The upstream Controller/CDN timed out. Retry later or check networking.";
+    }
+    if (head.includes("403") || head.includes("forbidden")) {
+      return state.lang === "zh" ? "上游 Controller/CDN 拒绝访问，请检查权限或安全组。" : "The upstream Controller/CDN denied access. Check permissions or firewall rules.";
+    }
+    message = message.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
+  }
+  message = message.replace(/\s+/g, " ").trim();
+  return message.length > 180 ? `${message.slice(0, 180)}...` : message;
+}
 function siteName() { return String(state.branding.site_name || "Prism DNS"); }
-const iconAssetVersion = "1.5.13-prism-mark";
+const iconAssetVersion = "1.5.14-prism-mark";
 
 function brandingIconURL() { return `/enhancer/api/branding/icon?v=${encodeURIComponent(state.branding?.icon_version || iconAssetVersion)}`; }
 function updateBrandingIcon() { document.querySelector('link[rel="icon"]')?.setAttribute("href", brandingIconURL()); }
@@ -530,8 +549,17 @@ async function api(path, options = {}) {
   }
   if (response.status === 204) return null;
   const type = response.headers.get("content-type") || "";
-  const data = type.includes("application/json") ? await response.json() : await response.text();
-  if (!response.ok) throw new Error(data?.error || data || `${response.status}`);
+  const raw = await response.text();
+  let data = raw;
+  if (type.includes("application/json")) {
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      if (response.ok) throw new Error(state.lang === "zh" ? "服务端返回了无效 JSON，请刷新后重试。" : "The server returned invalid JSON. Refresh and retry.");
+      data = raw;
+    }
+  }
+  if (!response.ok) throw new Error(cleanErrorMessage(data?.error || data || `${response.status}`));
   return data;
 }
 
@@ -558,7 +586,7 @@ async function login(event) {
     state.token = data.token; state.user = data.user || {username:data.username || ""};
     localStorage.setItem("prism_token", state.token); localStorage.setItem("prism_user", JSON.stringify(state.user));
     await loadAll();
-  } catch (loginError) { error.textContent = loginError.message; }
+  } catch (loginError) { error.textContent = cleanErrorMessage(loginError.message); }
   finally { button.disabled = false; button.textContent = t("login"); }
 }
 
@@ -589,7 +617,7 @@ async function loadAll(silent = false) {
     localStorage.setItem("enhancer_dns", nodeID(state.dnsNodeId));
     await loadRoutingState();
     connectSSE();
-  } catch (error) { toast(error.message, "error"); }
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
   finally {
     state.loading = false;
     const preserveDraft = silent && ["service-form", "service-category", "category-manager", "node-form", "ip-form"].includes(state.modal?.type);
@@ -1076,7 +1104,7 @@ function filterServiceCards() {
 }
 
 async function refreshCatalog() {
-  try { await api("/enhancer/api/catalog?refresh=1"); toast(t("saved"), "good"); await loadAll(); } catch (error) { toast(error.message, "error"); }
+  try { await api("/enhancer/api/catalog?refresh=1"); toast(t("saved"), "good"); await loadAll(); } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 function openService(id) {
@@ -1428,7 +1456,7 @@ async function saveServiceCategory(event) {
     await loadAll(true);
     toast(t("saved"), "good");
   } catch (error) {
-    state.modal.busy = false; state.modal.error = error.message; renderModal();
+    state.modal.busy = false; state.modal.error = cleanErrorMessage(error.message); renderModal();
   }
 }
 
@@ -1449,7 +1477,7 @@ async function saveServiceDomains(event) {
     toast(t("saved"), "good");
   } catch (error) {
     state.modal.busy = false;
-    state.modal.error = error.message;
+    state.modal.error = cleanErrorMessage(error.message);
     renderModal();
   }
 }
@@ -1466,7 +1494,7 @@ async function restoreServiceDomains() {
     toast(t("saved"), "good");
   } catch (error) {
     state.modal.busy = false;
-    state.modal.error = error.message;
+    state.modal.error = cleanErrorMessage(error.message);
     renderModal();
   }
 }
@@ -1480,7 +1508,7 @@ async function restoreServiceCategory() {
     await loadAll(true);
     toast(t("saved"), "good");
   } catch (error) {
-    state.modal.busy = false; state.modal.error = error.message; renderModal();
+    state.modal.busy = false; state.modal.error = cleanErrorMessage(error.message); renderModal();
   }
 }
 
@@ -1504,7 +1532,7 @@ async function createCategory(event) {
     render();
     toast(t("categoryCreated"), "good");
   } catch (error) {
-    state.modal.busy = false; state.modal.error = error.message; renderModal();
+    state.modal.busy = false; state.modal.error = cleanErrorMessage(error.message); renderModal();
   }
 }
 
@@ -1517,7 +1545,7 @@ async function deleteCategory(category) {
     render();
     toast(t("categoryDeleted"), "good");
   } catch (error) {
-    state.modal.error = error.message; renderModal();
+    state.modal.error = cleanErrorMessage(error.message); renderModal();
   }
 }
 
@@ -1531,7 +1559,7 @@ async function applyManagedCategory(category) {
     await loadAll(true);
     toast(t("saved"), "good");
   } catch (error) {
-    state.modal.busy = false; state.modal.error = error.message; renderModal();
+    state.modal.busy = false; state.modal.error = cleanErrorMessage(error.message); renderModal();
   }
 }
 
@@ -1552,7 +1580,7 @@ async function updateBranding(event) {
     toast(t("brandingUpdated"), "good");
   } catch (error) {
     state.modal.busy = false;
-    state.modal.error = error.message;
+    state.modal.error = cleanErrorMessage(error.message);
     renderModal();
   }
 }
@@ -1580,7 +1608,7 @@ async function uploadBrandingIcon(file) {
     toast(t("iconUpdated"), "good");
   } catch (error) {
     state.modal.busy = false;
-    state.modal.error = error.message;
+    state.modal.error = cleanErrorMessage(error.message);
     renderModal();
   }
 }
@@ -1596,7 +1624,7 @@ async function restoreBrandingIcon() {
     toast(t("iconRestored"), "good");
   } catch (error) {
     state.modal.busy = false;
-    state.modal.error = error.message;
+    state.modal.error = cleanErrorMessage(error.message);
     renderModal();
   }
 }
@@ -1619,7 +1647,7 @@ async function updateAccount(event) {
     setTimeout(() => location.reload(), 900);
   } catch (error) {
     state.modal.busy = false;
-    state.modal.error = /unauthorized|invalid|incorrect/i.test(error.message) ? t("credentialsInvalid") : error.message;
+    state.modal.error = /unauthorized|invalid|incorrect/i.test(error.message) ? t("credentialsInvalid") : cleanErrorMessage(error.message);
     renderModal();
   }
 }
@@ -1658,13 +1686,13 @@ async function assignService() {
     const rule = await ensureRule(service, proxyId);
     await api(`/api/rules/${rule.id}/override`, {method:"POST", body:JSON.stringify({dns_node_id:state.dnsNodeId, proxy_node_id:proxyId})});
     toast(t("switched"), "good"); closeModal(); await loadAll(true);
-  } catch (error) { toast(error.message, "error"); }
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 async function resetService() {
   const rule = serviceRule(state.modal.service); if (!rule) return;
   try { await api(`/api/rules/${rule.id}/override`, {method:"POST", body:JSON.stringify({dns_node_id:state.dnsNodeId, proxy_node_id:""})}); toast(t("resetDone"), "good"); closeModal(); await loadAll(true); }
-  catch (error) { toast(error.message, "error"); }
+  catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 function serverHost(node) {
@@ -1702,7 +1730,7 @@ async function testService() {
     state.testResults = results;
     toast(t("testDone"), "good"); renderModal();
   } catch (error) {
-    toast(error.message, "error");
+    toast(cleanErrorMessage(error.message), "error");
     button.disabled = false;
     button.textContent = t("connectivity");
   }
@@ -1718,7 +1746,7 @@ async function saveCustomService(event) {
     const rule = existing ? serviceRule(existing) : null;
     if (rule) await api(`/api/rules/${rule.id}`, {method:"PUT", body:JSON.stringify({...rule, name:`Stream · ${payload.name}`})});
     toast(t("saved"), "good"); closeModal(); await loadAll(true);
-  } catch (error) { toast(error.message, "error"); }
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 async function deleteService(service = state.modal?.service) {
@@ -1728,7 +1756,7 @@ async function deleteService(service = state.modal?.service) {
     if (rule) await api(`/api/rules/${encodeURIComponent(rule.id)}`, {method:"DELETE"});
     await api(`/enhancer/api/services/${encodeURIComponent(service.id)}`, {method:"DELETE"}); toast(t("deleted"), "good"); closeModal(); await loadAll(true);
   }
-  catch (error) { toast(error.message, "error"); }
+  catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 function submitIPForm(event) {
@@ -1784,10 +1812,10 @@ async function saveIPConfig() {
       }
     }
     if (state.modal === modal) {
-      modal.error = error.message;
+      modal.error = cleanErrorMessage(error.message);
       renderModal();
     } else {
-      toast(error.message, "error");
+      toast(cleanErrorMessage(error.message), "error");
     }
   }
 }
@@ -1829,7 +1857,7 @@ async function triggerIPServiceAudit(serviceId) {
     const audit = auditResultState(serviceResult(latest, service));
     toast(audit.label || t("testDone"), audit.kind === "bad" ? "error" : audit.kind || "good");
   } catch (error) {
-    toast(error.message, "error");
+    toast(cleanErrorMessage(error.message), "error");
   } finally {
     document.querySelectorAll(".ip-service-audit").forEach(button => {
       button.disabled = false;
@@ -1863,7 +1891,7 @@ async function deleteIPConfig() {
     state.modal = null;
     await loadAll(true);
     toast(t("deleted"), "good");
-  } catch (error) { toast(error.message, "error"); }
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 async function clearTraffic(id) {
@@ -1872,7 +1900,7 @@ async function clearTraffic(id) {
     await api(`/enhancer/api/traffic/${encodeURIComponent(id)}`, {method:"DELETE"});
     await loadAll(true);
     toast(t("saved"), "good");
-  } catch (error) { toast(error.message, "error"); }
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 async function clearAllTraffic() {
@@ -1881,7 +1909,7 @@ async function clearAllTraffic() {
     await Promise.all(state.ipConfigs.map(config => api(`/enhancer/api/traffic/${encodeURIComponent(config.id)}`, {method:"DELETE"})));
     await loadAll(true);
     toast(t("saved"), "good");
-  } catch (error) { toast(error.message, "error"); }
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 function readNodeDraft(form) {
@@ -1928,7 +1956,7 @@ async function saveNode(draft) {
   try {
     await api(`/enhancer/api/nodes/${encodeURIComponent(node.id)}`, {method:"PUT", body:JSON.stringify({...node, ...draft})});
     state.modal = null; toast(t("saved"), "good"); await loadAll(true);
-  } catch (error) { state.modal.error = error.message; renderModal(); }
+  } catch (error) { state.modal.error = cleanErrorMessage(error.message); renderModal(); }
 }
 
 function installCommand(node, smartMode) {
@@ -1948,7 +1976,7 @@ async function createNode(draft) {
     await loadAll(true);
     renderModal();
     toast(t("saved"), "good");
-  } catch (error) { state.modal.error = error.message; state.modal.step = 1; renderModal(); }
+  } catch (error) { state.modal.error = cleanErrorMessage(error.message); state.modal.step = 1; renderModal(); }
 }
 
 async function deleteNode() {
@@ -1958,7 +1986,7 @@ async function deleteNode() {
     await api(`/enhancer/api/nodes/${encodeURIComponent(node.id)}`, {method:"DELETE"});
     if (nodeID(state.dnsNodeId) === nodeID(node.id)) { state.dnsNodeId = ""; localStorage.removeItem("enhancer_dns"); }
     state.modal = null; toast(t("deleted"), "good"); await loadAll(true);
-  } catch (error) { toast(error.message, "error"); }
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 async function copyInstallCommand() {
@@ -1967,7 +1995,7 @@ async function copyInstallCommand() {
     if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(command);
     else { const input = document.createElement("textarea"); input.value = command; document.body.appendChild(input); input.select(); document.execCommand("copy"); input.remove(); }
     toast(t("copied"), "good");
-  } catch (error) { toast(error.message, "error"); }
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
 function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
@@ -2010,9 +2038,9 @@ async function triggerNodeCheck(id) {
   } catch (error) {
     if (state.modal?.type === "node-check" && nodeID(state.modal.nodeId) === nodeID(id)) {
       state.modal.running = false;
-      state.modal.error = error.message;
+      state.modal.error = cleanErrorMessage(error.message);
       renderModal();
-    } else toast(error.message, "error");
+    } else toast(cleanErrorMessage(error.message), "error");
   }
 }
 
