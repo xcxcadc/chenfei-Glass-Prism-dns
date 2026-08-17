@@ -202,6 +202,36 @@ function serviceRule(service) {
 function serviceIDs(service) {
   return [...new Set([service?.id, ...(service?.aliases || [])].filter(Boolean))];
 }
+function serviceSlug(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+function legacyServiceIDBase(value) {
+  return String(value || "").trim().replace(/-[0-9a-f]{8}$/i, "");
+}
+function serviceSlugMatches(left, right) {
+  left = String(left || "").replace(/^-+|-+$/g, "");
+  right = String(right || "").replace(/^-+|-+$/g, "");
+  return !!left && !!right && (left === right || left.startsWith(`${right}-`) || right.startsWith(`${left}-`));
+}
+function canonicalRouteMatch(serviceId) {
+  const id = String(serviceId || "").trim();
+  if (!id) return null;
+  for (const service of state.catalog || []) {
+    if (service.id === id) return {service, rank:0};
+  }
+  for (const service of state.catalog || []) {
+    if ((service.aliases || []).includes(id)) return {service, rank:1};
+  }
+  const legacyBase = legacyServiceIDBase(id);
+  const matches = [];
+  for (const service of state.catalog || []) {
+    const ids = serviceIDs(service);
+    if (serviceSlugMatches(legacyBase, serviceSlug(service.name)) || ids.some(value => serviceSlugMatches(legacyBase, legacyServiceIDBase(value)))) {
+      matches.push(service);
+    }
+  }
+  return matches.length === 1 ? {service:matches[0], rank:2} : null;
+}
 function customServiceID(service) {
   return serviceIDs(service).find(id => String(id).startsWith("custom-")) || "";
 }
@@ -211,6 +241,20 @@ function serviceRouteEntry(config, service) {
     if (config.routes[id]) return {id, value:config.routes[id]};
   }
   return null;
+}
+function canonicalRoutesForCatalog(routes = {}) {
+  const normalized = {};
+  const ranks = {};
+  for (const id of Object.keys(routes).sort()) {
+    const value = routes[id];
+    const match = canonicalRouteMatch(id);
+    if (!match || !value) continue;
+    if (normalized[match.service.id] === undefined || match.rank < ranks[match.service.id]) {
+      normalized[match.service.id] = value;
+      ranks[match.service.id] = match.rank;
+    }
+  }
+  return normalized;
 }
 function isConfiguredForTarget(service, config = configForNode(selectedDNS())) {
   return !!serviceRouteEntry(config, service)?.value;
@@ -1199,7 +1243,7 @@ function openInstallCommand(id) {
   renderModal();
 }
 function openIPForm(config = null, step = config ? 2 : 1, existingNode = null) {
-  const routes = {...(config?.routes || {})};
+  const routes = canonicalRoutesForCatalog(config?.routes || {});
   const defaultProxy = Object.values(routes)[0] || nodeID(proxyNodes()[0]?.id);
   state.modal = {type:"ip-form", config, existingNode, step, draft:{ip:config?.ip || serverHost(existingNode || {}) || "", note:config?.note || existingNode?.name || "", smart:config?.smart !== false}, routes, defaultProxy, serviceSearch:"", error:""};
   renderModal();
@@ -1779,6 +1823,7 @@ async function saveIPConfig() {
   if (!modal || modal.type !== "ip-form") return;
   if (!Object.keys(modal.routes).length) return;
   const editing = !!modal.config;
+  modal.routes = canonicalRoutesForCatalog(modal.routes);
   const payload = {...modal.draft, routes:modal.routes};
   try {
     if (!editing) {

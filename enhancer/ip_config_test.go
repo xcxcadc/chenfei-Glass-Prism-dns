@@ -502,6 +502,76 @@ func TestApplyIPRoutesMigratesLegacyRuleBeforeClearingOverride(t *testing.T) {
 	}
 }
 
+func TestApplyIPRoutesClearsLegacyServiceOverrideAfterIDMigration(t *testing.T) {
+	const legacyServiceID = "google-gemini-892afd44"
+	var serviceID string
+	var migratedCurrentRule map[string]any
+	overrides := make(map[string]map[string]string)
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.URL.Path == "/catalog":
+			_, _ = writer.Write([]byte("# ---------- > AI Platform\n# > Google Gemini /HK Only/\nnameserver /gemini.google.com/group\n"))
+		case request.URL.Path == "/api/rules" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{
+				map[string]any{
+					"id": "legacy", "name": "Prism IP · Gemini", "type": "RULE-SET",
+					"source_type": "all", "source_val": "", "target_type": "group", "target_val": "__prism_enhancer_direct__",
+					"value": "https://panel.example/enhancer/rules/" + legacyServiceID + ".list", "enabled": true,
+				},
+				map[string]any{
+					"id": "current", "name": "Prism IP · Google Gemini /HK Only/", "type": "RULE-SET",
+					"source_type": "all", "source_val": "", "target_type": "group", "target_val": "__prism_enhancer_direct__",
+					"value": "http://127.0.0.1:8081/enhancer/rules/" + serviceID + ".list", "enabled": true,
+				},
+			})
+		case request.URL.Path == "/api/nodes" && request.Method == http.MethodGet:
+			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": "proxy-sg", "role": "proxy", "public_ip": "198.51.100.20"}})
+		case request.URL.Path == "/api/rules/current" && request.Method == http.MethodPut:
+			_ = json.NewDecoder(request.Body).Decode(&migratedCurrentRule)
+			writer.WriteHeader(http.StatusNoContent)
+		case strings.HasPrefix(request.URL.Path, "/api/rules/") && strings.HasSuffix(request.URL.Path, "/override") && request.Method == http.MethodPost:
+			var payload map[string]string
+			_ = json.NewDecoder(request.Body).Decode(&payload)
+			ruleID := strings.TrimSuffix(strings.TrimPrefix(request.URL.Path, "/api/rules/"), "/override")
+			overrides[ruleID] = payload
+			writeJSON(writer, http.StatusOK, map[string]bool{"ok": true})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore)
+	serviceID = catalog.Snapshot(context.Background(), true).Services[0].ID
+	app, _ := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+
+	application, err := app.applyIPRoutes(
+		context.Background(),
+		"Bearer valid",
+		"dns-1",
+		map[string]string{legacyServiceID: "proxy-sg"},
+		map[string]string{serviceID: "proxy-sg"},
+		"https://panel.example",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if application.Routes[serviceID] != "proxy-sg" {
+		t.Fatalf("current route was not retained: %+v", application.Routes)
+	}
+	if migratedCurrentRule["value"] != "https://panel.example/enhancer/rules/"+serviceID+".list" {
+		t.Fatalf("current rule URL was not healed: %+v", migratedCurrentRule)
+	}
+	if overrides["current"]["proxy_node_id"] != "proxy-sg" {
+		t.Fatalf("current override was not applied: %+v", overrides)
+	}
+	if overrides["legacy"]["proxy_node_id"] != "" {
+		t.Fatalf("legacy override was not cleared: %+v", overrides)
+	}
+}
+
 func TestPreferredProbeDomainsUsesSeveralStableGenericCandidates(t *testing.T) {
 	service := Service{
 		Name: "Future Service",

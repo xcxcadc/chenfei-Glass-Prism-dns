@@ -52,3 +52,47 @@ func TestNormalizeConflictingRoutesIncludesParentAndChildDomains(t *testing.T) {
 		t.Fatalf("parent and child DNS routes were not linked: %+v", normalized)
 	}
 }
+
+func TestNormalizeConflictingRoutesCanonicalizesLegacyServiceIDs(t *testing.T) {
+	services := []Service{
+		{ID: "google-gemini-hk-only-726ddd4d", Name: "Google Gemini /HK Only/", Domains: []string{"gemini.google.com"}},
+		{ID: "openai-47b4550d", Name: "ChatGPT / OpenAI", Domains: []string{"openai.com"}},
+	}
+	current := map[string]string{
+		"google-gemini-892afd44":   "proxy-sg",
+		"openai-47b4550d":          "proxy-my",
+		"deleted-service-a1b2c3d4": "proxy-old",
+	}
+
+	normalized, changed := normalizeConflictingRoutes(nil, current, services)
+	if !changed {
+		t.Fatal("expected legacy service ids to be normalized")
+	}
+	if normalized["google-gemini-hk-only-726ddd4d"] != "proxy-sg" {
+		t.Fatalf("legacy Gemini route was not migrated: %+v", normalized)
+	}
+	if normalized["openai-47b4550d"] != "proxy-my" {
+		t.Fatalf("canonical route was changed: %+v", normalized)
+	}
+	if _, exists := normalized["google-gemini-892afd44"]; exists {
+		t.Fatalf("legacy route id leaked into normalized routes: %+v", normalized)
+	}
+	if _, exists := normalized["deleted-service-a1b2c3d4"]; exists {
+		t.Fatalf("unknown stale route id should be dropped: %+v", normalized)
+	}
+}
+
+func TestStalePreviousRouteIDsIncludesLegacyAndUnknownIDs(t *testing.T) {
+	services := []Service{
+		{ID: "claude-2-hk-only-22ccd555", Name: "Claude 2 /HK Only/", Domains: []string{"claude.ai"}},
+	}
+	previous := map[string]string{
+		"claude-2-67be3388":         "proxy-vn",
+		"unknown-service-11111111":  "proxy-old",
+		"claude-2-hk-only-22ccd555": "proxy-vn",
+	}
+	stale := stalePreviousRouteIDs(previous, services)
+	if len(stale) != 2 || stale[0] != "claude-2-67be3388" || stale[1] != "unknown-service-11111111" {
+		t.Fatalf("unexpected stale route ids: %+v", stale)
+	}
+}

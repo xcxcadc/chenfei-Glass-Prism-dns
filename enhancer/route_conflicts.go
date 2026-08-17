@@ -48,9 +48,9 @@ func domainsOverlap(left, right []string) bool {
 }
 
 func normalizeConflictingRoutes(previous, current map[string]string, services []Service) (map[string]string, bool) {
-	normalized := cloneStringMap(current)
+	normalized, changed := canonicalizeServiceRoutes(current, services)
 	if len(normalized) < 2 {
-		return normalized, false
+		return normalized, changed
 	}
 
 	serviceByID := make(map[string]Service, len(services))
@@ -109,7 +109,6 @@ func normalizeConflictingRoutes(previous, current map[string]string, services []
 		components[root] = append(components[root], serviceID)
 	}
 
-	changed := false
 	for _, members := range components {
 		if len(members) < 2 {
 			continue
@@ -133,4 +132,141 @@ func normalizeConflictingRoutes(previous, current map[string]string, services []
 		}
 	}
 	return normalized, changed
+}
+
+func canonicalizeServiceRoutes(routes map[string]string, services []Service) (map[string]string, bool) {
+	normalized := make(map[string]string, len(routes))
+	ranks := make(map[string]int, len(routes))
+	changed := false
+	routeIDs := make([]string, 0, len(routes))
+	for serviceID := range routes {
+		routeIDs = append(routeIDs, serviceID)
+	}
+	sort.Strings(routeIDs)
+	for _, serviceID := range routeIDs {
+		proxyID := strings.TrimSpace(routes[serviceID])
+		if strings.TrimSpace(serviceID) == "" || proxyID == "" {
+			changed = true
+			continue
+		}
+		canonicalID, rank, ok := canonicalServiceRouteID(serviceID, services)
+		if !ok {
+			changed = true
+			continue
+		}
+		if canonicalID != serviceID {
+			changed = true
+		}
+		if existingRank, exists := ranks[canonicalID]; !exists || rank < existingRank {
+			normalized[canonicalID] = proxyID
+			ranks[canonicalID] = rank
+		} else if normalized[canonicalID] != proxyID {
+			changed = true
+		}
+	}
+	if len(normalized) != len(routes) {
+		changed = true
+	}
+	return normalized, changed
+}
+
+func canonicalServiceRouteID(serviceID string, services []Service) (string, int, bool) {
+	serviceID = strings.TrimSpace(serviceID)
+	if serviceID == "" {
+		return "", 0, false
+	}
+	aliasToID := make(map[string]string, len(services)*2)
+	exactIDs := make(map[string]struct{}, len(services))
+	for _, service := range services {
+		if service.ID == "" {
+			continue
+		}
+		aliasToID[service.ID] = service.ID
+		exactIDs[service.ID] = struct{}{}
+		for _, alias := range service.Aliases {
+			if alias = strings.TrimSpace(alias); alias != "" {
+				aliasToID[alias] = service.ID
+			}
+		}
+	}
+	if canonicalID, ok := aliasToID[serviceID]; ok {
+		if _, exact := exactIDs[serviceID]; exact {
+			return canonicalID, 0, true
+		}
+		return canonicalID, 1, true
+	}
+
+	legacyBase := legacyServiceIDBase(serviceID)
+	if legacyBase == "" {
+		return "", 0, false
+	}
+	matches := make(map[string]struct{})
+	for _, service := range services {
+		if service.ID == "" {
+			continue
+		}
+		if serviceSlugMatches(legacyBase, slug(service.Name)) || serviceSlugMatches(legacyBase, legacyServiceIDBase(service.ID)) {
+			matches[service.ID] = struct{}{}
+			continue
+		}
+		for _, alias := range service.Aliases {
+			if serviceSlugMatches(legacyBase, legacyServiceIDBase(alias)) {
+				matches[service.ID] = struct{}{}
+				break
+			}
+		}
+	}
+	if len(matches) != 1 {
+		return "", 0, false
+	}
+	for canonicalID := range matches {
+		return canonicalID, 2, true
+	}
+	return "", 0, false
+}
+
+func stalePreviousRouteIDs(previous map[string]string, services []Service) []string {
+	if len(previous) == 0 {
+		return nil
+	}
+	result := make([]string, 0)
+	for serviceID := range previous {
+		canonicalID, _, ok := canonicalServiceRouteID(serviceID, services)
+		if !ok || canonicalID != serviceID {
+			result = append(result, serviceID)
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+func legacyServiceIDBase(serviceID string) string {
+	serviceID = strings.Trim(serviceID, "-")
+	if serviceID == "" {
+		return ""
+	}
+	parts := strings.Split(serviceID, "-")
+	last := parts[len(parts)-1]
+	if len(last) == 8 && isLowerHex(last) && len(parts) > 1 {
+		return strings.Join(parts[:len(parts)-1], "-")
+	}
+	return serviceID
+}
+
+func serviceSlugMatches(left, right string) bool {
+	left = strings.Trim(left, "-")
+	right = strings.Trim(right, "-")
+	if left == "" || right == "" {
+		return false
+	}
+	return left == right || strings.HasPrefix(left, right+"-") || strings.HasPrefix(right, left+"-")
+}
+
+func isLowerHex(value string) bool {
+	for _, character := range value {
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')) {
+			return false
+		}
+	}
+	return true
 }

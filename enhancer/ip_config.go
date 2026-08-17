@@ -742,6 +742,7 @@ func nodeAddress(node map[string]any) string {
 func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID string, previous, current map[string]string, baseURL string) (routeApplication, error) {
 	const directGroup = "__prism_enhancer_direct__"
 
+	rawPrevious := cloneStringMap(previous)
 	var rules []map[string]any
 	if err := app.upstreamJSON(ctx, authorization, http.MethodGet, "/api/rules", nil, &rules); err != nil {
 		return routeApplication{}, err
@@ -757,7 +758,9 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		}
 	}
 	catalogServices := app.catalog.Snapshot(ctx, false).Services
+	previous, _ = canonicalizeServiceRoutes(previous, catalogServices)
 	current, _ = normalizeConflictingRoutes(previous, current, catalogServices)
+	stalePrevious := stalePreviousRouteIDs(rawPrevious, catalogServices)
 	services := make(map[string]Service)
 	for _, service := range catalogServices {
 		services[service.ID] = service
@@ -773,11 +776,12 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 	}
 	prepareRule := func(service Service) (map[string]any, error) {
 		rule := findRule(service.ID)
+		expectedValue := strings.TrimRight(baseURL, "/") + "/enhancer/rules/" + service.ID + ".list"
 		if rule == nil {
 			payload := map[string]any{
 				"name": "Prism IP · " + service.Name, "type": "RULE-SET", "source_type": "all", "source_val": "",
 				"target_type": "group", "target_val": directGroup,
-				"value": strings.TrimRight(baseURL, "/") + "/enhancer/rules/" + service.ID + ".list", "enabled": true,
+				"value": expectedValue, "enabled": true,
 			}
 			if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules", payload, &rule); err != nil {
 				return nil, err
@@ -785,7 +789,11 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 			rules = append(rules, rule)
 			return rule, nil
 		}
-		if valueString(rule["target_type"]) == "group" && valueString(rule["target_val"]) == directGroup {
+		if valueString(rule["target_type"]) == "group" &&
+			valueString(rule["target_val"]) == directGroup &&
+			valueString(rule["value"]) == expectedValue &&
+			valueString(rule["name"]) == "Prism IP · "+service.Name &&
+			ruleEnabled(rule["enabled"]) {
 			return rule, nil
 		}
 		ruleID := valueString(rule["id"])
@@ -801,6 +809,7 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		payload["source_val"] = ""
 		payload["target_type"] = "group"
 		payload["target_val"] = directGroup
+		payload["value"] = expectedValue
 		payload["enabled"] = true
 		if err := app.upstreamJSON(ctx, authorization, http.MethodPut, "/api/rules/"+url.PathEscape(ruleID), payload, nil); err != nil {
 			return nil, err
@@ -853,6 +862,16 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 			if err != nil {
 				return routeApplication{}, err
 			}
+		}
+		payload := map[string]string{"dns_node_id": dnsNodeID, "proxy_node_id": ""}
+		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules/"+url.PathEscape(valueString(rule["id"]))+"/override", payload, nil); err != nil {
+			return routeApplication{}, err
+		}
+	}
+	for _, serviceID := range stalePrevious {
+		rule := findRule(serviceID)
+		if rule == nil || valueString(rule["id"]) == "" {
+			continue
 		}
 		payload := map[string]string{"dns_node_id": dnsNodeID, "proxy_node_id": ""}
 		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules/"+url.PathEscape(valueString(rule["id"]))+"/override", payload, nil); err != nil {
@@ -948,6 +967,17 @@ func valueString(value any) string {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func ruleEnabled(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), "true")
+	default:
+		return strings.EqualFold(valueString(value), "true")
+	}
 }
 
 func publicBaseURL(request *http.Request) string {
