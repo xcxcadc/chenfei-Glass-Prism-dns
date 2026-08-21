@@ -4,7 +4,7 @@ set -e
 
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 REPO="${PRISM_AGENT_REPO:-mslxi/Liquid-Glass-Prism-dns}"
-PINNED_STABLE_TAG="${PRISM_AGENT_TAG:-v1.3}"
+PINNED_STABLE_TAG="${PRISM_AGENT_TAG:-v1.2.1}"
 BINARY_NAME="prism-agent"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"
@@ -62,7 +62,7 @@ parse_args() {
                     PINNED_STABLE_TAG="$2"
                     shift 2
                 else
-                    error "--version requires an Agent release tag, for example v1.3"
+                    error "--version requires an Agent release tag, for example v1.2.1"
                 fi
                 ;;
             --name)
@@ -105,7 +105,7 @@ parse_args() {
 
     if [ -z "$MASTER_ADDR" ] || [ -z "$SECRET_TOKEN" ]; then
         echo -e "${YELLOW}Missing parameters!${NC}"
-        echo -e "Usage: ... | bash -s -- --master URL --secret TOKEN [--version v1.3] [--beta] [--smart]"
+        echo -e "Usage: ... | bash -s -- --master URL --secret TOKEN [--version v1.2.1] [--beta] [--smart]"
         exit 1
     fi
 
@@ -324,7 +324,13 @@ prepare_legacy_conflicts() {
 
 listener_owned_by_agent() {
     local port="$1"
-    ss -lntup 2>/dev/null | awk -v port=":$port" '$5 ~ port"$" && /prism-agent/ {found=1} END {exit !found}'
+    ss -lntup 2>/dev/null | awk -v port="$port" '
+        /prism-agent/ {
+            pattern = "(^|[[:space:]])([0-9.]+|\\[[0-9a-fA-F:]+\\]|\\*):" port "([[:space:]]|$)"
+            if ($0 ~ pattern) found=1
+        }
+        END {exit !found}
+    '
 }
 
 start_service() {
@@ -413,8 +419,13 @@ fi
 
 listeners_ready=true
 for port in 80 443; do
-    if ! ss -lntp 2>/dev/null | awk -v port=":$port" -v pid="$pid" \
-        '$4 ~ port "$" && index($0, "pid=" pid ",") {found=1} END {exit !found}'; then
+    if ! ss -lntp 2>/dev/null | awk -v port="$port" -v pid="$pid" '
+        index($0, "pid=" pid ",") {
+            pattern = "(^|[[:space:]])([0-9.]+|\\[[0-9a-fA-F:]+\\]|\\*):" port "([[:space:]]|$)"
+            if ($0 ~ pattern) found=1
+        }
+        END {exit !found}
+    '; then
         listeners_ready=false
         break
     fi

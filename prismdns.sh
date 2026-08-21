@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.15"
+VERSION="1.5.18"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -43,6 +43,16 @@ confirm() {
 
 require_root() {
   [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "此操作需要 root 权限，请使用 sudo 运行。"
+}
+
+prism_agent_dns_ready() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  command -v ss >/dev/null 2>&1 || return 1
+  systemctl is-active --quiet prism-agent 2>/dev/null || return 1
+  ss -lntup 2>/dev/null | awk '
+    /prism-agent/ && /(^|[[:space:]])([0-9.]+|\[[0-9a-fA-F:]+\]|\*):53([[:space:]]|$)/ {found=1}
+    END {exit !found}
+  '
 }
 
 detect_package_manager() {
@@ -122,7 +132,7 @@ bootstrap() {
   printf '%s\n' "$response" > "$BOOTSTRAP_FILE"
   chmod 600 "$BOOTSTRAP_FILE"
   info "安装 Prism DNS Client Agent..."
-  local args=(--master "$MASTER" --secret "$secret")
+  local args=(--master "$MASTER" --secret "$secret" --version "${PRISM_AGENT_TAG:-v1.2.1}")
   [[ "$smart" == "true" ]] && args+=(--smart)
   if [[ -n "${PRISM_AGENT_INSTALLER_FILE:-}" ]]; then
     bash "$PRISM_AGENT_INSTALLER_FILE" "${args[@]}"
@@ -184,6 +194,15 @@ MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
 TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
 [[ -n "$MASTER" && -n "$TOKEN" ]] || exit 0
 TRAFFIC_STATE_ID=$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')
+prism_agent_dns_ready() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  command -v ss >/dev/null 2>&1 || return 1
+  systemctl is-active --quiet prism-agent 2>/dev/null || return 1
+  ss -lntup 2>/dev/null | awk '
+    /prism-agent/ && /(^|[[:space:]])([0-9.]+|\[[0-9a-fA-F:]+\]|\*):53([[:space:]]|$)/ {found=1}
+    END {exit !found}
+  '
+}
 if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
   exit 0
 fi
@@ -270,8 +289,7 @@ ROUTES_READY=false
 HEALTHY_ROUTES=0
 EXPECTED_ROUTES=0
 HEALTH_MESSAGE=""
-if systemctl is-active --quiet prism-agent 2>/dev/null &&
-   ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}'; then
+if prism_agent_dns_ready; then
   DNS_READY=true
 else
   HEALTH_MESSAGE="Prism Agent 未接管 53 端口"
@@ -662,6 +680,15 @@ LOCK_FILE="/run/prismdns-route-sync.lock"
 MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
 TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
 [[ -n "$MASTER" && -n "$TOKEN" ]] || exit 0
+prism_agent_dns_ready() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  command -v ss >/dev/null 2>&1 || return 1
+  systemctl is-active --quiet prism-agent 2>/dev/null || return 1
+  ss -lntup 2>/dev/null | awk '
+    /prism-agent/ && /(^|[[:space:]])([0-9.]+|\[[0-9a-fA-F:]+\]|\*):53([[:space:]]|$)/ {found=1}
+    END {exit !found}
+  '
+}
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$LOCK_FILE"
   flock -n 9 || exit 0
@@ -1012,8 +1039,7 @@ route_ready() {
   return 1
 }
 basic_health_ok() {
-  systemctl is-active --quiet prism-agent 2>/dev/null || return 1
-  ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}'
+  prism_agent_dns_ready
 }
 route_health_ok() {
   basic_health_ok || return 1
@@ -1141,11 +1167,14 @@ wait_for_local_dns() {
   local attempt
   info "等待 Prism Agent 接管本机 53 端口..."
   for attempt in {1..30}; do
-    if systemctl is-active --quiet prism-agent 2>/dev/null &&
-       ss -lntup 2>/dev/null | awk '$5 ~ /:53$/ && /prism-agent/ {found=1} END {exit !found}' &&
+    if prism_agent_dns_ready &&
        dig @127.0.0.1 "$TEST_DOMAIN" +time=1 +tries=1 +short 2>/dev/null | grep -q .; then
       ok "Prism Agent 已接管本机 DNS。"
-      verify_route_probes
+      if [[ "$ACTION" == "one-click" ]]; then
+        warm_route_probes
+      else
+        wait_for_route_probes
+      fi
       return 0
     fi
     sleep 1
@@ -1154,9 +1183,37 @@ wait_for_local_dns() {
   fail "Prism Agent 未能接管 53 端口；不能把其他 DNS 服务的响应误判为安装成功。"
 }
 
+wait_for_route_probes() {
+  local attempt
+  info "等待加密传输和 DNS 服务路由就绪..."
+  for attempt in {1..24}; do
+    /usr/local/lib/prismdns/prism_transport.sh --sync >/dev/null 2>&1 || true
+    /usr/local/lib/prismdns/sync-routes.sh >/dev/null 2>&1 || true
+    if verify_route_probes quiet; then
+      verify_route_probes route
+      return 0
+    fi
+    sleep 5
+  done
+  verify_route_probes warn
+}
+
+warm_route_probes() {
+  local attempt
+  info "预热加密传输和 DNS 服务路由..."
+  for attempt in {1..6}; do
+    /usr/local/lib/prismdns/prism_transport.sh --sync >/dev/null 2>&1 || true
+    /usr/local/lib/prismdns/sync-routes.sh >/dev/null 2>&1 || true
+    verify_route_probes quiet && return 0
+    sleep 3
+  done
+  warn "服务路由仍在后台同步，安装完成后守卫会继续刷新。"
+}
+
 verify_route_probes() {
-  local bootstrap probe domain matched_peer expected=0 mapped=0 healthy=0
+  local mode="${1:-fail}" bootstrap probe domain matched_peer expected=0 mapped=0 healthy=0 route_only=false
   local -a peers domains answers
+  [[ "$mode" == "quiet" || "$mode" == "route" || "$mode" == "warn" ]] && route_only=true
   bootstrap=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN")
   while IFS= read -r probe; do
     mapfile -t peers < <(jq -r '.traffic_peers[]?' <<<"$probe" | sort -u)
@@ -1179,6 +1236,7 @@ verify_route_probes() {
       done
       [[ -n "$matched_peer" ]] || continue
       mapped=$((mapped + 1))
+      $route_only && continue
       for probe_attempt in 1 2; do
         if curl -sS -o /dev/null --resolve "$domain:443:$matched_peer" --connect-timeout 5 --max-time 12 "https://$domain/"; then
           probe_ok=true
@@ -1191,10 +1249,26 @@ verify_route_probes() {
       fi
     done
   done < <(jq -c '.health_probes[]?' <<<"$bootstrap")
-  ((expected == mapped)) || fail "所选服务 DNS 路由验证失败：$mapped/$expected 个域名正确映射到已配置解锁机。"
+  if ((expected != mapped)); then
+    if [[ "$mode" == "quiet" ]]; then
+      return 1
+    fi
+    if [[ "$mode" == "warn" ]]; then
+      warn "所选服务 DNS 路由暂未完全就绪：$mapped/$expected 个域名正确映射到已配置解锁机；后台守卫会继续同步。"
+      return 0
+    fi
+    fail "所选服务 DNS 路由验证失败：$mapped/$expected 个域名正确映射到已配置解锁机。"
+  fi
+  if $route_only; then
+    [[ "$mode" == "quiet" ]] && return 0
+    ok "所选服务 DNS 路由验证通过：$mapped/$expected；完整流媒体可用性由后台审计继续检测。"
+    return 0
+  fi
   if ((healthy < expected)); then
+    [[ "$mode" == "quiet" ]] && return 0
     warn "所选服务 DNS 路由正确（$mapped/$expected）；HTTPS 探测通过 $healthy/$expected。第三方服务策略或瞬时网络异常不会阻断 DNS 接管。"
   else
+    [[ "$mode" == "quiet" ]] && return 0
     ok "所选服务 DNS 路由和 HTTPS 验证通过：$healthy/$expected。"
   fi
 }
@@ -1328,7 +1402,7 @@ show_status() {
   if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet prism-agent 2>/dev/null; then echo "运行中"; else echo "未运行"; fi
   printf '  当前 DNS         : %s\n' "$(awk '/^nameserver/ {printf "%s ", $2}' /etc/resolv.conf 2>/dev/null || true)"
   printf '  本机 53 端口     : '
-  if command -v ss >/dev/null 2>&1 && ss -lntu 2>/dev/null | grep -qE '[:.]53[[:space:]]'; then echo "监听中"; else echo "未监听"; fi
+  if prism_agent_dns_ready; then echo "监听中"; else echo "未监听"; fi
   printf '  备份数量         : %s\n' "$backup_count"
   printf '  解锁链路流量上报 : '
   if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet prismdns-traffic.timer 2>/dev/null; then echo "每分钟"; elif [[ -f /etc/cron.d/prismdns-traffic ]]; then echo "每分钟 (cron)"; else echo "未启用"; fi
@@ -1342,6 +1416,7 @@ one_click() {
   bootstrap
   test_dns
   apply_permanent
+  warm_route_probes
 }
 
 refresh_runtime() {
