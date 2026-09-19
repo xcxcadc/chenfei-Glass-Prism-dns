@@ -260,11 +260,17 @@ function isConfiguredForTarget(service, config = configForNode(selectedDNS())) {
   return !!serviceRouteEntry(config, service)?.value;
 }
 function serviceResult(config, service) {
-  if (!config?.service_results || !service) return "";
+  if (!config?.service_results || !service || !serviceAuditFresh(config)) return "";
   for (const id of serviceIDs(service)) {
     if (config.service_results[id]) return config.service_results[id];
   }
   return "";
+}
+function serviceAuditFresh(config) {
+  const auditedAt = new Date(config?.service_audited_at || 0).getTime();
+  const requestedAt = new Date(config?.service_audit_requested_at || 0).getTime();
+  return Number.isFinite(auditedAt) && auditedAt > 0 &&
+    Date.now() - auditedAt < 7 * 60 * 60 * 1000 && auditedAt >= requestedAt;
 }
 function normalizeOverride(value) {
   if (value == null) return "";
@@ -431,6 +437,7 @@ function catalogCategories() {
     .sort((left, right) => displayCategory(left).localeCompare(displayCategory(right), state.lang === "zh" ? "zh-CN" : "en"));
 }
 function isOnline(node) { if (!node?.last_heartbeat) return false; return Date.now() - new Date(node.last_heartbeat).getTime() < 90000; }
+function healthReportStale(config) { return Date.now() - new Date(config?.health_updated_at || 0).getTime() > 180000; }
 function normalizeIP(value) {
   let candidate = String(value || "").split(",")[0].trim();
   if (candidate.startsWith("[")) candidate = candidate.slice(1, candidate.indexOf("]"));
@@ -457,24 +464,22 @@ function targetAuditSummary(config) {
     audited: audits.length,
     passed: audits.filter(audit => audit.kind === "good").length,
     failed: audits.filter(audit => audit.kind === "bad").length,
-    pending: configured.length - audits.length,
+    pending: configured.length - audits.length + audits.filter(audit => audit.kind === "warn").length,
   };
 }
 function clientState(config, node) {
   if (!isOnline(node)) return {kind:"bad", label:"OFFLINE", detail:state.lang === "zh" ? "控制通道离线" : "Control channel offline"};
   if (!config) return {kind:"warn", label:state.lang === "zh" ? "未纳管" : "UNMANAGED", detail:state.lang === "zh" ? "Agent 已在线，尚未配置解锁服务" : "Agent connected; unlock services are not configured"};
   if (!config.health_updated_at) return {kind:"warn", label:t("pending"), detail:state.lang === "zh" ? "等待客户端健康上报" : "Waiting for client health report"};
-  if (Date.now() - new Date(config.health_updated_at).getTime() > 180000) return {kind:"warn", label:t("stale"), detail:state.lang === "zh" ? "健康上报已超时" : "Health report is stale"};
+  if (healthReportStale(config)) return {kind:"warn", label:t("stale"), detail:state.lang === "zh" ? "健康上报已超时" : "Health report is stale"};
   const routes = `${Number(config.healthy_routes || 0)}/${Number(config.expected_routes || 0)}`;
   const audit = targetAuditSummary(config);
   const auditDetail = state.lang === "zh"
     ? `实测 ${audit.passed}/${audit.audited || audit.configured} 通过${audit.pending ? `，${audit.pending} 项待实测` : ""}${audit.failed ? `，${audit.failed} 项异常` : ""}`
     : `Audited ${audit.passed}/${audit.audited || audit.configured} passed${audit.pending ? `, ${audit.pending} pending` : ""}${audit.failed ? `, ${audit.failed} failed` : ""}`;
   if (config.dns_ready && config.system_dns_ready && config.routes_ready) {
-    if (audit.failed) return {kind:"bad", label:state.lang === "zh" ? "部分服务异常" : "PARTIAL FAILURE", detail:`${t("healthRoutes")} ${routes} · ${auditDetail}`};
-    if (audit.pending) return {kind:"warn", label:state.lang === "zh" ? "待实测" : "AUDIT PENDING", detail:`${t("healthRoutes")} ${routes} · ${auditDetail}`};
-    if (audit.configured > 0) return {kind:"good", label:state.lang === "zh" ? "实测通过" : "AUDITED OK", detail:`${t("healthRoutes")} ${routes} · ${auditDetail}`};
-    return {kind:"warn", label:state.lang === "zh" ? "未配置服务" : "NO SERVICES", detail:`${t("healthRoutes")} ${routes}`};
+    if (audit.configured > 0) return {kind:"good", label:state.lang === "zh" ? "路由已生效" : "ROUTES ACTIVE", detail:`${t("healthRoutes")} ${routes} · ${auditDetail}`};
+    return {kind:"good", label:state.lang === "zh" ? "在线" : "ONLINE", detail:`${t("healthRoutes")} ${routes}`};
   }
   return {kind:"bad", label:t("degraded"), detail:config.health_message || `${t("healthRoutes")} ${routes}`};
 }
@@ -490,6 +495,8 @@ function viewFingerprint() {
     dns_ready:config.dns_ready, system_dns_ready:config.system_dns_ready, routes_ready:config.routes_ready,
     healthy_routes:config.healthy_routes, expected_routes:config.expected_routes, health_message:config.health_message,
     service_results:config.service_results, service_audited_at:config.service_audited_at,
+    service_audit_requested_at:config.service_audit_requested_at, audit_fresh:serviceAuditFresh(config),
+    health_updated_at:config.health_updated_at, health_stale:healthReportStale(config),
     traffic_rx_bytes:state.tab === "ips" ? config.traffic_rx_bytes : undefined,
     traffic_tx_bytes:state.tab === "ips" ? config.traffic_tx_bytes : undefined
   }));
@@ -523,7 +530,7 @@ function auditResultState(result) {
   if (/^NOT COVERED\b/i.test(value)) {
     return {kind:"warn", label:t("auditNotCovered"), detail:value};
   }
-  if (/^PASS\b/i.test(value) && /diagnostics:/i.test(value) && /(DNS [^;]*\b0\/|DNS route mismatch|TLS\/SNI [^;]*\b0\/|required TLS\/SNI probe mismatch|page success 0\/|representative pages did not return|no DNS route domains|no TLS\/SNI probe domains)/i.test(value)) {
+  if (/^PASS\b/i.test(value) && /diagnostics:/i.test(value) && /(DNS [^;]*\b0\/|DNS route mismatch|TLS\/SNI [^;]*\b0\/|required TLS\/SNI probe mismatch|HTTP response 0\/|representative endpoint did not return|no DNS route domains|no TLS\/SNI probe domains)/i.test(value)) {
     return {kind:"bad", label:state.lang === "zh" ? "不可用（实际链路检测失败）" : "Unavailable (path check failed)", detail:value};
   }
   if (/^YES\b|^PASS\b/i.test(value)) {
@@ -715,6 +722,7 @@ let reloadTimer;
 let searchRenderTimer;
 let searchComposing = false;
 let clockTimer;
+let statusPollTimer;
 function scheduleLiveReload() {
   if (reloadTimer) return;
   reloadTimer = setTimeout(() => {
@@ -955,6 +963,7 @@ function currentAlerts() {
     const node = ipConfigNode(config);
     const health = clientState(config, node);
     if (health.kind !== "good") alerts.push({kind:health.kind, title:`${config.ip} · ${health.label}`, detail:health.detail, tab:"ips"});
+    if (!serviceAuditFresh(config)) return;
     Object.entries(config.service_results || {}).forEach(([serviceID, raw]) => {
       const audit = auditResultState(raw);
       if (audit.kind === "good") return;
@@ -1041,7 +1050,8 @@ function ipConfigsHTML() {
   const totalTraffic = state.ipConfigs.reduce((total, config) => total + Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0), 0);
   return `${header}<section class="traffic-summary panel"><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small>${t("trafficHint")}</small></div><button class="btn danger" id="clear-all-traffic">${t("clearAllTraffic")}</button></section><section class="ip-list panel"><div class="ip-list-head"><span>${t("targetIP")}</span><span>${t("selectedServices")}</span><span>${t("clientTraffic")}</span><span>${t("dnsClient")}</span><span></span></div>${state.ipConfigs.map(config => {
     const node = ipConfigNode(config); const status = clientState(config, node); const count = Object.keys(config.routes || {}).length; const traffic = Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0);
-    const audited = Object.values(config.service_results || {}).map(auditResultState); const passed = audited.filter(result => result.kind === "good").length;
+    const audited = serviceAuditFresh(config) ? Object.values(config.service_results || {}).map(auditResultState) : [];
+    const passed = audited.filter(result => result.kind === "good").length;
     return `<article class="ip-row" data-ip-id="${escapeHTML(config.id)}" role="button" tabindex="0" aria-label="${escapeHTML(`${t("editIP")} ${config.ip}`)}"><div class="ip-main"><strong>${escapeHTML(config.ip)}</strong><span>${escapeHTML(config.note || config.node_name || "-")}</span></div><div class="ip-selection"><span class="badge good">${count} / ${state.catalog.length}</span>${audited.length ? `<small>${t("actualAudit")} ${passed}/${audited.length}</small>` : ""}</div><div class="ip-traffic" title="RX ${formatBytes(config.traffic_rx_bytes)} · TX ${formatBytes(config.traffic_tx_bytes)}"><strong>${formatBytes(traffic)}</strong><span>${t("trafficUpdated")}: ${formatDate(config.traffic_updated_at)}</span></div><div class="ip-node-state" title="${escapeHTML(status.detail)}"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span><span>${escapeHTML(status.label)}</span></div><div class="ip-row-actions"><button class="btn small ip-script" data-ip-id="${escapeHTML(config.id)}">${t("clientScript")}</button><button class="btn small primary ip-edit" data-ip-id="${escapeHTML(config.id)}">${t("editIP")}</button><button class="btn small ip-clear-traffic" data-ip-id="${escapeHTML(config.id)}">${t("clearTraffic")}</button><button class="btn small danger ip-delete" data-ip-id="${escapeHTML(config.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
@@ -1049,6 +1059,11 @@ function ipConfigsHTML() {
 function bindShell() {
   updateClock();
   if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
+  if (!statusPollTimer) statusPollTimer = setInterval(() => {
+    const active = document.activeElement;
+    if (state.token && ["nodes", "ips", "alerts"].includes(state.tab) && !state.modal &&
+      !active?.matches?.("input, textarea, select, [contenteditable=true]")) loadAll(true);
+  }, 60000);
   document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
   document.querySelectorAll(".lang-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); }));
   document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));

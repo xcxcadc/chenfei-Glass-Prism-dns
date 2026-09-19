@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.21"
+VERSION="1.5.23"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -173,6 +173,76 @@ install_client_transport() {
 install_traffic_reporter() {
   require_root
   mkdir -p /usr/local/lib/prismdns
+  cat > /usr/local/lib/prismdns/report-heartbeat.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+STATE_DIR=/var/lib/prismdns
+CONFIG_FILE="$STATE_DIR/client.conf"
+TRAFFIC_FILE="$STATE_DIR/traffic-cumulative.json"
+BOOTSTRAP_FILE="$STATE_DIR/bootstrap.json"
+HEALTH_FILE="$STATE_DIR/route-health-report.json"
+[[ -s "$CONFIG_FILE" && -s "$TRAFFIC_FILE" && -s "$BOOTSTRAP_FILE" ]] || exit 0
+MASTER=$(sed -n 's/^master=//p' "$CONFIG_FILE" | head -1)
+TOKEN=$(sed -n 's/^token=//p' "$CONFIG_FILE" | head -1)
+[[ -n "$MASTER" && -n "$TOKEN" ]] || exit 0
+STATE_ID=$(printf '%s' "$TOKEN" | sha256sum | awk '{print $1}')
+jq -e --arg id "$STATE_ID" '.version == 1 and .state_id == $id' "$TRAFFIC_FILE" >/dev/null || exit 0
+RX=$(jq -r '.total_rx' "$TRAFFIC_FILE")
+TX=$(jq -r '.total_tx' "$TRAFFIC_FILE")
+DNS_READY=false
+LOCAL_READY=false
+SYSTEM_READY=false
+ROUTES_READY=false
+MESSAGE=""
+if systemctl is-active --quiet prism-agent &&
+  ss -lntup | awk '/prism-agent/ && /:53([[:space:]]|$)/ {found=1} END {exit !found}'; then
+  DNS_READY=true
+else
+  MESSAGE="Prism Agent 未接管 53 端口"
+fi
+if systemctl is-active --quiet prismdns-local-dns.service &&
+  ss -lntup | awk '/dnsmasq/ && /127\.0\.0\.1:5353/ {found=1} END {exit !found}'; then
+  LOCAL_READY=true
+  if [[ -r /proc/net/if_inet6 ]] && grep -q '^00000000000000000000000000000001' /proc/net/if_inet6; then
+    ss -lntup | grep -Eq '(^|[[:space:]])(\[::1\]|::1):5353([[:space:]]|$)' || LOCAL_READY=false
+  fi
+fi
+if ! $LOCAL_READY; then
+  MESSAGE="${MESSAGE:+$MESSAGE; }Prism 本地 DNS 未完整接管 IPv4/IPv6 回环"
+fi
+if awk '$1 == "nameserver" && ($2 == "127.0.0.1" || $2 == "::1") {found=1} END {exit !found}' /etc/resolv.conf; then
+  SYSTEM_READY=true
+else
+  MESSAGE="${MESSAGE:+$MESSAGE; }System DNS is not using Prism"
+fi
+HEALTH_KEY=$(jq -Sc '{mode:"agent-smart-dual-stack-v1",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))}' "$BOOTSTRAP_FILE" | sha256sum | awk '{print $1}')
+HEALTHY=0
+EXPECTED=0
+if [[ -s "$HEALTH_FILE" ]] &&
+  jq -e --arg key "$HEALTH_KEY" --argjson now "$(date +%s)" '.key == $key and .checked_at <= $now and ($now - .checked_at) < 1800' "$HEALTH_FILE" >/dev/null; then
+  HEALTHY=$(jq -r '.healthy // 0' "$HEALTH_FILE")
+  EXPECTED=$(jq -r '.expected // 0' "$HEALTH_FILE")
+fi
+GUARD_READY=false
+if [[ -f "$STATE_DIR/dns-guard.state" ]]; then
+  if ! grep -qx 'required=1' "$STATE_DIR/dns-guard.state" ||
+    grep -qx 'ready=1' "$STATE_DIR/dns-guard.state"; then
+    GUARD_READY=true
+  fi
+fi
+if $DNS_READY && $LOCAL_READY && $SYSTEM_READY && $GUARD_READY && ((EXPECTED == 0 || HEALTHY == EXPECTED)); then
+  ROUTES_READY=true
+else
+  MESSAGE="${MESSAGE:+$MESSAGE; }路由探针 ${HEALTHY}/${EXPECTED}（审计期间心跳）"
+fi
+jq -nc --arg token "$TOKEN" --argjson rx "$RX" --argjson tx "$TX" \
+  --argjson dns_ready "$DNS_READY" --argjson system_dns_ready "$SYSTEM_READY" \
+  --argjson routes_ready "$ROUTES_READY" --argjson healthy_routes "$HEALTHY" \
+  --argjson expected_routes "$EXPECTED" --arg health_message "$MESSAGE" \
+  '{token:$token,scope:"unlock_peers",interface:"nftables-dns-sni",rx_bytes:$rx,tx_bytes:$tx,dns_ready:$dns_ready,system_dns_ready:$system_dns_ready,routes_ready:$routes_ready,healthy_routes:$healthy_routes,expected_routes:$expected_routes,health_message:$health_message}' |
+  curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d @- "$MASTER/enhancer/api/traffic/report" >/dev/null || true
+EOF
+  chmod 700 /usr/local/lib/prismdns/report-heartbeat.sh
   cat > /usr/local/lib/prismdns/report-traffic.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -192,13 +262,18 @@ BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
 MEDIA_CHECK_URL="http://check.unlock.media"
 MEDIA_CHECK_FALLBACK_URL="https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh"
 MEDIA_CHECK_TIMEOUT=900
-AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v2"
+AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v3"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
 HEALTH_CACHE_INTERVAL=1800
 [[ -f "$CONFIG_FILE" ]] || exit 0
 if command -v flock >/dev/null 2>&1; then
   exec 8>"$LOCK_FILE"
-  flock -n 8 || exit 0
+  if ! flock -n 8; then
+    if [[ "${PRISM_RUN_SERVICE_AUDIT:-0}" != "1" ]]; then
+      /usr/local/lib/prismdns/report-heartbeat.sh
+    fi
+    exit 0
+  fi
 else
   LOCK_DIR="${LOCK_FILE}.d"
   mkdir "$LOCK_DIR" 2>/dev/null || exit 0
@@ -609,7 +684,7 @@ run_service_audit() {
         if [[ "$http_code" =~ ^[1-5][0-9][0-9]$ ]]; then
           tls_attempt_pass=$((tls_attempt_pass + 1))
         fi
-        if [[ "$http_code" =~ ^[23][0-9][0-9]$ ]]; then
+        if [[ "$http_code" =~ ^[1-4][0-9][0-9]$ ]]; then
           page_ok=true
         fi
         ((tls_attempt_pass >= 2)) && break
@@ -642,7 +717,7 @@ run_service_audit() {
     else
       optional_failure_csv=""
     fi
-    diagnostic_summary="DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; page success ${https_success}/${https_total}"
+    diagnostic_summary="DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; HTTP response ${https_success}/${https_total}"
     if ((route_total == 0)); then
       diagnostic_summary="${diagnostic_summary}; no DNS route domains were configured"
     elif ((route_pass != route_total)); then
@@ -653,7 +728,7 @@ run_service_audit() {
     elif ((required_https_pass != required_https_total)); then
       diagnostic_summary="${diagnostic_summary}; required TLS/SNI probe mismatch"
     elif ((https_success == 0)); then
-      diagnostic_summary="${diagnostic_summary}; representative pages did not return a 2xx/3xx response"
+      diagnostic_summary="${diagnostic_summary}; representative endpoint did not return an HTTP response"
     fi
     if [[ -n "$optional_failure_csv" ]]; then
       diagnostic_summary="${diagnostic_summary}; optional dependency unavailable: $optional_failure_csv"
@@ -707,7 +782,7 @@ HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
 BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
-  AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v2"
+  AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v3"
 HEALTH_CHECK_FILE="/var/lib/prismdns/route-health.timestamp"
 HEALTH_CHECK_INTERVAL=300
 DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
