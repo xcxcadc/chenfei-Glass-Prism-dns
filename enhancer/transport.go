@@ -177,7 +177,7 @@ func (store *TransportStore) ClientConfig(record ipConfigRecord) transportConfig
 		if !ok || !transportRecordFresh(proxy.UpdatedAt) {
 			continue
 		}
-		proxyIP, clientIP := transportPairIPs(proxyID, record.ID)
+		clientIP := transportClientIP(proxyID, record.ID)
 		remoteHTTP, remoteHTTPS := 80, 443
 		if proxy.EgressReady {
 			remoteHTTP, remoteHTTPS = 19080, 19443
@@ -187,7 +187,7 @@ func (store *TransportStore) ClientConfig(record ipConfigRecord) transportConfig
 			SSHHostKey:    proxy.SSHHostKey,
 			SSHHost:       proxy.Endpoint,
 			SSHPort:       22,
-			ProxyIP:       proxyIP,
+			ProxyIP:       proxy.Endpoint,
 			ClientIP:      clientIP,
 			PublicProxyIP: proxy.Endpoint,
 			RemoteHTTP:    remoteHTTP,
@@ -202,7 +202,8 @@ func (store *TransportStore) ProxyConfig(proxyID string, records []ipConfigRecor
 	store.mu.RLock()
 	defer store.mu.RUnlock()
 	config := transportConfig{Role: "proxy", Interface: "openssh", Peers: []transportPeer{}, AuthorizedIPs: []string{}}
-	if _, exists := store.proxies[proxyID]; !exists {
+	proxy, exists := store.proxies[proxyID]
+	if !exists {
 		return config
 	}
 	authorized := make(map[string]struct{})
@@ -217,11 +218,11 @@ func (store *TransportStore) ProxyConfig(proxyID string, records []ipConfigRecor
 		if !ok || !transportRecordFresh(client.UpdatedAt) {
 			continue
 		}
-		proxyIP, clientIP := transportPairIPs(proxyID, record.ID)
+		clientIP := transportClientIP(proxyID, record.ID)
 		config.Peers = append(config.Peers, transportPeer{
 			ConfigID:     record.ID,
 			SSHPublicKey: client.SSHPublicKey,
-			ProxyIP:      proxyIP,
+			ProxyIP:      proxy.Endpoint,
 			ClientIP:     clientIP,
 		})
 	}
@@ -254,8 +255,7 @@ func (store *TransportStore) EffectiveProxyIP(configID, proxyID string) (string,
 	if !ready || !transportRecordFresh(readyAt) {
 		return "", false
 	}
-	proxyIP, _ := transportPairIPs(proxyID, configID)
-	return proxyIP, true
+	return proxy.Endpoint, true
 }
 
 func (store *TransportStore) load() error {
@@ -419,12 +419,12 @@ func normalizeSSHKey(value string) (string, error) {
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(publicKey))), nil
 }
 
-func transportPairIPs(proxyID, configID string) (string, string) {
+func transportClientIP(proxyID, configID string) string {
 	sum := sha256.Sum256([]byte(proxyID + "\x00" + configID))
 	network := (uint16(sum[0])<<8 | uint16(sum[1])) & 0xfffc
 	third := byte(network >> 8)
 	fourth := byte(network & 0xfc)
-	return net.IPv4(10, 250, third, fourth+1).String(), net.IPv4(10, 250, third, fourth+2).String()
+	return net.IPv4(10, 250, third, fourth+2).String()
 }
 
 func transportRecordFresh(updatedAt time.Time) bool {

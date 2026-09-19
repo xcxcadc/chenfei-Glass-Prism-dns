@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="2.3.1"
+VERSION="2.4.0"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -20,6 +20,7 @@ ROLE=""
 MASTER=""
 CREDENTIAL=""
 ACTION="install"
+TRANSPORT_MODE="${PRISM_TRANSPORT_MODE:-direct}"
 
 log() { printf '[Prism Transport] %s\n' "$*"; }
 fail() { printf '[Prism Transport] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -35,11 +36,12 @@ parse_args() {
       --client) ROLE="client"; shift ;;
       --master) MASTER="${2:-}"; shift 2 ;;
       --secret|--token) CREDENTIAL="${2:-}"; shift 2 ;;
+      --mode) TRANSPORT_MODE="${2:-}"; shift 2 ;;
       --sync) ACTION="sync"; shift ;;
       --uninstall) ACTION="uninstall"; shift ;;
       --status) ACTION="status"; shift ;;
       --help|-h)
-        echo "Usage: prism_transport.sh (--proxy --secret SECRET | --client --token TOKEN) --master URL [--sync|--uninstall|--status]"
+        echo "Usage: prism_transport.sh (--proxy --secret SECRET | --client --token TOKEN) --master URL [--mode direct|encrypted] [--sync|--uninstall|--status]"
         exit 0
         ;;
       *) fail "unknown argument: $1" ;;
@@ -53,6 +55,7 @@ load_environment() {
     source "$ENV_FILE"
   fi
   MASTER="${MASTER%/}"
+  [[ "$TRANSPORT_MODE" == "direct" || "$TRANSPORT_MODE" == "encrypted" ]] || fail "invalid transport mode: $TRANSPORT_MODE"
 }
 
 detect_package_manager() {
@@ -105,6 +108,7 @@ save_environment() {
     printf 'ROLE=%q\n' "$ROLE"
     printf 'MASTER=%q\n' "$MASTER"
     printf 'CREDENTIAL=%q\n' "$CREDENTIAL"
+    printf 'TRANSPORT_MODE=%q\n' "$TRANSPORT_MODE"
   } >"$ENV_FILE"
   chmod 600 "$ENV_FILE"
 }
@@ -371,12 +375,15 @@ remove_stale_tunnels() {
       continue
     fi
     service_id=$(jq -r --arg proxy_id "$old_proxy" '.[] | select(.proxy_id == $proxy_id) | .service_id' "$ACTIVE_FILE")
-    systemctl disable --now "prism-transport-ssh-$service_id.service" >/dev/null 2>&1 || true
-    rm -f "/etc/systemd/system/prism-transport-ssh-$service_id.service" "$STATE_DIR/known-hosts-$service_id"
+    if [[ -n "$service_id" && "$service_id" != "null" ]]; then
+      systemctl disable --now "prism-transport-ssh-$service_id.service" >/dev/null 2>&1 || true
+      rm -f "/etc/systemd/system/prism-transport-ssh-$service_id.service" "$STATE_DIR/known-hosts-$service_id"
+    fi
   done < <(jq -r '.[].proxy_id' "$ACTIVE_FILE")
+  systemctl daemon-reload
 }
 
-apply_redirect_rules() {
+apply_client_rules() {
   local current="$1" temporary peer proxy_ip local_http local_https
   temporary=$(mktemp)
   {
@@ -385,34 +392,55 @@ apply_redirect_rules() {
     echo '  counter rx {}'
     echo '  chain account_output {'
     echo '    type filter hook output priority -200; policy accept;'
-    while IFS= read -r peer; do
-      [[ -n "$peer" ]] || continue
-      local_http=$(jq -r '.local_http' <<<"$peer")
-      local_https=$(jq -r '.local_https' <<<"$peer")
-      printf '    tcp sport { %s, %s } counter name "rx" return\n' "$local_http" "$local_https"
-    done < <(jq -c 'unique_by(.proxy_ip)[]?' <<<"$current")
+    if [[ "$TRANSPORT_MODE" == "encrypted" ]]; then
+      while IFS= read -r peer; do
+        [[ -n "$peer" ]] || continue
+        local_http=$(jq -r '.local_http' <<<"$peer")
+        local_https=$(jq -r '.local_https' <<<"$peer")
+        printf '    tcp sport { %s, %s } counter name "rx" return\n' "$local_http" "$local_https"
+      done < <(jq -c 'unique_by(.proxy_ip)[]?' <<<"$current")
+    fi
     while IFS= read -r peer; do
       [[ -n "$peer" ]] || continue
       proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
       printf '    ip daddr %s tcp dport { 80, 443 } counter name "tx"\n' "$proxy_ip"
     done < <(jq -c 'unique_by(.proxy_ip)[]?' <<<"$current")
     echo '  }'
-    echo '  chain redirect_output {'
-    echo '    type nat hook output priority -100; policy accept;'
-    while IFS= read -r peer; do
-      [[ -n "$peer" ]] || continue
-      proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
-      local_http=$(jq -r '.local_http' <<<"$peer")
-      local_https=$(jq -r '.local_https' <<<"$peer")
-      printf '    ip daddr %s tcp dport 80 redirect to :%s\n' "$proxy_ip" "$local_http"
-      printf '    ip daddr %s tcp dport 443 redirect to :%s\n' "$proxy_ip" "$local_https"
-    done < <(jq -c 'unique_by(.proxy_ip)[]?' <<<"$current")
-    echo '  }'
+    if [[ "$TRANSPORT_MODE" == "direct" ]]; then
+      echo '  chain account_input {'
+      echo '    type filter hook input priority -200; policy accept;'
+      while IFS= read -r peer; do
+        [[ -n "$peer" ]] || continue
+        proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
+        printf '    ip saddr %s tcp sport { 80, 443 } counter name "rx"\n' "$proxy_ip"
+      done < <(jq -c 'unique_by(.proxy_ip)[]?' <<<"$current")
+      echo '  }'
+    else
+      echo '  chain redirect_output {'
+      echo '    type nat hook output priority -100; policy accept;'
+      while IFS= read -r peer; do
+        [[ -n "$peer" ]] || continue
+        proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
+        local_http=$(jq -r '.local_http' <<<"$peer")
+        local_https=$(jq -r '.local_https' <<<"$peer")
+        printf '    ip daddr %s tcp dport 80 redirect to :%s\n' "$proxy_ip" "$local_http"
+        printf '    ip daddr %s tcp dport 443 redirect to :%s\n' "$proxy_ip" "$local_https"
+      done < <(jq -c 'unique_by(.proxy_ip)[]?' <<<"$current")
+      echo '  }'
+    fi
     echo '}'
   } >"$temporary"
   nft delete table inet prism_transport >/dev/null 2>&1 || true
   nft -f "$temporary"
   rm -f "$temporary"
+}
+
+direct_peer_ready() {
+  local peer="$1" proxy_ip
+  proxy_ip=$(jq -r '.proxy_ip' <<<"$peer")
+  tunnel_port_ready "$proxy_ip" 80 &&
+    tunnel_port_ready "$proxy_ip" 443 &&
+    tunnel_https_probe "$proxy_ip"
 }
 
 tunnel_port_ready() {
@@ -490,7 +518,11 @@ sync_client() {
   jq -e '.role == "client" and (.peers | type == "array")' <<<"$response" >/dev/null
   while IFS= read -r peer; do
     [[ -n "$peer" ]] || continue
-    current+=("$(write_tunnel_service "$peer")")
+    if [[ "$TRANSPORT_MODE" == "direct" ]]; then
+      current+=("$(jq -c '{proxy_id,proxy_ip}' <<<"$peer")")
+    else
+      current+=("$(write_tunnel_service "$peer")")
+    fi
   done < <(jq -c '.peers[]?' <<<"$response")
   if ((${#current[@]})); then
     current_json=$(printf '%s\n' "${current[@]}" | jq -sc 'sort_by(.proxy_id)')
@@ -499,11 +531,15 @@ sync_client() {
   fi
   [[ -f "$ACTIVE_FILE" ]] && old_current=$(jq -c 'sort_by(.proxy_id)' "$ACTIVE_FILE" 2>/dev/null || echo '[]')
   [[ "$(jq -c 'sort_by(.proxy_id)' <<<"$current_json")" != "$old_current" ]] && changed_current=true
-  remove_stale_tunnels "$current_json"
+  if [[ "$TRANSPORT_MODE" == "direct" ]]; then
+    remove_stale_tunnels '[]'
+  else
+    remove_stale_tunnels "$current_json"
+  fi
   if [[ "${PRISM_FORCE_TRANSPORT_RULES:-0}" == "1" ]] || $changed_current ||
     ! nft list counter inet prism_transport tx >/dev/null 2>&1 ||
     ! nft list counter inet prism_transport rx >/dev/null 2>&1; then
-    apply_redirect_rules "$current_json"
+    apply_client_rules "$current_json"
   fi
   printf '%s\n' "$current_json" >"$ACTIVE_FILE"
   chmod 600 "$ACTIVE_FILE"
@@ -511,7 +547,9 @@ sync_client() {
   while IFS= read -r peer; do
     [[ -n "$peer" ]] || continue
     proxy_id=$(jq -r '.proxy_id' <<<"$peer")
-    if tunnel_ready "$peer"; then
+    if [[ "$TRANSPORT_MODE" == "direct" ]] && direct_peer_ready "$peer"; then
+      ready+=("$proxy_id")
+    elif [[ "$TRANSPORT_MODE" == "encrypted" ]] && tunnel_ready "$peer"; then
       if ! tunnel_functional_ready "$peer"; then
         log "encrypted peer $proxy_id accepted TCP but failed HTTPS path probe; tunnel restart was requested without changing service routing"
       fi
@@ -529,7 +567,7 @@ sync_client() {
   fi
   systemctl disable --now wg-quick@prismwg0 >/dev/null 2>&1 || true
   rm -f /etc/wireguard/prismwg0.conf
-  log "client transport synchronized: ${#ready[@]}/$(jq '.peers | length' <<<"$response") encrypted peers ready"
+  log "client transport synchronized: ${#ready[@]}/$(jq '.peers | length' <<<"$response") $TRANSPORT_MODE peers ready"
 }
 
 sync_transport() {
@@ -609,7 +647,7 @@ install_transport() {
   [[ "$ROLE" == "proxy" ]] && install_proxy_egress
   install_timer
   sync_transport
-  log "encrypted TCP transport v$VERSION installed for role $ROLE"
+  log "Prism SNI transport v$VERSION installed for role $ROLE (mode: $TRANSPORT_MODE)"
 }
 
 uninstall_transport() {
@@ -635,12 +673,13 @@ uninstall_transport() {
   nft delete table inet prism_transport >/dev/null 2>&1 || true
   nft delete table inet prism_authorization >/dev/null 2>&1 || true
   systemctl daemon-reload
-  log "encrypted transport removed"
+  log "Prism SNI transport removed"
 }
 
 show_status() {
   load_environment
   echo "role=${ROLE:-unconfigured}"
+  echo "mode=${TRANSPORT_MODE:-direct}"
   echo "timer=$(systemctl is-active prism-transport.timer 2>/dev/null || true)"
   if [[ "${ROLE:-}" == "proxy" ]]; then
     echo "egress=$(systemctl is-active "$EGRESS_SERVICE" 2>/dev/null || true)"

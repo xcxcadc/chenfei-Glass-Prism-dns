@@ -28,7 +28,7 @@ func TestTransportStoreBuildsReadyPair(t *testing.T) {
 	record := ipConfigRecord{IPConfig: IPConfig{ID: "ip-a", IP: "198.51.100.30", Routes: map[string]string{"youtube": "proxy-a"}}}
 	clientConfig := store.ClientConfig(record)
 	if len(clientConfig.Peers) != 1 || clientConfig.Peers[0].SSHHost != "203.0.113.10" || clientConfig.Peers[0].SSHPort != 22 ||
-		clientConfig.Peers[0].RemoteHTTP != 19080 || clientConfig.Peers[0].RemoteHTTPS != 19443 {
+		clientConfig.Peers[0].ProxyIP != "203.0.113.10" || clientConfig.Peers[0].RemoteHTTP != 19080 || clientConfig.Peers[0].RemoteHTTPS != 19443 {
 		t.Fatalf("unexpected client config: %#v", clientConfig)
 	}
 	proxyConfig := store.ProxyConfig("proxy-a", []ipConfigRecord{record})
@@ -58,15 +58,15 @@ func TestTransportStoreBuildsReadyPair(t *testing.T) {
 	}
 }
 
-func TestTransportPairIPsAreStableAndScoped(t *testing.T) {
-	firstProxy, firstClient := transportPairIPs("proxy-a", "ip-a")
-	repeatedProxy, repeatedClient := transportPairIPs("proxy-a", "ip-a")
-	otherProxy, otherClient := transportPairIPs("proxy-b", "ip-a")
-	if firstProxy != repeatedProxy || firstClient != repeatedClient {
-		t.Fatal("transport pair allocation is not stable")
+func TestTransportClientIPIsStableAndScoped(t *testing.T) {
+	first := transportClientIP("proxy-a", "ip-a")
+	repeated := transportClientIP("proxy-a", "ip-a")
+	other := transportClientIP("proxy-b", "ip-a")
+	if first != repeated {
+		t.Fatal("transport client allocation is not stable")
 	}
-	if firstProxy == firstClient || firstProxy == otherProxy || firstClient == otherClient {
-		t.Fatalf("transport pair allocation collided: %s %s %s %s", firstProxy, firstClient, otherProxy, otherClient)
+	if first == other {
+		t.Fatalf("transport client allocation collided: %s", first)
 	}
 }
 

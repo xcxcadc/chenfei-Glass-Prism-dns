@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.19"
+VERSION="1.5.21"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -105,12 +105,26 @@ validate_master() {
   [[ "$TOKEN" =~ ^[a-fA-F0-9]{32,}$ ]] || fail "配置令牌无效。"
 }
 
+prepare_bootstrap_dns() {
+  local host fallback_dns="${PRISM_BOOTSTRAP_DNS:-1.1.1.1}"
+  host="${MASTER#*://}"
+  host="${host%%/*}"
+  host="${host%%:*}"
+  [[ -n "$host" ]] || return 0
+  getent ahostsv4 "$host" >/dev/null 2>&1 && return 0
+  if grep -Eq '^nameserver[[:space:]]+(127\.0\.0\.1|::1)([[:space:]]|$)' /etc/resolv.conf 2>/dev/null; then
+    warn "检测到系统 DNS 仍指向已停止的本地解析器，临时恢复到 $fallback_dns 以完成安装。"
+    write_resolv_conf "$fallback_dns"
+  fi
+}
+
 bootstrap() {
-  ensure_dependencies
   load_config
   [[ -n "$MASTER" ]] || MASTER=$(prompt "请输入 Prism DNS 面板地址: ")
   [[ -n "$TOKEN" ]] || TOKEN=$(prompt "请输入 IP 配置令牌: ")
   validate_master
+  prepare_bootstrap_dns
+  ensure_dependencies
   local response
   response=$(curl -fsSL --connect-timeout 8 --max-time 20 "$MASTER/enhancer/api/bootstrap/$TOKEN") || fail "无法从面板获取配置，请检查地址和令牌。"
   local expected detected secret smart installer transport_installer configured_master
@@ -146,7 +160,7 @@ bootstrap() {
 
 install_client_transport() {
   local installer_url="$1" installer="/tmp/prism_transport.sh"
-  info "安装 Prism 加密解锁传输..."
+  info "安装 Prism SNI 解锁传输..."
   if [[ -n "${PRISM_TRANSPORT_INSTALLER_FILE:-}" ]]; then
     installer="$PRISM_TRANSPORT_INSTALLER_FILE"
   else
@@ -202,6 +216,22 @@ prism_agent_dns_ready() {
     /prism-agent/ && /(^|[[:space:]])([0-9.]+|\[[0-9a-fA-F:]+\]|\*):53([[:space:]]|$)/ {found=1}
     END {exit !found}
   '
+}
+ipv6_loopback_enabled() {
+  [[ -r /proc/net/if_inet6 ]] &&
+    grep -q '^00000000000000000000000000000001' /proc/net/if_inet6
+}
+local_dns_ready() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  command -v ss >/dev/null 2>&1 || return 1
+  systemctl is-active --quiet prismdns-local-dns.service 2>/dev/null || return 1
+  ss -lntup 2>/dev/null | awk '
+    /dnsmasq/ && /127\.0\.0\.1:5353/ {found=1}
+    END {exit !found}
+  ' || return 1
+  if ipv6_loopback_enabled; then
+    ss -lntup 2>/dev/null | grep -Eq '(^|[[:space:]])(\[::1\]|::1):5353([[:space:]]|$)' || return 1
+  fi
 }
 if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
   exit 0
@@ -294,6 +324,12 @@ if prism_agent_dns_ready; then
 else
   HEALTH_MESSAGE="Prism Agent 未接管 53 端口"
 fi
+LOCAL_DNS_READY=false
+if local_dns_ready; then
+  LOCAL_DNS_READY=true
+else
+  HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE; }Prism 本地 DNS 未完整接管 IPv4/IPv6 回环"
+fi
 if awk '$1 == "nameserver" && ($2 == "127.0.0.1" || $2 == "::1") {found=1} END {exit !found}' /etc/resolv.conf 2>/dev/null; then
   SYSTEM_DNS_READY=true
 else
@@ -365,7 +401,7 @@ if ! $USE_HEALTH_CACHE; then
     '{key:$key,checked_at:$checked_at,healthy:$healthy,expected:$expected}' >"$HEALTH_CACHE_TEMP"
   mv -f "$HEALTH_CACHE_TEMP" "$HEALTH_CACHE_FILE"
 fi
-if ((EXPECTED_ROUTES == HEALTHY_ROUTES)) && $DNS_READY && $SYSTEM_DNS_READY; then
+if ((EXPECTED_ROUTES == HEALTHY_ROUTES)) && $DNS_READY && $LOCAL_DNS_READY && $SYSTEM_DNS_READY; then
   ROUTES_READY=true
 else
   HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE；}路由探针 ${HEALTHY_ROUTES}/${EXPECTED_ROUTES}"
@@ -744,6 +780,22 @@ ensure_system_dns_consumers() {
   done
 }
 ensure_system_dns_consumers
+ipv6_loopback_enabled() {
+  [[ -r /proc/net/if_inet6 ]] &&
+    grep -q '^00000000000000000000000000000001' /proc/net/if_inet6
+}
+local_dns_ready() {
+  command -v systemctl >/dev/null 2>&1 || return 1
+  command -v ss >/dev/null 2>&1 || return 1
+  systemctl is-active --quiet "$LOCAL_DNS_SERVICE" 2>/dev/null || return 1
+  ss -lntup 2>/dev/null | awk '
+    /dnsmasq/ && /127\.0\.0\.1:5353/ {found=1}
+    END {exit !found}
+  ' || return 1
+  if ipv6_loopback_enabled; then
+    ss -lntup 2>/dev/null | grep -Eq '(^|[[:space:]])(\[::1\]|::1):5353([[:space:]]|$)' || return 1
+  fi
+}
 ensure_local_dns_service() {
   command -v dnsmasq >/dev/null 2>&1 || return 1
   install -d -m 755 /etc/prismdns
@@ -758,6 +810,11 @@ no-resolv
 server=1.1.1.1
 server=8.8.8.8
 listen-address=127.0.0.1
+DNSMASQ_CONFIG_FILE
+  if ipv6_loopback_enabled; then
+    printf 'listen-address=::1\n' >>"$config_tmp"
+  fi
+  cat >>"$config_tmp" <<'DNSMASQ_CONFIG_FILE'
 port=5353
 bind-interfaces
 cache-size=0
@@ -824,7 +881,7 @@ collect_dns_guard_cgroups() {
       prism*|docker*|containerd*|ssh*|nginx*|komari*|flux*) continue ;;
     esac
     descriptor=$(systemctl show "$unit" -p ExecStart --value 2>/dev/null || true)
-    if ! printf '%s\n' "$unit $descriptor" | grep -Eqi 'xray|xrayr|v2ray|v2bx|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|clash|mihomo|brook|naiveproxy'; then
+    if ! printf '%s\n' "$unit $descriptor" | grep -Eqi 'xray|xrayr|v2ray|v2bx|v2node|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|clash|mihomo|brook|naiveproxy'; then
       continue
     fi
     control_group=$(systemctl show "$unit" -p ControlGroup --value 2>/dev/null || true)
@@ -1047,7 +1104,7 @@ route_ready() {
   return 1
 }
 basic_health_ok() {
-  prism_agent_dns_ready
+  prism_agent_dns_ready && local_dns_ready
 }
 route_health_ok() {
   basic_health_ok || return 1
@@ -1193,7 +1250,7 @@ wait_for_local_dns() {
 
 wait_for_route_probes() {
   local attempt
-  info "等待加密传输和 DNS 服务路由就绪..."
+  info "等待 SNI 传输和 DNS 服务路由就绪..."
   for attempt in {1..24}; do
     /usr/local/lib/prismdns/prism_transport.sh --sync >/dev/null 2>&1 || true
     /usr/local/lib/prismdns/sync-routes.sh >/dev/null 2>&1 || true
@@ -1208,7 +1265,7 @@ wait_for_route_probes() {
 
 warm_route_probes() {
   local attempt
-  info "预热加密传输和 DNS 服务路由..."
+  info "预热 SNI 传输和 DNS 服务路由..."
   for attempt in {1..6}; do
     /usr/local/lib/prismdns/prism_transport.sh --sync >/dev/null 2>&1 || true
     /usr/local/lib/prismdns/sync-routes.sh >/dev/null 2>&1 || true
