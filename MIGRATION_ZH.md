@@ -46,6 +46,14 @@ opt/prism/.env
 var/lib/prism-enhancer/
 ```
 
+## 配置文件导出与脱敏迁移
+
+如果只需要迁移 IP 配置而不迁移整套面板数据库，可在旧面板“IP 配置”页面点击“导出配置”，把下载的 `prismdns-ip-configs-v1.json` 通过加密通道传到新面板，再点击“导入配置”。该文件不包含账号密码、节点密钥、安装令牌、流量或健康状态；新面板会按解锁机公网 IPv4/名称匹配节点，匹配不到时拒绝导入，不会静默切换线路。
+
+导入新目标 IP 后，必须在导入结果中打开“客户端脚本”，在对应目标服务器执行一次新命令；导入不会自动远程登录或把旧令牌复制到新面板。同一个目标 IP 再次导入会更新服务路由并保留其累计流量。若需要完整保留令牌、节点 ID、账号和流量，仍应使用本教程前面的整套压缩备份恢复流程。
+
+如怀疑安装命令泄露，可在旧面板 IP 行点击“轮换令牌”。轮换会立即撤销旧命令并将目标状态置为待重新安装；在目标机执行新命令后再确认状态恢复为 `READY`。
+
 将 `.tar.gz` 和 `.sha256` 一起复制到新服务器。备份中包含节点密钥和专属令牌，必须使用 SSH/SCP 等加密通道传输，不能公开上传。
 
 ## 二、新服务器安装基础程序
@@ -53,13 +61,13 @@ var/lib/prism-enhancer/
 建议新旧面板使用相同域名和公开端口。这样只需把域名的 A/AAAA 记录切换到新服务器，现有解锁机与被解锁机不需要逐台修改面板地址。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.25/enhanced_install.sh | sudo bash
 ```
 
 如果旧服务器使用自定义端口，新服务器必须保持一致：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.25/enhanced_install.sh \
   | sudo PRISM_PORT=8081 PRISM_CORE_PORT=18080 bash
 ```
 

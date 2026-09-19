@@ -22,7 +22,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.23"
+const uiVersion = "1.5.25"
 
 type App struct {
 	catalog      *CatalogManager
@@ -145,6 +145,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/nodes", app.handleEnhancedNodes)
 	mux.HandleFunc("/enhancer/api/nodes/", app.handleEnhancedNode)
 	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
+	mux.HandleFunc("/enhancer/api/ip-configs/export", app.handleIPConfigExport)
+	mux.HandleFunc("/enhancer/api/ip-configs/import", app.handleIPConfigImport)
 	mux.HandleFunc("/enhancer/api/ip-configs/", app.handleIPConfig)
 	mux.HandleFunc("/enhancer/api/bootstrap/", app.handleBootstrap)
 	mux.HandleFunc("/enhancer/api/transport/proxy", app.handleProxyTransport)

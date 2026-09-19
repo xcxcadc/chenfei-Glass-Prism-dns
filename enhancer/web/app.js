@@ -16,7 +16,7 @@ const translations = {
     supported: "DNS 检测可用", unavailable: "DNS 检测不可用", unknown: "未检测", active: "正在使用", manualOffline: "手动目标离线", ruleCreated: "服务规则已创建",
     saved: "保存成功", deleted: "删除成功", switched: "切换成功", resetDone: "已恢复自动选择", testDone: "测试完成", failed: "操作失败",
     catalogRefresh: "同步域名名单", sourceList: "细化域名库", theme: "切换主题", language: "English", originalStatus: "DNS 解锁检测",
-    addIP: "添加 IP", editIP: "配置服务", targetIP: "目标 IP", note: "备注", defaultProxy: "默认解锁机", chooseServices: "选择服务", selectedServices: "已选服务", clientScript: "客户端脚本", runScriptHint: "在目标服务器以 root 身份执行，脚本会安装 DNS Agent、测试本机 DNS，并可接管或恢复系统 DNS。", noIPConfigs: "尚未添加 IP 配置", ipDeleteConfirm: "删除该 IP 配置及其 DNS 节点？", saveConfig: "保存配置", scriptCommand: "一键配置命令",
+    addIP: "添加 IP", editIP: "配置服务", targetIP: "目标 IP", note: "备注", defaultProxy: "默认解锁机", chooseServices: "选择服务", selectedServices: "已选服务", clientScript: "客户端脚本", runScriptHint: "在目标服务器以 root 身份执行，脚本会安装 DNS Agent、测试本机 DNS，并可接管或恢复系统 DNS。", noIPConfigs: "尚未添加 IP 配置", ipDeleteConfirm: "删除该 IP 配置及其 DNS 节点？", saveConfig: "保存配置", scriptCommand: "一键配置命令", importConfig: "导入配置", exportConfig: "导出配置", rotateToken: "轮换令牌", rotateTokenConfirm: "轮换后旧安装命令会立即失效，目标机需要重新执行新命令。继续吗？", tokenRotated: "令牌已轮换，请在目标机重新执行新命令", importConfigHint: "导入文件只包含 IP、备注、服务路由和节点标识，不包含令牌、密钥、流量或健康状态。",
     totalTraffic: "全体解锁流量", clientTraffic: "解锁链路流量", clearTraffic: "清零流量", clearAllTraffic: "全部清零", trafficHint: "按目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到已选解锁机 TCP 80/443 的 RX/TX；不统计整机网卡流量。", trafficUpdated: "流量更新时间",
     clientState: "数据面状态", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "路由探针",
     actualAudit: "目标机实测", auditPending: "待实测", targetAvailable: "目标机可用", targetUncertain: "探测待确认", targetProblem: "目标机异常", targetCompatibility: "目标机兼容性",
@@ -43,7 +43,7 @@ const translations = {
     supported: "DNS check passed", unavailable: "DNS check failed", unknown: "Not checked", active: "Active", manualOffline: "Manual target offline", ruleCreated: "Service rule created",
     saved: "Saved", deleted: "Deleted", switched: "Switched", resetDone: "Automatic selection restored", testDone: "Test completed", failed: "Operation failed",
     catalogRefresh: "Sync domain catalog", sourceList: "Detailed domain catalog", theme: "Toggle theme", language: "简体中文", originalStatus: "DNS unlock check",
-    addIP: "Add IP", editIP: "Configure services", targetIP: "Target IP", note: "Note", defaultProxy: "Default proxy", chooseServices: "Choose services", selectedServices: "Selected services", clientScript: "Client script", runScriptHint: "Run as root on the target server. The script installs the DNS Agent, tests local DNS, and can take over or restore system DNS.", noIPConfigs: "No IP configuration yet", ipDeleteConfirm: "Delete this IP configuration and its DNS node?", saveConfig: "Save configuration", scriptCommand: "One-click command",
+    addIP: "Add IP", editIP: "Configure services", targetIP: "Target IP", note: "Note", defaultProxy: "Default proxy", chooseServices: "Choose services", selectedServices: "Selected services", clientScript: "Client script", runScriptHint: "Run as root on the target server. The script installs the DNS Agent, tests local DNS, and can take over or restore system DNS.", noIPConfigs: "No IP configuration yet", ipDeleteConfirm: "Delete this IP configuration and its DNS node?", saveConfig: "Save configuration", scriptCommand: "One-click command", importConfig: "Import config", exportConfig: "Export config", rotateToken: "Rotate token", rotateTokenConfirm: "The old install command will stop working immediately and the target must run the new command. Continue?", tokenRotated: "Token rotated. Re-run the new command on the target", importConfigHint: "The file contains only IPs, notes, service routes, and node identifiers. Tokens, secrets, traffic, and health state are excluded.",
     totalTraffic: "Total unlock traffic", clientTraffic: "Unlock link traffic", clearTraffic: "Clear traffic", clearAllTraffic: "Clear all", trafficHint: "Each target IP counts local Prism DNS UDP/TCP 53 plus TCP 80/443 to selected unlock proxies. Whole-interface traffic is excluded.", trafficUpdated: "Traffic updated",
     clientState: "Data-plane status", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "Route probes",
     actualAudit: "Target audit", auditPending: "Not audited", targetAvailable: "Target passed", targetUncertain: "Probe inconclusive", targetProblem: "Target issue", targetCompatibility: "Target compatibility",
@@ -78,6 +78,12 @@ const state = {
   loading: false, modal: null, testResults: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "",
   branding: {site_name:"", browser_title:"", site_tagline:""}
 };
+
+const prismSourceRef = "v1.5.25";
+
+function prismRawURL(file) {
+  return `https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/${prismSourceRef}/${file}`;
+}
 
 function t(key) { return translations[state.lang][key] || key; }
 function escapeHTML(value = "") { return String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char])); }
@@ -1045,14 +1051,14 @@ function nodeCheckHTML() {
 function ipConfigNode(config) { return config ? state.nodes.find(node => nodeID(node.id) === nodeID(config.dns_node_id)) : null; }
 
 function ipConfigsHTML() {
-  const header = contentHeaderHTML(state.lang === "zh" ? "IP 配置" : "IP Configs", state.lang === "zh" ? "每个目标 IP 独立配置解锁服务、统计 DNS 53 与解锁 TCP 80/443 流量。" : "Configure each target independently and count only DNS 53 plus unlock TCP 80/443 traffic.", `<button class="btn primary" id="add-ip"><i class="bi bi-plus-circle"></i>${t("addIP")}</button>`);
+  const header = contentHeaderHTML(state.lang === "zh" ? "IP 配置" : "IP Configs", state.lang === "zh" ? "每个目标 IP 独立配置解锁服务、统计 DNS 53 与解锁 TCP 80/443 流量。" : "Configure each target independently and count only DNS 53 plus unlock TCP 80/443 traffic.", `<input id="import-ip-config" type="file" accept="application/json,.json" hidden><button class="btn" id="export-ip-config"><i class="bi bi-download"></i>${t("exportConfig")}</button><label class="btn" for="import-ip-config"><i class="bi bi-upload"></i>${t("importConfig")}</label><button class="btn primary" id="add-ip"><i class="bi bi-plus-circle"></i>${t("addIP")}</button>`);
   if (!state.ipConfigs.length) return `${header}<div class="panel empty"><strong>${t("noIPConfigs")}</strong><button class="btn primary" id="empty-add-ip"><i class="bi bi-plus-circle"></i>${t("addIP")}</button></div>`;
   const totalTraffic = state.ipConfigs.reduce((total, config) => total + Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0), 0);
   return `${header}<section class="traffic-summary panel"><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small>${t("trafficHint")}</small></div><button class="btn danger" id="clear-all-traffic">${t("clearAllTraffic")}</button></section><section class="ip-list panel"><div class="ip-list-head"><span>${t("targetIP")}</span><span>${t("selectedServices")}</span><span>${t("clientTraffic")}</span><span>${t("dnsClient")}</span><span></span></div>${state.ipConfigs.map(config => {
     const node = ipConfigNode(config); const status = clientState(config, node); const count = Object.keys(config.routes || {}).length; const traffic = Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0);
     const audited = serviceAuditFresh(config) ? Object.values(config.service_results || {}).map(auditResultState) : [];
     const passed = audited.filter(result => result.kind === "good").length;
-    return `<article class="ip-row" data-ip-id="${escapeHTML(config.id)}" role="button" tabindex="0" aria-label="${escapeHTML(`${t("editIP")} ${config.ip}`)}"><div class="ip-main"><strong>${escapeHTML(config.ip)}</strong><span>${escapeHTML(config.note || config.node_name || "-")}</span></div><div class="ip-selection"><span class="badge good">${count} / ${state.catalog.length}</span>${audited.length ? `<small>${t("actualAudit")} ${passed}/${audited.length}</small>` : ""}</div><div class="ip-traffic" title="RX ${formatBytes(config.traffic_rx_bytes)} · TX ${formatBytes(config.traffic_tx_bytes)}"><strong>${formatBytes(traffic)}</strong><span>${t("trafficUpdated")}: ${formatDate(config.traffic_updated_at)}</span></div><div class="ip-node-state" title="${escapeHTML(status.detail)}"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span><span>${escapeHTML(status.label)}</span></div><div class="ip-row-actions"><button class="btn small ip-script" data-ip-id="${escapeHTML(config.id)}">${t("clientScript")}</button><button class="btn small primary ip-edit" data-ip-id="${escapeHTML(config.id)}">${t("editIP")}</button><button class="btn small ip-clear-traffic" data-ip-id="${escapeHTML(config.id)}">${t("clearTraffic")}</button><button class="btn small danger ip-delete" data-ip-id="${escapeHTML(config.id)}">${t("deleteNode")}</button></div></article>`;
+    return `<article class="ip-row" data-ip-id="${escapeHTML(config.id)}" role="button" tabindex="0" aria-label="${escapeHTML(`${t("editIP")} ${config.ip}`)}"><div class="ip-main"><strong>${escapeHTML(config.ip)}</strong><span>${escapeHTML(config.note || config.node_name || "-")}</span></div><div class="ip-selection"><span class="badge good">${count} / ${state.catalog.length}</span>${audited.length ? `<small>${t("actualAudit")} ${passed}/${audited.length}</small>` : ""}</div><div class="ip-traffic" title="RX ${formatBytes(config.traffic_rx_bytes)} · TX ${formatBytes(config.traffic_tx_bytes)}"><strong>${formatBytes(traffic)}</strong><span>${t("trafficUpdated")}: ${formatDate(config.traffic_updated_at)}</span></div><div class="ip-node-state" title="${escapeHTML(status.detail)}"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span><span>${escapeHTML(status.label)}</span></div><div class="ip-row-actions"><button class="btn small ip-script" data-ip-id="${escapeHTML(config.id)}">${t("clientScript")}</button><button class="btn small primary ip-edit" data-ip-id="${escapeHTML(config.id)}">${t("editIP")}</button><button class="btn small ip-rotate-token" data-ip-id="${escapeHTML(config.id)}">${t("rotateToken")}</button><button class="btn small ip-clear-traffic" data-ip-id="${escapeHTML(config.id)}">${t("clearTraffic")}</button><button class="btn small danger ip-delete" data-ip-id="${escapeHTML(config.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
 
@@ -1075,6 +1081,8 @@ function bindShell() {
   document.getElementById("add-node")?.addEventListener("click", () => openNodeForm());
   document.getElementById("add-ip")?.addEventListener("click", () => openIPForm());
   document.getElementById("empty-add-ip")?.addEventListener("click", () => openIPForm());
+  document.getElementById("export-ip-config")?.addEventListener("click", exportIPConfigs);
+  document.getElementById("import-ip-config")?.addEventListener("change", event => importIPConfigs(event.target.files?.[0]));
   document.getElementById("empty-add-node")?.addEventListener("click", () => openNodeForm());
   document.getElementById("refresh-catalog")?.addEventListener("click", refreshCatalog);
   document.getElementById("manage-categories")?.addEventListener("click", () => openCategoryManager());
@@ -1142,6 +1150,7 @@ function bindShell() {
       if (button.matches(".node-delete")) { event.preventDefault(); openDeleteNode(button.dataset.nodeId); return; }
       if (button.matches(".ip-edit")) { event.preventDefault(); openIPForm(state.ipConfigs.find(config => nodeID(config.id) === nodeID(button.dataset.ipId)), 2); return; }
       if (button.matches(".ip-script")) { event.preventDefault(); openIPScript(button.dataset.ipId); return; }
+      if (button.matches(".ip-rotate-token")) { event.preventDefault(); rotateIPToken(button.dataset.ipId); return; }
       if (button.matches(".ip-delete")) { event.preventDefault(); openIPDelete(button.dataset.ipId); return; }
       if (button.matches(".ip-clear-traffic")) { event.preventDefault(); clearTraffic(button.dataset.ipId); return; }
       return;
@@ -1292,7 +1301,7 @@ function openIPForm(config = null, step = config ? 2 : 1, existingNode = null) {
   renderModal();
 }
 function ipScriptCommand(config) {
-  return `wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prismdns.sh | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click --non-interactive`;
+  return `wget -qO- ${prismRawURL("prismdns.sh")} | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click --non-interactive`;
 }
 function openIPScript(id) {
   const config = state.ipConfigs.find(item => item.id === id);
@@ -1305,6 +1314,48 @@ function openIPDelete(id) {
   if (!config) return;
   state.modal = {type:"ip-delete", config};
   renderModal();
+}
+
+async function exportIPConfigs() {
+  try {
+    const payload = await api("/enhancer/api/ip-configs/export");
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "prismdns-ip-configs-v1.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast(t("exportConfig"), "good");
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
+}
+
+async function importIPConfigs(file) {
+  const input = document.getElementById("import-ip-config");
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    if (payload?.version !== 1 || !Array.isArray(payload.configs) || !payload.configs.length) throw new Error(state.lang === "zh" ? "请选择 Prism DNS v1 配置备份文件" : "Choose a Prism DNS v1 configuration backup");
+    if (!confirm(`${t("importConfig")} ${payload.configs.length} ${state.lang === "zh" ? "个 IP？" : "IP configurations?"}\n\n${t("importConfigHint")}`)) return;
+    const result = await api("/enhancer/api/ip-configs/import", {method:"POST", body:JSON.stringify(payload)});
+    await loadAll(true);
+    toast(`${t("saved")} · ${result.imported || 0} ${state.lang === "zh" ? "新增" : "created"} / ${result.updated || 0} ${state.lang === "zh" ? "更新" : "updated"}`, "good");
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
+  finally { if (input) input.value = ""; }
+}
+
+async function rotateIPToken(id) {
+  const config = state.ipConfigs.find(item => item.id === id);
+  if (!config || !confirm(t("rotateTokenConfirm"))) return;
+  try {
+    const updated = await api(`/enhancer/api/ip-configs/${encodeURIComponent(id)}/rotate-token`, {method:"POST"});
+    state.ipConfigs = state.ipConfigs.map(item => item.id === id ? updated : item);
+    state.modal = {type:"ip-script", config:updated, command:ipScriptCommand(updated)};
+    renderModal();
+    toast(t("tokenRotated"), "good");
+  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 function closeModal() { state.modal = null; state.testResults = null; renderModal(); }
 
@@ -2052,7 +2103,7 @@ function installCommand(node, smartMode) {
   if (node.role === "dns" && managedConfig) return ipScriptCommand(managedConfig);
   const smart = node.role === "dns" && smartMode === "smart" ? " --smart" : "";
   const ip = node.role === "proxy" && node.public_ip ? ` --ip "${node.public_ip.replace(/"/g, "")}"` : "";
-  return `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh | bash -s -- --master ${location.origin} --secret ${node.secret || "<secret>"}${smart}${ip}`;
+  return `curl -fsSL ${prismRawURL("agent_install.sh")} | bash -s -- --master ${location.origin} --secret ${node.secret || "<secret>"}${smart}${ip}`;
 }
 
 async function createNode(draft) {

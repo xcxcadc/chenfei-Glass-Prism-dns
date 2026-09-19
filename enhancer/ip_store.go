@@ -323,6 +323,37 @@ func (store *IPConfigStore) RequestServiceAudit(id string) (IPConfig, error) {
 	return record.public(), nil
 }
 
+func (store *IPConfigStore) RotateEnrollmentToken(id string) (IPConfig, error) {
+	newToken, err := randomToken()
+	if err != nil {
+		return IPConfig{}, err
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	record, ok := store.configs[id]
+	if !ok {
+		return IPConfig{}, os.ErrNotExist
+	}
+	now := time.Now().UTC()
+	record.EnrollmentToken = newToken
+	record.DNSReady = false
+	record.SystemDNSReady = false
+	record.RoutesReady = false
+	record.HealthyRoutes = 0
+	record.ExpectedRoutes = len(record.Routes)
+	record.HealthMessage = "令牌已轮换，请重新安装客户端"
+	record.HealthUpdatedAt = &now
+	record.ServiceResults = nil
+	record.ServiceAuditedAt = nil
+	record.ServiceAuditRequestedAt = &now
+	record.UpdatedAt = now
+	store.configs[id] = record
+	if err := store.saveLocked(); err != nil {
+		return IPConfig{}, err
+	}
+	return record.public(), nil
+}
+
 func (store *IPConfigStore) ReplaceRoutes(id string, routes map[string]string) (IPConfig, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()

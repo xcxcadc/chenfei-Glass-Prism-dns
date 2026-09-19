@@ -149,7 +149,8 @@ func (app *App) handleIPConfig(writer http.ResponseWriter, request *http.Request
 	}
 	path := strings.Trim(strings.TrimPrefix(request.URL.Path, "/enhancer/api/ip-configs/"), "/")
 	auditRequest := strings.HasSuffix(path, "/audit")
-	id := strings.TrimSuffix(path, "/audit")
+	rotateTokenRequest := strings.HasSuffix(path, "/rotate-token")
+	id := strings.TrimSuffix(strings.TrimSuffix(path, "/audit"), "/rotate-token")
 	record, ok := app.ipStore.Record(id)
 	if !ok {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "IP 配置不存在"})
@@ -166,6 +167,23 @@ func (app *App) handleIPConfig(writer http.ResponseWriter, request *http.Request
 			return
 		}
 		writeJSON(writer, http.StatusAccepted, config)
+		return
+	}
+	if rotateTokenRequest {
+		if request.Method != http.MethodPost {
+			methodNotAllowed(writer, http.MethodPost)
+			return
+		}
+		config, err := app.ipStore.RotateEnrollmentToken(record.ID)
+		if errors.Is(err, os.ErrNotExist) {
+			writeJSON(writer, http.StatusNotFound, map[string]string{"error": "IP 配置不存在"})
+			return
+		}
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusOK, config)
 		return
 	}
 	switch request.Method {
@@ -203,8 +221,9 @@ func (app *App) handleBootstrap(writer http.ResponseWriter, request *http.Reques
 		"traffic_peers":              app.effectiveTrafficPeers(record),
 		"health_probes":              app.healthProbes(request.Context(), record),
 		"service_audit_requested_at": record.ServiceAuditRequestedAt,
-		"agent_installer":            "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/agent_install.sh",
-		"transport_installer":        "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/prism_transport.sh",
+		"agent_installer":            prismRawURL("agent_install.sh"),
+		"transport_installer":        prismRawURL("prism_transport.sh"),
+		"source_ref":                 prismSourceRef,
 	})
 }
 
