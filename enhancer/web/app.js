@@ -444,13 +444,38 @@ function configForNode(node) {
   const address = normalizeIP(node.public_ip || node.address);
   return address ? state.ipConfigs.find(config => normalizeIP(config.ip) === address) || null : null;
 }
+function configuredServicesForTarget(config) {
+  if (!config) return [];
+  return state.catalog.filter(service => !!serviceRouteEntry(config, service)?.value);
+}
+function targetAuditSummary(config) {
+  const configured = configuredServicesForTarget(config);
+  const results = configured.map(service => serviceResult(config, service)).filter(Boolean);
+  const audits = results.map(auditResultState);
+  return {
+    configured: configured.length,
+    audited: audits.length,
+    passed: audits.filter(audit => audit.kind === "good").length,
+    failed: audits.filter(audit => audit.kind === "bad").length,
+    pending: configured.length - audits.length,
+  };
+}
 function clientState(config, node) {
   if (!isOnline(node)) return {kind:"bad", label:"OFFLINE", detail:state.lang === "zh" ? "控制通道离线" : "Control channel offline"};
   if (!config) return {kind:"warn", label:state.lang === "zh" ? "未纳管" : "UNMANAGED", detail:state.lang === "zh" ? "Agent 已在线，尚未配置解锁服务" : "Agent connected; unlock services are not configured"};
   if (!config.health_updated_at) return {kind:"warn", label:t("pending"), detail:state.lang === "zh" ? "等待客户端健康上报" : "Waiting for client health report"};
   if (Date.now() - new Date(config.health_updated_at).getTime() > 180000) return {kind:"warn", label:t("stale"), detail:state.lang === "zh" ? "健康上报已超时" : "Health report is stale"};
   const routes = `${Number(config.healthy_routes || 0)}/${Number(config.expected_routes || 0)}`;
-  if (config.dns_ready && config.system_dns_ready && config.routes_ready) return {kind:"good", label:t("ready"), detail:`${t("healthRoutes")} ${routes}`};
+  const audit = targetAuditSummary(config);
+  const auditDetail = state.lang === "zh"
+    ? `实测 ${audit.passed}/${audit.audited || audit.configured} 通过${audit.pending ? `，${audit.pending} 项待实测` : ""}${audit.failed ? `，${audit.failed} 项异常` : ""}`
+    : `Audited ${audit.passed}/${audit.audited || audit.configured} passed${audit.pending ? `, ${audit.pending} pending` : ""}${audit.failed ? `, ${audit.failed} failed` : ""}`;
+  if (config.dns_ready && config.system_dns_ready && config.routes_ready) {
+    if (audit.failed) return {kind:"bad", label:state.lang === "zh" ? "部分服务异常" : "PARTIAL FAILURE", detail:`${t("healthRoutes")} ${routes} · ${auditDetail}`};
+    if (audit.pending) return {kind:"warn", label:state.lang === "zh" ? "待实测" : "AUDIT PENDING", detail:`${t("healthRoutes")} ${routes} · ${auditDetail}`};
+    if (audit.configured > 0) return {kind:"good", label:state.lang === "zh" ? "实测通过" : "AUDITED OK", detail:`${t("healthRoutes")} ${routes} · ${auditDetail}`};
+    return {kind:"warn", label:state.lang === "zh" ? "未配置服务" : "NO SERVICES", detail:`${t("healthRoutes")} ${routes}`};
+  }
   return {kind:"bad", label:t("degraded"), detail:config.health_message || `${t("healthRoutes")} ${routes}`};
 }
 
