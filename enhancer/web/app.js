@@ -523,6 +523,9 @@ function auditResultState(result) {
   if (/^NOT COVERED\b/i.test(value)) {
     return {kind:"warn", label:t("auditNotCovered"), detail:value};
   }
+  if (/^PASS\b/i.test(value) && /diagnostics:/i.test(value) && /(DNS [^;]*\b0\/|DNS route mismatch|TLS\/SNI [^;]*\b0\/|required TLS\/SNI probe mismatch|page success 0\/|representative pages did not return|no DNS route domains|no TLS\/SNI probe domains)/i.test(value)) {
+    return {kind:"bad", label:state.lang === "zh" ? "不可用（实际链路检测失败）" : "Unavailable (path check failed)", detail:value};
+  }
   if (/^YES\b|^PASS\b/i.test(value)) {
     return {kind:"good", label:state.lang === "zh" ? "完整应用链实测通过" : "Full application path verified", detail:value};
   }

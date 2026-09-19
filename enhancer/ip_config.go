@@ -440,7 +440,7 @@ func preferredProbeDomains(service Service) []string {
 		"Abema":                           {"abema.tv"},
 		"Apple TV+":                       {"tv.apple.com"},
 		"Bilibili":                        {"bilibili.com"},
-		"ChatGPT / OpenAI":                {"chatgpt.com", "openai.com", "cdn.oaistatic.com", "files.oaiusercontent.com", "sora.com"},
+		"ChatGPT / OpenAI":                {"chatgpt.com", "openai.com", "api.openai.com", "auth.openai.com", "auth0.openai.com", "ws.chatgpt.com", "ab.chatgpt.com", "cdn.oaistatic.com", "files.oaiusercontent.com", "challenges.cloudflare.com", "platform.openai.com", "sora.com"},
 		"Claude":                          {"claude.ai", "claude.com", "anthropic.com"},
 		"Crunchyroll":                     {"crunchyroll.com"},
 		"DAZN":                            {"dazn.com"},

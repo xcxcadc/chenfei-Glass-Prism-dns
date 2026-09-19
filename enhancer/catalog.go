@@ -96,6 +96,25 @@ var (
 		"69.195.160.0/19",
 	}
 	serviceDomainSupplements = map[string][]string{
+		"ChatGPT / OpenAI": {
+			"ab.chatgpt.com",
+			"api.openai.com",
+			"auth.openai.com",
+			"auth0.openai.com",
+			"browser-intake-datadoghq.com",
+			"cdn.oaistatic.com",
+			"chat.openai.com",
+			"challenges.cloudflare.com",
+			"events.statsig.com",
+			"featuregates.org",
+			"files.oaiusercontent.com",
+			"id.openai.com",
+			"platform.openai.com",
+			"prodregistryv2.org",
+			"static.cloudflareinsights.com",
+			"statsigapi.net",
+			"ws.chatgpt.com",
+		},
 		"FR:France.tv": {
 			"france.tv",
 		},

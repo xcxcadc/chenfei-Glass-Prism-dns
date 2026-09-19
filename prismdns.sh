@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.18"
+VERSION="1.5.19"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -178,7 +178,7 @@ BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
 MEDIA_CHECK_URL="http://check.unlock.media"
 MEDIA_CHECK_FALLBACK_URL="https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh"
 MEDIA_CHECK_TIMEOUT=900
-AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v1"
+AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v2"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
 HEALTH_CACHE_INTERVAL=1800
 [[ -f "$CONFIG_FILE" ]] || exit 0
@@ -622,6 +622,14 @@ run_service_audit() {
     if [[ -n "$optional_failure_csv" ]]; then
       diagnostic_summary="${diagnostic_summary}; optional dependency unavailable: $optional_failure_csv"
     fi
+    if [[ "$provider_summary" =~ ^PASS ]] && {
+      ((route_total == 0)) ||
+      ((route_pass != route_total)) ||
+      ((required_https_pass != required_https_total)) ||
+      ((https_total > 0 && https_success == 0));
+    }; then
+      provider_summary="FAIL (provider reported positive, but the target path failed)"
+    fi
     result="${provider_summary:-FAIL (check.unlock.media returned no result)}; diagnostics: ${diagnostic_summary}"
     results=$(jq -c --arg id "$service_id" --arg result "$result" '. + {($id):$result}' <<<"$results")
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
@@ -663,7 +671,7 @@ HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
 BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
-AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v1"
+  AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v2"
 HEALTH_CHECK_FILE="/var/lib/prismdns/route-health.timestamp"
 HEALTH_CHECK_INTERVAL=300
 DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
