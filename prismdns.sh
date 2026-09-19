@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.23"
+VERSION="1.5.24"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 CONFIG_FILE="$STATE_DIR/client.conf"
@@ -793,6 +793,17 @@ DNS_GUARD_TABLE="prismdns_dns_guard"
 DNS_GUARD_IPTABLES_CHAIN="PRISMDNS_DNS_GUARD"
 DNS_GUARD_HASH_FILE="/var/lib/prismdns/dns-guard.sha256"
 DNS_GUARD_STATE_FILE="/var/lib/prismdns/dns-guard.state"
+GOOGLE_QUIC_IPTABLES_CHAIN="PRISMDNS_GOOGLE_QUIC"
+GOOGLE_QUIC_HASH_FILE="/var/lib/prismdns/google-quic.sha256"
+GOOGLE_QUIC_VERSION="google-quic-fallback-v1"
+GOOGLE_QUIC_IPV4_CIDRS=(
+  64.233.160.0/19 66.102.0.0/20 74.125.0.0/16 108.177.0.0/17
+  142.250.0.0/15 172.217.0.0/16 172.253.0.0/16 173.194.0.0/16
+  209.85.128.0/17 216.58.192.0/19 216.239.32.0/19
+)
+GOOGLE_QUIC_IPV6_CIDRS=(
+  2001:4860::/32 2404:6800::/32 2607:f8b0::/32 2800:3f0::/32 2a00:1450::/32
+)
 PROXY_DNS_PORT=5353
 LOCK_FILE="/run/prismdns-route-sync.lock"
 [[ -f "$CONFIG_FILE" ]] || exit 0
@@ -979,6 +990,61 @@ clear_dns_guard_rules() {
     "$firewall" -t nat -X "$chain" >/dev/null 2>&1 || true
   done
   nft delete table inet "$DNS_GUARD_TABLE" >/dev/null 2>&1 || true
+  clear_google_quic_fallback_rules
+}
+clear_google_quic_fallback_rules() {
+  local firewall
+  for firewall in iptables ip6tables; do
+    command -v "$firewall" >/dev/null 2>&1 || continue
+    while "$firewall" -t filter -C OUTPUT -j "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1; do
+      "$firewall" -t filter -D OUTPUT -j "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1 || break
+    done
+    "$firewall" -t filter -F "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1 || true
+    "$firewall" -t filter -X "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1 || true
+  done
+  rm -f "$GOOGLE_QUIC_HASH_FILE"
+}
+configure_google_quic_fallback() {
+  local firewall="$1" cidr path
+  shift
+  command -v "$firewall" >/dev/null 2>&1 || return 0
+  "$firewall" -t filter -N "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1 || true
+  "$firewall" -t filter -F "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1 || return 1
+  while "$firewall" -t filter -C OUTPUT -j "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1; do
+    "$firewall" -t filter -D OUTPUT -j "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1 || return 1
+  done
+  "$firewall" -t filter -I OUTPUT 1 -j "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1 || return 1
+  for path in "${DNS_GUARD_CGROUPS[@]}"; do
+    for cidr in "$@"; do
+      "$firewall" -t filter -A "$GOOGLE_QUIC_IPTABLES_CHAIN" -m cgroup --path "$path" -p udp --dport 443 -d "$cidr" -j REJECT >/dev/null 2>&1 || return 1
+    done
+  done
+}
+google_quic_fallback_ready() {
+  local path
+  command -v iptables >/dev/null 2>&1 || return 1
+  iptables -t filter -C OUTPUT -j "$GOOGLE_QUIC_IPTABLES_CHAIN" >/dev/null 2>&1 || return 1
+  for path in "${DNS_GUARD_CGROUPS[@]}"; do
+    iptables -t filter -S "$GOOGLE_QUIC_IPTABLES_CHAIN" 2>/dev/null | grep -F -- "--path $path" >/dev/null || return 1
+  done
+}
+ensure_google_quic_fallback() {
+  local fingerprint previous
+  if ((${#DNS_GUARD_CGROUPS[@]} == 0)); then
+    clear_google_quic_fallback_rules
+    return 0
+  fi
+  fingerprint=$(printf '%s\n' "$GOOGLE_QUIC_VERSION" "${DNS_GUARD_CGROUPS[@]}" "${GOOGLE_QUIC_IPV4_CIDRS[@]}" "${GOOGLE_QUIC_IPV6_CIDRS[@]}" | sha256sum | awk '{print $1}')
+  previous=$(cat "$GOOGLE_QUIC_HASH_FILE" 2>/dev/null || true)
+  if [[ "$fingerprint" == "$previous" ]] && google_quic_fallback_ready; then
+    return 0
+  fi
+  clear_google_quic_fallback_rules
+  configure_google_quic_fallback iptables "${GOOGLE_QUIC_IPV4_CIDRS[@]}" || return 1
+  if command -v ip6tables >/dev/null 2>&1; then
+    configure_google_quic_fallback ip6tables "${GOOGLE_QUIC_IPV6_CIDRS[@]}" || true
+  fi
+  printf '%s\n' "$fingerprint" > "$GOOGLE_QUIC_HASH_FILE"
 }
 configure_iptables_dns_guard() {
   local firewall="$1" chain="$2" path
@@ -1121,7 +1187,7 @@ ensure_agent_mode() {
   fi
 }
 if ensure_local_dns_service && render_local_routes && ensure_dns_guard; then
-  :
+  ensure_google_quic_fallback || printf 'Google QUIC 回退规则应用失败，保留直连 TCP。\n' >&2
 else
   clear_dns_guard_rules
   printf 'required=1\nready=0\n' > "$DNS_GUARD_STATE_FILE"
