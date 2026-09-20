@@ -41,7 +41,7 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated, err := store.UpdateClientReport(config.EnrollmentToken, 50, 60, ClientHealth{
-		DNSReady: true, SystemDNSReady: true, RoutesReady: true, HealthyRoutes: 1, ExpectedRoutes: 1,
+		DNSReady: true, SystemDNSReady: true, RoutesReady: true, HealthyRoutes: 1, ExpectedRoutes: 1, DNSBackend: "prism-static",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 	if updated.TrafficRXBytes != 50 || updated.TrafficTXBytes != 60 {
 		t.Fatalf("unexpected traffic after second report: %+v", updated)
 	}
-	if !updated.DNSReady || !updated.SystemDNSReady || !updated.RoutesReady || updated.HealthyRoutes != 1 || updated.HealthUpdatedAt == nil {
+	if !updated.DNSReady || !updated.SystemDNSReady || !updated.RoutesReady || updated.HealthyRoutes != 1 || updated.DNSBackend != "prism-static" || updated.HealthUpdatedAt == nil {
 		t.Fatalf("client health was not persisted: %+v", updated)
 	}
 	audited, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{"netflix": "YES (Region: SG) [Via DNS]", "other": "YES"})

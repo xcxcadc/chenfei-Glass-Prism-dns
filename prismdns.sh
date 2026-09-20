@@ -2,9 +2,11 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.25"
+VERSION="1.5.26"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
+BACKUP_RETENTION="${PRISM_DNS_BACKUP_RETENTION:-12}"
+LOCK_RESOLV_CONF="${PRISM_LOCK_RESOLV_CONF:-false}"
 CONFIG_FILE="$STATE_DIR/client.conf"
 BOOTSTRAP_FILE="$STATE_DIR/bootstrap.json"
 TEST_DOMAIN="www.google.com"
@@ -210,6 +212,20 @@ fi
 if ! $LOCAL_READY; then
   MESSAGE="${MESSAGE:+$MESSAGE; }Prism 本地 DNS 未完整接管 IPv4/IPv6 回环"
 fi
+dns_backend() {
+  local target
+  if grep -q '^# Managed by Prism DNS' /etc/resolv.conf 2>/dev/null; then
+    printf 'prism-static'
+  elif [[ -L /etc/resolv.conf ]]; then
+    target=$(readlink -f /etc/resolv.conf 2>/dev/null || true)
+    [[ "$target" == *systemd* || "$target" == *stub* ]] && printf 'systemd-resolved' || printf 'symlink'
+  elif command -v nmcli >/dev/null 2>&1 && nmcli general status >/dev/null 2>&1; then
+    printf 'networkmanager'
+  else
+    printf 'resolv.conf'
+  fi
+}
+DNS_BACKEND=$(dns_backend)
 if awk '$1 == "nameserver" && ($2 == "127.0.0.1" || $2 == "::1") {found=1} END {exit !found}' /etc/resolv.conf; then
   SYSTEM_READY=true
 else
@@ -235,11 +251,11 @@ if $DNS_READY && $LOCAL_READY && $SYSTEM_READY && $GUARD_READY && ((EXPECTED == 
 else
   MESSAGE="${MESSAGE:+$MESSAGE; }路由探针 ${HEALTHY}/${EXPECTED}（审计期间心跳）"
 fi
-jq -nc --arg token "$TOKEN" --argjson rx "$RX" --argjson tx "$TX" \
+jq -nc --arg token "$TOKEN" --arg dns_backend "$DNS_BACKEND" --argjson rx "$RX" --argjson tx "$TX" \
   --argjson dns_ready "$DNS_READY" --argjson system_dns_ready "$SYSTEM_READY" \
   --argjson routes_ready "$ROUTES_READY" --argjson healthy_routes "$HEALTHY" \
   --argjson expected_routes "$EXPECTED" --arg health_message "$MESSAGE" \
-  '{token:$token,scope:"unlock_peers",interface:"nftables-dns-sni",rx_bytes:$rx,tx_bytes:$tx,dns_ready:$dns_ready,system_dns_ready:$system_dns_ready,routes_ready:$routes_ready,healthy_routes:$healthy_routes,expected_routes:$expected_routes,health_message:$health_message}' |
+  '{token:$token,scope:"unlock_peers",interface:"nftables-dns-sni",rx_bytes:$rx,tx_bytes:$tx,dns_ready:$dns_ready,system_dns_ready:$system_dns_ready,routes_ready:$routes_ready,healthy_routes:$healthy_routes,expected_routes:$expected_routes,dns_backend:$dns_backend,health_message:$health_message}' |
   curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d @- "$MASTER/enhancer/api/traffic/report" >/dev/null || true
 EOF
   chmod 700 /usr/local/lib/prismdns/report-heartbeat.sh
@@ -308,6 +324,20 @@ local_dns_ready() {
     ss -lntup 2>/dev/null | grep -Eq '(^|[[:space:]])(\[::1\]|::1):5353([[:space:]]|$)' || return 1
   fi
 }
+dns_backend() {
+  local target
+  if grep -q '^# Managed by Prism DNS' /etc/resolv.conf 2>/dev/null; then
+    printf 'prism-static'
+  elif [[ -L /etc/resolv.conf ]]; then
+    target=$(readlink -f /etc/resolv.conf 2>/dev/null || true)
+    [[ "$target" == *systemd* || "$target" == *stub* ]] && printf 'systemd-resolved' || printf 'symlink'
+  elif command -v nmcli >/dev/null 2>&1 && nmcli general status >/dev/null 2>&1; then
+    printf 'networkmanager'
+  else
+    printf 'resolv.conf'
+  fi
+}
+DNS_BACKEND=$(dns_backend)
 if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
   exit 0
 fi
@@ -486,10 +516,10 @@ if ! dns_guard_ok; then
   HEALTH_MESSAGE="${HEALTH_MESSAGE:+$HEALTH_MESSAGE；}代理进程 DNS 未接管到 Prism"
 fi
 PAYLOAD=$(jq -nc \
-  --arg token "$TOKEN" --argjson rx "$RX" --argjson tx "$TX" \
+  --arg token "$TOKEN" --arg dns_backend "$DNS_BACKEND" --argjson rx "$RX" --argjson tx "$TX" \
   --argjson dns_ready "$DNS_READY" --argjson system_dns_ready "$SYSTEM_DNS_READY" --argjson routes_ready "$ROUTES_READY" \
   --argjson healthy_routes "$HEALTHY_ROUTES" --argjson expected_routes "$EXPECTED_ROUTES" --arg health_message "$HEALTH_MESSAGE" \
-  '{token:$token,scope:"unlock_peers",interface:"nftables-dns-sni",rx_bytes:$rx,tx_bytes:$tx,dns_ready:$dns_ready,system_dns_ready:$system_dns_ready,routes_ready:$routes_ready,healthy_routes:$healthy_routes,expected_routes:$expected_routes,health_message:$health_message}')
+  '{token:$token,scope:"unlock_peers",interface:"nftables-dns-sni",rx_bytes:$rx,tx_bytes:$tx,dns_ready:$dns_ready,system_dns_ready:$system_dns_ready,routes_ready:$routes_ready,healthy_routes:$healthy_routes,expected_routes:$expected_routes,dns_backend:$dns_backend,health_message:$health_message}')
 curl -fsSL --connect-timeout 8 --max-time 15 -H 'Content-Type: application/json' -d "$PAYLOAD" "$MASTER/enhancer/api/traffic/report" >/dev/null || exit 0
 reset_traffic_counters() {
   nft reset counter inet "$NFT_TABLE" rx >/dev/null 2>&1 || true
@@ -848,24 +878,6 @@ ensure_system_dns() {
   mv -f "$temporary" /etc/resolv.conf
 }
 ensure_system_dns
-ensure_system_dns_consumers() {
-  local config=/etc/XrayR/config.yml backup_dir unit
-  [[ -f "$config" ]] || return 0
-  if ! grep -Eq '^[[:space:]]+EnableDNS:[[:space:]]*true([[:space:]]*(#.*))?$' "$config"; then
-    return 0
-  fi
-  backup_dir="$STATE_DIR/backups/system-dns"
-  install -d -m 700 "$backup_dir"
-  cp -a "$config" "$backup_dir/config-$(date +%Y%m%d%H%M%S).yml"
-  sed -i -E 's/^([[:space:]]+EnableDNS:)[[:space:]]*true([[:space:]]*(#.*))?$/\1 false\2/' "$config"
-  for unit in XrayR.service xrayr.service; do
-    if systemctl is-active --quiet "$unit" 2>/dev/null; then
-      systemctl restart "$unit"
-      return 0
-    fi
-  done
-}
-ensure_system_dns_consumers
 ipv6_loopback_enabled() {
   [[ -r /proc/net/if_inet6 ]] &&
     grep -q '^00000000000000000000000000000001' /proc/net/if_inet6
@@ -1392,14 +1404,14 @@ wait_for_local_dns() {
 wait_for_route_probes() {
   local attempt
   info "等待 SNI 传输和 DNS 服务路由就绪..."
-  for attempt in {1..24}; do
+  for attempt in {1..8}; do
     /usr/local/lib/prismdns/prism_transport.sh --sync >/dev/null 2>&1 || true
     /usr/local/lib/prismdns/sync-routes.sh >/dev/null 2>&1 || true
     if verify_route_probes quiet; then
       verify_route_probes route
       return 0
     fi
-    sleep 5
+    sleep 3
   done
   verify_route_probes warn
 }
@@ -1407,11 +1419,11 @@ wait_for_route_probes() {
 warm_route_probes() {
   local attempt
   info "预热 SNI 传输和 DNS 服务路由..."
-  for attempt in {1..6}; do
+  for attempt in {1..4}; do
     /usr/local/lib/prismdns/prism_transport.sh --sync >/dev/null 2>&1 || true
     /usr/local/lib/prismdns/sync-routes.sh >/dev/null 2>&1 || true
     verify_route_probes quiet && return 0
-    sleep 3
+    sleep 2
   done
   warn "服务路由仍在后台同步，安装完成后守卫会继续刷新。"
 }
@@ -1495,12 +1507,22 @@ test_dns() {
   printf '  域名: %s\n  结果: %s\n' "$TEST_DOMAIN" "$(tr '\n' ' ' <<<"$result")"
 }
 
+LAST_BACKUP_PATH=""
+
 backup_dns() {
   require_root
   mkdir -p "$BACKUP_DIR"
-  local timestamp path
+  chmod 700 "$BACKUP_DIR"
+  local old_umask timestamp path suffix
+  old_umask=$(umask)
+  umask 077
   timestamp=$(date +%Y%m%d-%H%M%S)
-  path="$BACKUP_DIR/$timestamp"
+  path="$BACKUP_DIR/${timestamp}_${1:-manual}"
+  suffix=1
+  while [[ -e "$path" ]]; do
+    path="$BACKUP_DIR/${timestamp}_${1:-manual}-${suffix}"
+    suffix=$((suffix + 1))
+  done
   mkdir -p "$path"
   chmod 700 "$path"
   if [[ -L /etc/resolv.conf ]]; then
@@ -1510,52 +1532,131 @@ backup_dns() {
     cp -a /etc/resolv.conf "$path/resolv.conf"
   fi
   [[ -f /etc/systemd/resolved.conf ]] && cp -a /etc/systemd/resolved.conf "$path/resolved.conf"
+  [[ -d /etc/systemd/resolved.conf.d ]] && cp -a /etc/systemd/resolved.conf.d "$path/resolved.conf.d" 2>/dev/null || true
   [[ -f /etc/NetworkManager/NetworkManager.conf ]] && cp -a /etc/NetworkManager/NetworkManager.conf "$path/NetworkManager.conf"
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl is-active --quiet systemd-resolved 2>/dev/null && echo yes > "$path/resolved.active" || true
-    systemctl is-enabled --quiet systemd-resolved 2>/dev/null && echo yes > "$path/resolved.enabled" || true
+  [[ -f /etc/NetworkManager/conf.d/prismdns.conf ]] && cp -a /etc/NetworkManager/conf.d/prismdns.conf "$path/prismdns.conf"
+  [[ -f /etc/NetworkManager/conf.d/akdns-dns.conf ]] && cp -a /etc/NetworkManager/conf.d/akdns-dns.conf "$path/akdns-dns.conf"
+  [[ -f /etc/nsswitch.conf ]] && cp -a /etc/nsswitch.conf "$path/nsswitch.conf"
+  [[ -d /etc/netplan ]] && cp -a /etc/netplan "$path/netplan" 2>/dev/null || true
+  {
+    printf 'version=2\n'
+    printf 'timestamp=%s\n' "$timestamp"
+    printf 'tag=%s\n' "${1:-manual}"
+    printf 'resolved_active=%s\n' "$(systemctl is-active systemd-resolved 2>/dev/null || true)"
+    printf 'resolved_enabled=%s\n' "$(systemctl is-enabled systemd-resolved 2>/dev/null || true)"
+    printf 'resolvconf_active=%s\n' "$(systemctl is-active resolvconf 2>/dev/null || true)"
+    printf 'resolvconf_enabled=%s\n' "$(systemctl is-enabled resolvconf 2>/dev/null || true)"
+  } > "$path/metadata.txt"
+  chmod 600 "$path/metadata.txt"
+  LAST_BACKUP_PATH="$path"
+  mapfile -t backups < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d | sort -r)
+  if [[ "$BACKUP_RETENTION" =~ ^[0-9]+$ ]] && (( ${#backups[@]} > BACKUP_RETENTION )); then
+    for old_backup in "${backups[@]:BACKUP_RETENTION}"; do
+      rm -rf -- "$old_backup"
+    done
   fi
+  umask "$old_umask"
   ok "DNS 配置已备份到 $path"
-  printf '%s' "$path"
 }
 
 write_resolv_conf() {
-  local dns="$1" temporary
+  local dns="$1" temporary source="/etc/resolv.conf"
   temporary=$(mktemp /etc/resolv.conf.prismdns.XXXXXX)
-  printf '# Managed by Prism DNS\nnameserver %s\noptions timeout:2 attempts:2\n' "$dns" > "$temporary"
+  if [[ -L "$source" ]]; then
+    source=$(readlink -f "$source" 2>/dev/null || printf '%s' "$source")
+  fi
+  if [[ -f "$source" ]]; then
+    grep -vE '^[[:space:]]*nameserver[[:space:]]' "$source" > "$temporary" 2>/dev/null || true
+  fi
+  printf '# Managed by Prism DNS\nnameserver %s\noptions timeout:2 attempts:2\n' "$dns" >> "$temporary"
   chmod 644 "$temporary"
   chattr -i /etc/resolv.conf 2>/dev/null || true
-  [[ -L /etc/resolv.conf ]] && rm -f /etc/resolv.conf
   mv -f "$temporary" /etc/resolv.conf
+  restorecon -F /etc/resolv.conf 2>/dev/null || true
+  grep -Eq "^[[:space:]]*nameserver[[:space:]]+$dns([[:space:]]|$)" /etc/resolv.conf
+}
+
+lock_resolv_conf() {
+  $LOCK_RESOLV_CONF || return 0
+  chattr +i /etc/resolv.conf 2>/dev/null || warn "无法锁定 /etc/resolv.conf，将继续运行但可能被网络管理器覆盖。"
+}
+
+restore_dns_path() {
+  local path="$1" resolved_active resolved_enabled resolvconf_active resolvconf_enabled
+  [[ -d "$path" ]] || return 1
+  chattr -i /etc/resolv.conf 2>/dev/null || true
+  rm -f /etc/resolv.conf
+  if [[ -f "$path/resolv.conf.symlink" ]]; then
+    ln -s "$(cat "$path/resolv.conf.symlink")" /etc/resolv.conf
+  elif [[ -f "$path/resolv.conf" ]]; then
+    cp -a "$path/resolv.conf" /etc/resolv.conf
+  fi
+  [[ -f "$path/resolved.conf" ]] && cp -a "$path/resolved.conf" /etc/systemd/resolved.conf
+  [[ -d "$path/resolved.conf.d" ]] && cp -a "$path/resolved.conf.d/." /etc/systemd/resolved.conf.d/ 2>/dev/null || true
+  [[ -f "$path/NetworkManager.conf" ]] && cp -a "$path/NetworkManager.conf" /etc/NetworkManager/NetworkManager.conf
+  if [[ -f "$path/prismdns.conf" ]]; then cp -a "$path/prismdns.conf" /etc/NetworkManager/conf.d/prismdns.conf; else rm -f /etc/NetworkManager/conf.d/prismdns.conf; fi
+  if [[ -f "$path/akdns-dns.conf" ]]; then cp -a "$path/akdns-dns.conf" /etc/NetworkManager/conf.d/akdns-dns.conf; else rm -f /etc/NetworkManager/conf.d/akdns-dns.conf; fi
+  [[ -f "$path/nsswitch.conf" ]] && cp -a "$path/nsswitch.conf" /etc/nsswitch.conf
+  if [[ -f "$path/metadata.txt" ]] && command -v systemctl >/dev/null 2>&1; then
+    resolved_active=$(sed -n 's/^resolved_active=//p' "$path/metadata.txt" | head -1)
+    resolved_enabled=$(sed -n 's/^resolved_enabled=//p' "$path/metadata.txt" | head -1)
+    resolvconf_active=$(sed -n 's/^resolvconf_active=//p' "$path/metadata.txt" | head -1)
+    resolvconf_enabled=$(sed -n 's/^resolvconf_enabled=//p' "$path/metadata.txt" | head -1)
+    if [[ "$resolved_enabled" == enabled ]]; then systemctl enable systemd-resolved 2>/dev/null || true; else systemctl disable systemd-resolved 2>/dev/null || true; fi
+    if [[ "$resolved_active" == active ]]; then systemctl restart systemd-resolved 2>/dev/null || true; else systemctl stop systemd-resolved 2>/dev/null || true; fi
+    if [[ "$resolvconf_enabled" == enabled ]]; then systemctl enable resolvconf 2>/dev/null || true; else systemctl disable resolvconf 2>/dev/null || true; fi
+    if [[ "$resolvconf_active" == active ]]; then systemctl restart resolvconf 2>/dev/null || true; else systemctl stop resolvconf 2>/dev/null || true; fi
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl reload NetworkManager 2>/dev/null || true
+  fi
+  restorecon -F /etc/resolv.conf 2>/dev/null || true
 }
 
 apply_permanent() {
   require_root
   test_dns
   confirm "将系统 DNS 永久接管为 127.0.0.1，并自动备份原配置，继续吗？" || return 0
-  backup_dns >/dev/null
-  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet systemd-resolved 2>/dev/null; then
-    systemctl disable --now systemd-resolved 2>/dev/null || warn "无法停用 systemd-resolved，将继续写入 resolv.conf。"
+  backup_dns "pre-apply" >/dev/null
+  local backup_path="$LAST_BACKUP_PATH"
+  local failed=false
+  if command -v systemctl >/dev/null 2>&1 && {
+    systemctl is-active --quiet systemd-resolved 2>/dev/null || systemctl is-enabled --quiet systemd-resolved 2>/dev/null;
+  }; then
+    systemctl disable --now systemd-resolved 2>/dev/null || failed=true
   fi
   if [[ -d /etc/NetworkManager/conf.d ]]; then
     cat > /etc/NetworkManager/conf.d/prismdns.conf <<'EOF'
 [main]
 dns=none
 EOF
-    systemctl reload NetworkManager 2>/dev/null || true
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet NetworkManager 2>/dev/null; then
+      systemctl reload NetworkManager 2>/dev/null || failed=true
+    elif command -v nmcli >/dev/null 2>&1 && nmcli general status >/dev/null 2>&1; then
+      nmcli general reload >/dev/null 2>&1 || failed=true
+    fi
   fi
-  write_resolv_conf 127.0.0.1
-  touch "$STATE_DIR/system-dns.enabled"
-  test_dns
-  grep -Eq '^nameserver[[:space:]]+127\.0\.0\.1([[:space:]]|$)' /etc/resolv.conf || fail "系统 DNS 未成功切换到 127.0.0.1。"
-  getent ahosts "$TEST_DOMAIN" >/dev/null || fail "系统解析器未能通过 Prism DNS 完成查询。"
+  $failed || write_resolv_conf 127.0.0.1 || failed=true
+  if ! $failed; then
+    touch "$STATE_DIR/system-dns.enabled"
+    test_dns || failed=true
+    grep -Eq '^nameserver[[:space:]]+127\.0\.0\.1([[:space:]]|$)' /etc/resolv.conf || failed=true
+    getent ahosts "$TEST_DOMAIN" >/dev/null || failed=true
+  fi
+  if $failed; then
+    warn "系统 DNS 接管验证失败，正在从本次备份自动恢复。"
+    restore_dns_path "$backup_path" || warn "自动恢复失败，请执行客户端的恢复 DNS 操作。"
+    rm -f "$STATE_DIR/system-dns.enabled"
+    fail "系统 DNS 接管失败，已阻止继续使用不完整配置。"
+  fi
+  lock_resolv_conf
   ok "系统 DNS 已永久设置为 Prism DNS。"
 }
 
 apply_temporary() {
   require_root
   test_dns
-  backup_dns >/dev/null
+  backup_dns "pre-apply-temp" >/dev/null
   if command -v resolvectl >/dev/null 2>&1 && systemctl is-active --quiet systemd-resolved 2>/dev/null; then
     local iface
     iface=$(ip route show default 2>/dev/null | awk 'NR==1 {print $5}')
@@ -1576,22 +1677,9 @@ restore_dns() {
   path=$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d | sort -r | head -1)
   [[ -n "$path" ]] || fail "没有可用备份。"
   confirm "从 $(basename "$path") 恢复 DNS 配置吗？" || return 0
+  backup_dns "pre-restore" >/dev/null
   rm -f "$STATE_DIR/system-dns.enabled"
-  rm -f /etc/NetworkManager/conf.d/prismdns.conf 2>/dev/null || true
-  if [[ -f "$path/resolv.conf.symlink" ]]; then
-    rm -f /etc/resolv.conf
-    ln -s "$(cat "$path/resolv.conf.symlink")" /etc/resolv.conf
-  elif [[ -f "$path/resolv.conf" ]]; then
-    rm -f /etc/resolv.conf
-    cp -a "$path/resolv.conf" /etc/resolv.conf
-  fi
-  [[ -f "$path/resolved.conf" ]] && cp -a "$path/resolved.conf" /etc/systemd/resolved.conf
-  [[ -f "$path/NetworkManager.conf" ]] && cp -a "$path/NetworkManager.conf" /etc/NetworkManager/NetworkManager.conf
-  if command -v systemctl >/dev/null 2>&1; then
-    [[ -f "$path/resolved.enabled" ]] && systemctl enable systemd-resolved 2>/dev/null || true
-    [[ -f "$path/resolved.active" ]] && systemctl restart systemd-resolved 2>/dev/null || true
-    systemctl reload NetworkManager 2>/dev/null || true
-  fi
+  restore_dns_path "$path" || fail "DNS 配置恢复失败。"
   ok "DNS 配置已恢复。"
 }
 

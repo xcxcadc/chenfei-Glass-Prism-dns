@@ -16,7 +16,7 @@
 - 目标机实测只更新报告，WAF、超时或第三方检测波动都不会自动切换 Proxy；每项服务始终使用用户最后一次保存的 IPv4 节点。
 - Proxy 每 5 秒同步面板已纳管目标 IPv4 白名单，仅放行这些地址访问 IPv4 DNS 53 与 SNI 80/443，只拒绝 IPv6 DNS 53，不拦截 IPv6 80/443；同机 MTProxy 等 IPv6 业务可继续使用。
 - 目标机如果 XrayR、V2bX、sing-box、Hysteria、TUIC 等代理进程自行把客户端 DNS 发往 `8.8.8.8:53` 或 `1.1.1.1:53`，路由守卫会按 systemd cgroup 将这些 DNS 请求转交给本机 Prism Agent；只增加 Prism 自有 nftables 表，不改动代理程序配置或 Docker。
-- XrayR 如果开启 `ControllerConfig.EnableDNS: true`，安装器会先备份 `/etc/XrayR/config.yml`，切换为读取系统 DNS 后仅重启一次 XrayR；V2bX、MTProxy、Docker 和其他业务配置不改动。
+- 不会读取、修改或重启 XrayR、V2bX、MTProxy、Docker 或其他业务配置；代理进程只通过 Prism 自有 DNS 守卫接入本机解析器。
 - 前端新增、编辑和删除自定义服务，支持任意名称、分类和域名列表；普通域名使用 `example.com`，泛域名使用 `*.example.com`，保存、重新打开和迁移后均保留原格式。
 - 所有内置和自定义服务均可在服务表格或配置弹窗中编辑域名、增删域名并恢复域名库默认值；“彻底删除服务”会同步删除规则、目标 IP 路由、审计结果和无用解锁机引用，内置服务会写入永久隐藏列表，不会在下一次域名库同步时复现。
 - 服务规则编辑器同时支持域名后缀、域名关键词和 IPv4/IPv6 `IP-CIDR`；规则列表、Agent 同步和传输配置会保留原始规则类型。Grok 默认包含 xAI/Twitter 域名、`twitter` 关键词及六段上游 CIDR。
@@ -48,7 +48,7 @@
 需要重新打开命令时，可在该 IP 行点击“客户端脚本”。通用交互入口如下：
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.25/prismdns.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/prismdns.sh | sudo bash
 ```
 
 ## IP 配置备份与授权令牌
@@ -65,9 +65,9 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs
 
 ## 路由自动应用
 
-本次发布的固定脚本版本为 `v1.5.25`；新安装命令和面板生成命令均使用该标签，不再从 `main` 浮动拉取脚本。
+本次发布的固定脚本版本为 `v1.5.26`；新安装命令和面板生成命令均使用该标签，不再从 `main` 浮动拉取脚本。
 
-`prismdns.sh 1.5.24` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、Prism 专用 dnsmasq 和 DNS 守卫。增强层把服务到用户所选 Proxy IPv4 的映射持久化并生成 `127.0.0.1:5353` 与（启用 IPv6 回环时）`[::1]:5353` 的确定性路由；路由守卫每 10 秒刷新配置哈希，并为活动的 XrayR、V2bX、v2node、sing-box、Hysteria、TUIC、Trojan 等代理进程建立独立 nftables cgroup 规则，把代理内置的外部 DNS 请求转交到该端口，已选服务只返回 IPv4 路由并抑制 AAAA，不覆盖代理、MTProxy 或 Docker 配置。Agent 保留用于面板同步、授权和报告。配置变化、30 分钟健康缓存刷新和 `check.unlock.media` IPv4 服务审计仍会全量验证所有域名；健康上报会把 DNS 守卫或 IPv4/IPv6 本地 DNS 缺失明确标为异常。审计运行期间每分钟的轻量心跳会独立报告缓存路由健康，避免长时间的第三方流媒体测试将目标机误标为 `STALE`。节点卡只显示控制与路由链路是否生效，单项流媒体审计结果在服务配置和审计页单独呈现。安装期只强制检查 DNS 路由是否已经映射到面板所选解锁机，完整 HTTPS/流媒体可用性由后台审计继续跑，避免第三方站点瞬时超时拖死新机上线。`prism_transport.sh 2.4.0` 默认采用与 Akile 类似的授权源 IP 直连模式：目标机直接连接面板所选解锁机的 TCP 80/443，Proxy 每 5 秒刷新授权名单，未纳管来源会被防火墙拒绝；这样避免高并发浏览器流量被单条 SSH/TCP 隧道的队头阻塞，同时继续按目标 IP 独立统计 TX/RX。兼容场景仍可显式选择 `--mode encrypted`。发往已选解锁机的 UDP/443 会被明确拒绝，促使支持 QUIC 的应用回落到 SNIproxy 可处理的 TCP/TLS。为保持 Google 直连稳定，守卫还会仅对已识别代理进程发往 Google 网段的 UDP/443 快速拒绝，浏览器将回退到该目标机直连 Google 的 TCP/TLS；不会更改 Google DNS，不会将其送往解锁机，也不影响服务器其他业务。每分钟定时器只负责流量上报，耗时的四阶段检测由独立 `prismdns-service-audit.service` 执行。面板或网络瞬时不可达时任务会正常退出并等待下一轮；重装时若本地 DNS 已停止但 `/etc/resolv.conf` 仍指向回环地址，安装器会临时恢复引导 DNS 后继续。
+`prismdns.sh 1.5.26` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、Prism 专用 dnsmasq 和 DNS 守卫。增强层把服务到用户所选 Proxy IPv4 的映射持久化并生成 `127.0.0.1:5353` 与（启用 IPv6 回环时）`[::1]:5353` 的确定性路由；路由守卫每 10 秒刷新配置哈希，并为活动的 XrayR、V2bX、v2node、sing-box、Hysteria、TUIC、Trojan 等代理进程建立独立 nftables cgroup 规则，把代理内置的外部 DNS 请求转交到该端口，已选服务只返回 IPv4 路由并抑制 AAAA；不会修改这些代理、MTProxy 或 Docker 的配置。Agent 保留用于面板同步、授权和报告。配置变化、30 分钟健康缓存刷新和 `check.unlock.media` IPv4 服务审计仍会全量验证所有域名；健康上报会把 DNS 守卫或 IPv4/IPv6 本地 DNS 缺失明确标为异常。审计运行期间每分钟的轻量心跳会独立报告缓存路由健康，避免长时间的第三方流媒体测试将目标机误标为 `STALE`。节点卡只显示控制与路由链路是否生效，单项流媒体审计结果在服务配置和审计页单独呈现。安装期只强制检查 DNS 路由是否已经映射到面板所选解锁机，完整 HTTPS/流媒体可用性由后台审计继续跑，避免第三方站点瞬时超时拖死新机上线。`prism_transport.sh 2.4.0` 默认采用与 Akile 类似的授权源 IP 直连模式：目标机直接连接面板所选解锁机的 TCP 80/443，Proxy 每 5 秒刷新授权名单，未纳管来源会被防火墙拒绝；这样避免高并发浏览器流量被单条 SSH/TCP 隧道的队头阻塞，同时继续按目标 IP 独立统计 TX/RX。兼容场景仍可显式选择 `--mode encrypted`。发往已选解锁机的 UDP/443 会被明确拒绝，促使支持 QUIC 的应用回落到 SNIproxy 可处理的 TCP/TLS。为保持 Google 直连稳定，守卫还会仅对已识别代理进程发往 Google 网段的 UDP/443 快速拒绝，浏览器将回退到该目标机直连 Google 的 TCP/TLS；不会更改 Google DNS，不会将其送往解锁机，也不影响服务器其他业务。每分钟定时器只负责流量上报，耗时的四阶段检测由独立 `prismdns-service-audit.service` 执行。面板或网络瞬时不可达时任务会正常退出并等待下一轮；重装时若本地 DNS 已停止但 `/etc/resolv.conf` 仍指向回环地址，安装器会临时恢复引导 DNS 后继续。
 
 目标机只检测该 IP 已选择的服务。每项服务必须依次通过：全部路由域名精确解析到用户所选 Proxy IPv4、AAAA 为空、TLS/SNI 连续三次至少两次成功、代表页面与 `check.unlock.media` 服务方项目结论可用。Gemini 会覆盖 26 个网页与移动端依赖，而不是只检查首页。服务方明确返回 `NO`、`Banned`、WAF 或稳定性不足时直接显示失败；脚本没有对应项目的服务明确显示“未覆盖”，不会因检测器没有输出而误报可用。任何实测结果都不会修改路由或自动跳转节点，用户需要切换线路时必须手动选择并保存。长时间审计会被守卫识别并去重，不会每 10 秒重复排队。节点页只把解锁机 Agent 自检保留为参考，目标机四阶段结果才是最终结论。
 
@@ -84,7 +84,7 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs
 如需在曾安装过 Prism 的主机上明确清空 Prism 数据并重新初始化，执行以下命令：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.25/enhanced_install.sh \\
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/enhanced_install.sh \\
   | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
 ```
 
@@ -99,13 +99,13 @@ curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/ref
 ## 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.25/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/enhanced_install.sh | sudo bash
 ```
 
 可通过环境变量调整端口：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.25/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/enhanced_install.sh \
   | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
 ```
 

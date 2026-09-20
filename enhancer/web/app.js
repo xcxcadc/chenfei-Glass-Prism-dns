@@ -79,7 +79,7 @@ const state = {
   branding: {site_name:"", browser_title:"", site_tagline:""}
 };
 
-const prismSourceRef = "v1.5.25";
+const prismSourceRef = "v1.5.26";
 
 function prismRawURL(file) {
   return `https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/${prismSourceRef}/${file}`;
@@ -443,7 +443,7 @@ function catalogCategories() {
     .sort((left, right) => displayCategory(left).localeCompare(displayCategory(right), state.lang === "zh" ? "zh-CN" : "en"));
 }
 function isOnline(node) { if (!node?.last_heartbeat) return false; return Date.now() - new Date(node.last_heartbeat).getTime() < 90000; }
-function healthReportStale(config) { return Date.now() - new Date(config?.health_updated_at || 0).getTime() > 180000; }
+function healthReportStale(config) { return Date.now() - new Date(config?.health_updated_at || 0).getTime() > 300000; }
 function normalizeIP(value) {
   let candidate = String(value || "").split(",")[0].trim();
   if (candidate.startsWith("[")) candidate = candidate.slice(1, candidate.indexOf("]"));
@@ -479,13 +479,14 @@ function clientState(config, node) {
   if (!config.health_updated_at) return {kind:"warn", label:t("pending"), detail:state.lang === "zh" ? "等待客户端健康上报" : "Waiting for client health report"};
   if (healthReportStale(config)) return {kind:"warn", label:t("stale"), detail:state.lang === "zh" ? "健康上报已超时" : "Health report is stale"};
   const routes = `${Number(config.healthy_routes || 0)}/${Number(config.expected_routes || 0)}`;
+  const dnsBackend = config.dns_backend ? ` · DNS ${config.dns_backend}` : "";
   const audit = targetAuditSummary(config);
   const auditDetail = state.lang === "zh"
     ? `实测 ${audit.passed}/${audit.audited || audit.configured} 通过${audit.pending ? `，${audit.pending} 项待实测` : ""}${audit.failed ? `，${audit.failed} 项异常` : ""}`
     : `Audited ${audit.passed}/${audit.audited || audit.configured} passed${audit.pending ? `, ${audit.pending} pending` : ""}${audit.failed ? `, ${audit.failed} failed` : ""}`;
   if (config.dns_ready && config.system_dns_ready && config.routes_ready) {
-    if (audit.configured > 0) return {kind:"good", label:state.lang === "zh" ? "路由已生效" : "ROUTES ACTIVE", detail:`${t("healthRoutes")} ${routes} · ${auditDetail}`};
-    return {kind:"good", label:state.lang === "zh" ? "在线" : "ONLINE", detail:`${t("healthRoutes")} ${routes}`};
+    if (audit.configured > 0) return {kind:"good", label:state.lang === "zh" ? "路由已生效" : "ROUTES ACTIVE", detail:`${t("healthRoutes")} ${routes}${dnsBackend} · ${auditDetail}`};
+    return {kind:"good", label:state.lang === "zh" ? "在线" : "ONLINE", detail:`${t("healthRoutes")} ${routes}${dnsBackend}`};
   }
   return {kind:"bad", label:t("degraded"), detail:config.health_message || `${t("healthRoutes")} ${routes}`};
 }
@@ -499,7 +500,7 @@ function viewFingerprint() {
   const configs = state.ipConfigs.map(config => ({
     id:config.id, ip:config.ip, note:config.note, dns_node_id:nodeID(config.dns_node_id), routes:config.routes,
     dns_ready:config.dns_ready, system_dns_ready:config.system_dns_ready, routes_ready:config.routes_ready,
-    healthy_routes:config.healthy_routes, expected_routes:config.expected_routes, health_message:config.health_message,
+    healthy_routes:config.healthy_routes, expected_routes:config.expected_routes, health_message:config.health_message, dns_backend:config.dns_backend,
     service_results:config.service_results, service_audited_at:config.service_audited_at,
     service_audit_requested_at:config.service_audit_requested_at, audit_fresh:serviceAuditFresh(config),
     health_updated_at:config.health_updated_at, health_stale:healthReportStale(config),

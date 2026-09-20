@@ -15,7 +15,7 @@
 面板添加节点后，在解锁机或被解锁机执行页面生成的命令，并显式锁定版本：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.25/agent_install.sh | bash -s -- --version v1.3 --master <面板地址> --secret <节点密钥>
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/agent_install.sh | bash -s -- --version v1.3 --master <面板地址> --secret <节点密钥>
 ```
 
 安装器会校验 v1.3 Linux Agent 的 SHA256，不会静默回退到最新版本。
@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/ref
 需要与更早的面板/Agent 组合回退时，可以指定上游 `v1.2.1`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.25/agent_install.sh | bash -s -- --version v1.2.1 --master <面板地址> --secret <节点密钥>
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/agent_install.sh | bash -s -- --version v1.2.1 --master <面板地址> --secret <节点密钥>
 ```
 
 `--version` 只接受明确的稳定版本标签。`--beta` 仍然单独使用 Beta 发布线，不会覆盖稳定版本锁定逻辑。

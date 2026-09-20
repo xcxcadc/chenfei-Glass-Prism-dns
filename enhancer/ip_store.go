@@ -36,6 +36,7 @@ type IPConfig struct {
 	RoutesReady             bool              `json:"routes_ready"`
 	HealthyRoutes           int               `json:"healthy_routes"`
 	ExpectedRoutes          int               `json:"expected_routes"`
+	DNSBackend              string            `json:"dns_backend,omitempty"`
 	HealthMessage           string            `json:"health_message,omitempty"`
 	HealthUpdatedAt         *time.Time        `json:"health_updated_at,omitempty"`
 	ServiceResults          map[string]string `json:"service_results,omitempty"`
@@ -51,6 +52,7 @@ type ClientHealth struct {
 	RoutesReady    bool
 	HealthyRoutes  int
 	ExpectedRoutes int
+	DNSBackend     string
 	Message        string
 }
 
@@ -259,6 +261,7 @@ func (store *IPConfigStore) UpdateClientReport(token string, rxBytes, txBytes ui
 		record.RoutesReady = health.RoutesReady
 		record.HealthyRoutes = health.HealthyRoutes
 		record.ExpectedRoutes = health.ExpectedRoutes
+		record.DNSBackend = strings.TrimSpace(health.DNSBackend)
 		record.HealthMessage = strings.TrimSpace(health.Message)
 		record.HealthUpdatedAt = &now
 		store.configs[id] = record

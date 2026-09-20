@@ -34,6 +34,7 @@ type trafficReportRequest struct {
 	RoutesReady    bool   `json:"routes_ready"`
 	HealthyRoutes  int    `json:"healthy_routes"`
 	ExpectedRoutes int    `json:"expected_routes"`
+	DNSBackend     string `json:"dns_backend"`
 	HealthMessage  string `json:"health_message"`
 }
 
@@ -69,6 +70,7 @@ func (app *App) handleTrafficReport(writer http.ResponseWriter, request *http.Re
 		RoutesReady:    payload.RoutesReady,
 		HealthyRoutes:  payload.HealthyRoutes,
 		ExpectedRoutes: payload.ExpectedRoutes,
+		DNSBackend:     payload.DNSBackend,
 		Message:        payload.HealthMessage,
 	})
 	if errors.Is(err, os.ErrNotExist) {
