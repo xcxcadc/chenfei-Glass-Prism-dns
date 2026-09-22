@@ -79,7 +79,7 @@ const state = {
   branding: {site_name:"", browser_title:"", site_tagline:""}
 };
 
-const prismSourceRef = "v1.5.26";
+const prismSourceRef = "v1.5.27";
 
 function prismRawURL(file) {
   return `https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/${prismSourceRef}/${file}`;

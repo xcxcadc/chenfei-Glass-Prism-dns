@@ -81,6 +81,7 @@ type transportEgressService struct {
 	ServiceID      string   `json:"service_id"`
 	Name           string   `json:"name"`
 	Domains        []string `json:"domains"`
+	ProxyIP        string   `json:"proxy_ip,omitempty"`
 	DomainKeywords []string `json:"domain_keywords,omitempty"`
 	CIDRs          []string `json:"cidrs,omitempty"`
 	ProbeDomains   []string `json:"probe_domains"`
@@ -196,6 +197,16 @@ func (store *TransportStore) ClientConfig(record ipConfigRecord) transportConfig
 	}
 	sort.Slice(config.Peers, func(i, j int) bool { return config.Peers[i].ProxyID < config.Peers[j].ProxyID })
 	return config
+}
+
+func (store *TransportStore) ProxyEndpoint(proxyID string) string {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	proxy, ok := store.proxies[proxyID]
+	if !ok || !transportRecordFresh(proxy.UpdatedAt) {
+		return ""
+	}
+	return proxy.Endpoint
 }
 
 func (store *TransportStore) ProxyConfig(proxyID string, records []ipConfigRecord) transportConfig {
@@ -367,6 +378,38 @@ func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []trans
 	return result
 }
 
+func (app *App) clientEgressServices(ctx context.Context, record ipConfigRecord) []transportEgressService {
+	serviceProxies := make(map[string]string, len(record.Routes))
+	for serviceID, proxyID := range record.Routes {
+		if proxyIP := app.transport.ProxyEndpoint(proxyID); proxyIP != "" {
+			serviceProxies[serviceID] = proxyIP
+		}
+	}
+	if len(serviceProxies) == 0 {
+		return nil
+	}
+	services := app.catalog.Snapshot(ctx, false).Services
+	result := make([]transportEgressService, 0, len(serviceProxies))
+	for _, service := range services {
+		proxyIP, selected := serviceProxies[service.ID]
+		if !selected {
+			continue
+		}
+		result = append(result, transportEgressService{
+			ServiceID:      service.ID,
+			Name:           service.Name,
+			Domains:        routingDomains(service.Domains),
+			ProxyIP:        proxyIP,
+			DomainKeywords: normalizeDomainKeywords(service.DomainKeywords),
+			CIDRs:          normalizeCIDRs(service.CIDRs),
+			ProbeDomains:   preferredProbeDomains(service),
+			IPv6Candidate:  false,
+		})
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].ServiceID < result[right].ServiceID })
+	return result
+}
+
 func (app *App) handleClientTransport(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		methodNotAllowed(writer, http.MethodPost)
@@ -386,7 +429,9 @@ func (app *App) handleClientTransport(writer http.ResponseWriter, request *http.
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, app.transport.ClientConfig(record))
+	config := app.transport.ClientConfig(record)
+	config.EgressServices = app.clientEgressServices(request.Context(), record)
+	writeJSON(writer, http.StatusOK, config)
 }
 
 func controllerNodeBySecret(databasePath, secret string) (controllerNode, error) {

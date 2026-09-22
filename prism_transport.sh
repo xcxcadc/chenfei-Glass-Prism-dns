@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="2.4.0"
+VERSION="2.5.0"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -15,6 +15,10 @@ EGRESS_SERVICE="prism-egress-proxy.service"
 EGRESS_POLICY="/etc/prismdns/egress-policy.json"
 EGRESS_HTTP_PORT=19080
 EGRESS_HTTPS_PORT=19443
+CLIENT_EGRESS_SERVICE="prism-client-egress-proxy.service"
+CLIENT_EGRESS_POLICY="/etc/prismdns/client-egress-policy.json"
+CLIENT_EGRESS_HTTP_PORT=19081
+CLIENT_EGRESS_HTTPS_PORT=19444
 EGRESS_REPO="${PRISM_EGRESS_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 ROLE=""
 MASTER=""
@@ -185,6 +189,68 @@ EOF
   fail "adaptive egress did not open its loopback listeners"
 }
 
+install_client_egress() {
+  [[ "$ROLE" == "client" ]] || return 0
+  local source="${PRISM_EGRESS_BINARY_FILE:-}" temporary architecture
+  if [[ -n "$source" ]]; then
+    [[ -s "$source" ]] || fail "PRISM_EGRESS_BINARY_FILE does not exist: $source"
+  else
+    architecture=$(detect_architecture)
+    temporary=$(mktemp)
+    curl -fL --retry 3 --connect-timeout 15 --max-time 120 \
+      -o "$temporary" \
+      "https://github.com/$EGRESS_REPO/releases/latest/download/prism-egress-proxy_linux_$architecture"
+    source="$temporary"
+  fi
+  install -m 755 "$source" "$EGRESS_BINARY"
+  [[ -z "${temporary:-}" ]] || rm -f "$temporary"
+  mkdir -p "$(dirname "$CLIENT_EGRESS_POLICY")"
+  if [[ ! -s "$CLIENT_EGRESS_POLICY" ]]; then
+    printf '{"services":[]}\n' >"$CLIENT_EGRESS_POLICY"
+    chmod 644 "$CLIENT_EGRESS_POLICY"
+  fi
+  cat >/etc/systemd/system/$CLIENT_EGRESS_SERVICE <<EOF
+[Unit]
+Description=Prism transparent client SNI egress
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$EGRESS_BINARY --http-listen 127.0.0.1:$CLIENT_EGRESS_HTTP_PORT --tls-listen 127.0.0.1:$CLIENT_EGRESS_HTTPS_PORT --policy $CLIENT_EGRESS_POLICY
+Restart=always
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=$CLIENT_EGRESS_POLICY
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable --now "$CLIENT_EGRESS_SERVICE" >/dev/null
+  for _ in {1..30}; do
+    if systemctl is-active --quiet "$CLIENT_EGRESS_SERVICE" &&
+      ss -lnt 2>/dev/null | awk -v http=":$CLIENT_EGRESS_HTTP_PORT" -v https=":$CLIENT_EGRESS_HTTPS_PORT" \
+        '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  fail "transparent client egress did not open its loopback listeners"
+}
+
+client_egress_ready() {
+  [[ "$ROLE" == "client" ]] || return 0
+  [[ -x "$EGRESS_BINARY" ]] &&
+    systemctl is-active --quiet "$CLIENT_EGRESS_SERVICE" 2>/dev/null &&
+    ss -lnt 2>/dev/null | awk -v http=":$CLIENT_EGRESS_HTTP_PORT" -v https=":$CLIENT_EGRESS_HTTPS_PORT" \
+      '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'
+}
+
 proxy_egress_ready() {
   [[ "$ROLE" == "proxy" ]] || return 0
   [[ -x "$EGRESS_BINARY" ]] &&
@@ -268,6 +334,18 @@ apply_egress_policy() {
   rm -f "$temporary"
 }
 
+apply_client_egress_policy() {
+  [[ "$ROLE" == "client" ]] || return 0
+  local response="$1" temporary
+  temporary=$(mktemp)
+  jq '{services:(.egress_services // [])}' <<<"$response" >"$temporary"
+  if [[ ! -f "$CLIENT_EGRESS_POLICY" ]] || ! cmp -s "$temporary" "$CLIENT_EGRESS_POLICY"; then
+    install -m 644 "$temporary" "$CLIENT_EGRESS_POLICY"
+    systemctl kill -s HUP "$CLIENT_EGRESS_SERVICE" >/dev/null 2>&1 || true
+  fi
+  rm -f "$temporary"
+}
+
 apply_proxy_authorization() {
   local response="$1" temporary
   local -a clients4=()
@@ -299,6 +377,60 @@ apply_proxy_authorization() {
   } >"$temporary"
   nft delete table inet prism_authorization >/dev/null 2>&1 || true
   nft -f "$temporary"
+  rm -f "$temporary"
+}
+
+collect_transport_cgroups() {
+  local unit descriptor control_group path
+  while IFS= read -r unit; do
+    [[ -n "$unit" ]] || continue
+    case "$unit" in
+      prism*|docker*|containerd*|ssh*|nginx*|komari*|flux*) continue ;;
+    esac
+    descriptor=$(systemctl show "$unit" -p ExecStart --value 2>/dev/null || true)
+    if ! printf '%s\n' "$unit $descriptor" | grep -Eqi 'xray|xrayr|v2ray|v2bx|v2node|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|clash|mihomo|brook|naiveproxy'; then
+      continue
+    fi
+    control_group=$(systemctl show "$unit" -p ControlGroup --value 2>/dev/null || true)
+    [[ "$control_group" == /* ]] || continue
+    path="/sys/fs/cgroup${control_group}"
+    [[ -d "$path" ]] || continue
+    stat -c '%i' "$path" 2>/dev/null || true
+  done < <(systemctl list-units --type=service --state=running --no-legend --no-pager 2>/dev/null | awk '{print $1}' | sort -u)
+}
+
+apply_client_egress_rules() {
+  [[ "$ROLE" == "client" && "$TRANSPORT_MODE" == "direct" ]] || return 0
+  local temporary cgroup_id
+  local -a cgroups=()
+  mapfile -t cgroups < <(collect_transport_cgroups | sort -u)
+  nft delete table inet prism_client_egress >/dev/null 2>&1 || true
+  ((${#cgroups[@]} > 0)) || {
+    log "no managed proxy cgroup found; transparent SNI fallback is idle"
+    return 0
+  }
+  temporary=$(mktemp)
+  {
+    echo 'table inet prism_client_egress {'
+    echo '  chain redirect_output {'
+    echo '    type nat hook output priority -90; policy accept;'
+    for cgroup_id in "${cgroups[@]}"; do
+      printf '    meta cgroup %s tcp dport 80 redirect to :%s\n' "$cgroup_id" "$CLIENT_EGRESS_HTTP_PORT"
+      printf '    meta cgroup %s tcp dport 443 redirect to :%s\n' "$cgroup_id" "$CLIENT_EGRESS_HTTPS_PORT"
+    done
+    echo '  }'
+    echo '  chain reject_quic {'
+    echo '    type filter hook output priority -200; policy accept;'
+    for cgroup_id in "${cgroups[@]}"; do
+      printf '    meta cgroup %s udp dport 443 reject with icmpx type port-unreachable\n' "$cgroup_id"
+    done
+    echo '  }'
+    echo '}'
+  } >"$temporary"
+  if ! nft -f "$temporary"; then
+    rm -f "$temporary"
+    fail "failed to install transparent SNI egress rules"
+  fi
   rm -f "$temporary"
 }
 
@@ -516,6 +648,7 @@ sync_client() {
   local -a ready=() current=()
   response=$(client_registration)
   jq -e '.role == "client" and (.peers | type == "array")' <<<"$response" >/dev/null
+  apply_client_egress_policy "$response"
   while IFS= read -r peer; do
     [[ -n "$peer" ]] || continue
     if [[ "$TRANSPORT_MODE" == "direct" ]]; then
@@ -541,6 +674,7 @@ sync_client() {
     ! nft list counter inet prism_transport rx >/dev/null 2>&1; then
     apply_client_rules "$current_json"
   fi
+  apply_client_egress_rules
   printf '%s\n' "$current_json" >"$ACTIVE_FILE"
   chmod 600 "$ACTIVE_FILE"
   sleep 2
@@ -581,6 +715,7 @@ sync_transport() {
     sync_proxy
   else
     ensure_client_keypair
+    client_egress_ready || install_client_egress
     sync_client
   fi
 }
@@ -666,11 +801,15 @@ uninstall_transport() {
   if [[ "$ROLE" == "proxy" ]]; then
     systemctl disable --now "$EGRESS_SERVICE" >/dev/null 2>&1 || true
     rm -f "/etc/systemd/system/$EGRESS_SERVICE" "$EGRESS_BINARY" "$EGRESS_POLICY"
+  else
+    systemctl disable --now "$CLIENT_EGRESS_SERVICE" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/$CLIENT_EGRESS_SERVICE" "$EGRESS_BINARY" "$CLIENT_EGRESS_POLICY"
   fi
   systemctl disable --now wg-quick@prismwg0 >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/prism-transport.service /etc/systemd/system/prism-transport.timer
   rm -f /etc/wireguard/prismwg0.conf "$ENV_FILE"
   nft delete table inet prism_transport >/dev/null 2>&1 || true
+  nft delete table inet prism_client_egress >/dev/null 2>&1 || true
   nft delete table inet prism_authorization >/dev/null 2>&1 || true
   systemctl daemon-reload
   log "Prism SNI transport removed"
@@ -683,6 +822,8 @@ show_status() {
   echo "timer=$(systemctl is-active prism-transport.timer 2>/dev/null || true)"
   if [[ "${ROLE:-}" == "proxy" ]]; then
     echo "egress=$(systemctl is-active "$EGRESS_SERVICE" 2>/dev/null || true)"
+  else
+    echo "client_egress=$(systemctl is-active "$CLIENT_EGRESS_SERVICE" 2>/dev/null || true)"
   fi
   if [[ -f "$READY_FILE" ]]; then
     echo "ready_proxies=$(jq -c . "$READY_FILE" 2>/dev/null || echo '[]')"

@@ -39,6 +39,7 @@ type servicePolicy struct {
 	ID            string   `json:"service_id"`
 	Name          string   `json:"name"`
 	Domains       []string `json:"domains"`
+	ProxyIP       string   `json:"proxy_ip,omitempty"`
 	ProbeDomains  []string `json:"probe_domains"`
 	IPv6Candidate bool     `json:"ipv6_candidate,omitempty"`
 }
@@ -60,11 +61,12 @@ type familyPolicy struct {
 	hash     string
 	services []servicePolicy
 	prefer6  map[string]bool
+	routeIPs map[string]string
 	refresh  chan struct{}
 }
 
 func newFamilyPolicy(path string) *familyPolicy {
-	return &familyPolicy{path: path, prefer6: make(map[string]bool), refresh: make(chan struct{}, 1)}
+	return &familyPolicy{path: path, prefer6: make(map[string]bool), routeIPs: make(map[string]string), refresh: make(chan struct{}, 1)}
 }
 
 func (policy *familyPolicy) preferIPv6(host string) bool {
@@ -82,6 +84,23 @@ func (policy *familyPolicy) preferIPv6(host string) bool {
 		candidate = candidate[index+1:]
 	}
 	return false
+}
+
+func (policy *familyPolicy) routeIP(host string) string {
+	host = normalizeHost(host)
+	policy.mu.RLock()
+	defer policy.mu.RUnlock()
+	for candidate := host; candidate != ""; {
+		if routeIP, exists := policy.routeIPs[candidate]; exists {
+			return routeIP
+		}
+		index := strings.IndexByte(candidate, '.')
+		if index < 0 {
+			break
+		}
+		candidate = candidate[index+1:]
+	}
+	return ""
 }
 
 func (policy *familyPolicy) requestRefresh() {
@@ -130,15 +149,20 @@ func (policy *familyPolicy) refreshNow(ctx context.Context) {
 	}
 	services := normalizeServices(config.Services)
 	initial := make(map[string]bool)
+	routeIPs := make(map[string]string)
 	for _, service := range services {
 		for _, domain := range service.Domains {
 			initial[domain] = service.IPv6Candidate
+			if parsed := net.ParseIP(service.ProxyIP); parsed != nil && parsed.To4() != nil {
+				routeIPs[domain] = parsed.To4().String()
+			}
 		}
 	}
 	policy.mu.Lock()
 	policy.hash = hash
 	policy.services = services
 	policy.prefer6 = initial
+	policy.routeIPs = routeIPs
 	policy.mu.Unlock()
 	log.Printf("loaded %d egress service policies", len(services))
 
@@ -279,7 +303,7 @@ func probeDomain(ctx context.Context, domain string, ipv6 bool) probeResult {
 			if err != nil {
 				return nil, err
 			}
-			return dialHost(dialContext, domain, port, ipv6, true)
+			return dialHost(dialContext, domain, port, ipv6, true, "")
 		},
 	}
 	client := &http.Client{Transport: transport, Timeout: 12 * time.Second}
@@ -345,7 +369,7 @@ func (server *proxyServer) handle(client net.Conn, port string, hostname func([]
 	}
 	_ = client.SetReadDeadline(time.Time{})
 	ctx, cancel := context.WithTimeout(context.Background(), server.dialTimeout)
-	upstream, err := dialHost(ctx, host, port, server.policy.preferIPv6(host), false)
+	upstream, err := dialHost(ctx, host, port, server.policy.preferIPv6(host), false, server.policy.routeIP(host))
 	cancel()
 	if err != nil {
 		log.Printf("dial %s:%s: %v", host, port, err)
@@ -459,7 +483,11 @@ func tlsHostname(data []byte) (string, error) {
 	return "", errors.New("TLS SNI hostname is missing")
 }
 
-func dialHost(ctx context.Context, host, port string, prefer6, singleFamily bool) (net.Conn, error) {
+func dialHost(ctx context.Context, host, port string, prefer6, singleFamily bool, forcedIP string) (net.Conn, error) {
+	if parsed := net.ParseIP(strings.TrimSpace(forcedIP)); parsed != nil && parsed.To4() != nil {
+		dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+		return dialer.DialContext(ctx, "tcp", net.JoinHostPort(parsed.To4().String(), port))
+	}
 	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
 		return nil, err

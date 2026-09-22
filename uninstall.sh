@@ -100,6 +100,7 @@ remove_transport_units() {
   remove_unit_file prism-transport.timer
   remove_unit_file prism-transport.service
   remove_unit_file prism-egress-proxy.service
+  remove_unit_file prism-client-egress-proxy.service
   stop_unit wg-quick@prismwg0.service
 }
 
@@ -192,6 +193,7 @@ remove_agent_runtime() {
     nft delete table inet prismdns_traffic >/dev/null 2>&1 || true
     nft delete table inet prismdns_local_dns >/dev/null 2>&1 || true
     nft delete table inet prism_transport >/dev/null 2>&1 || true
+    nft delete table inet prism_client_egress >/dev/null 2>&1 || true
     nft delete table inet prism_authorization >/dev/null 2>&1 || true
   fi
   systemctl daemon-reload

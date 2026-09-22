@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel and release scripts `1.5.26`, and SNI transport `2.4.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel and release scripts `1.5.27`, and SNI transport `2.5.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases).
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -122,13 +122,13 @@ Node Management keeps proxy Agent self-checks as reference only. IP Configs runs
 ### One-Click Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/enhanced_install.sh | sudo bash
 ```
 
 Custom ports:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/enhanced_install.sh \
   | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
 ```
 
@@ -147,7 +147,7 @@ The repository contains only program code, installer scripts, and frontend asset
 To explicitly perform a sanitized fresh install on a host that previously ran Prism, first confirm that its old panel data is no longer needed, then run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/enhanced_install.sh \\
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/enhanced_install.sh \\
   | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
 ```
 
@@ -176,7 +176,7 @@ cd /opt/prism && ./prism-controller --host 0.0.0.0 --port 8080
 Install Agent on node servers:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
+curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
 ```
 
 ### IP Client Tool
@@ -184,7 +184,7 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/
 First add the target IP in the Web UI's IP Configs view, select services and proxy agents, and save. The UI generates a dedicated command containing the panel URL and enrollment token. The generic interactive tool is also available:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/prismdns.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/prismdns.sh | sudo bash
 ```
 
 The dedicated command is only needed for a target's first installation. Later additions, removals, and proxy changes apply automatically after a panel save. The installer backs up conflicting legacy `dnsmasq`/`sniproxy` services, then installs a Prism-specific dnsmasq listening only on `127.0.0.1:5353`; it never modifies MTProxy, XrayR, or V2bX. The enhancer dynamically renders exact IPv4 and AAAA-suppression rules from panel data, and nftables redirects local port 53 to this dedicated resolver. Agent remains responsible for synchronization, authorization, and reports, but no longer controls the effective DNS route. Stable installs download upstream Agent `v1.2.1`, verify its SHA-256, and lock the executable so the `v1.3` passive circuit breaker cannot silently restore public DNS after WAF responses, refused connections, or batch audits; reinstall and uninstall operations unlock it automatically. Every target receives a generic guard that checks configuration and the DNS listener every 10 seconds and samples one representative domain per service every 300 seconds. Configuration changes, the 30-minute health-cache refresh, and service audits still verify every routed domain. Installation-time validation now only blocks on wrong DNS mapping to the chosen unlock peer; the full HTTPS provider checks stay in the background auditor so transient third-party timeouts do not wedge bootstrap. Route changes atomically replace dnsmasq rules and restart the dedicated local resolver first; Agent is restarted only as a recovery fallback. Restricted-network targets use encrypted TCP SNI transport, while UDP/443 to selected unlock peers is rejected so QUIC-capable applications fall back to TCP/TLS. Every selected service passes through exact A mapping, AAAA suppression, three TLS/SNI handshakes, and representative page/provider validation. Explicit `NO`, `Banned`, WAF, or unstable provider results are reported as failures, but never rewrite the user's route or roll back system DNS. Proxies refresh the allowlist every five seconds. The minute timer reports monotonic dedicated nftables counters, and the panel accumulates sample deltas. The dedicated audit service runs expensive four-stage checks and starts a new counter epoch afterward so audit traffic is excluded. Clearing panel traffic preserves the current sample baseline, preventing historical bytes from being added again.

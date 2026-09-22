@@ -61,13 +61,13 @@ var/lib/prism-enhancer/
 建议新旧面板使用相同域名和公开端口。这样只需把域名的 A/AAAA 记录切换到新服务器，现有解锁机与被解锁机不需要逐台修改面板地址。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/enhanced_install.sh | sudo bash
 ```
 
 如果旧服务器使用自定义端口，新服务器必须保持一致：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.26/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/enhanced_install.sh \
   | sudo PRISM_PORT=8081 PRISM_CORE_PORT=18080 bash
 ```
 

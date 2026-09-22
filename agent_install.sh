@@ -5,7 +5,7 @@ set -e
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 REPO="${PRISM_AGENT_REPO:-mslxi/Liquid-Glass-Prism-dns}"
 PINNED_STABLE_TAG="${PRISM_AGENT_TAG:-v1.2.1}"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.26}"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.27}"
 BINARY_NAME="prism-agent"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"

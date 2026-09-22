@@ -52,6 +52,17 @@ func TestFamilyPolicyMatchesDomainSuffix(t *testing.T) {
 	}
 }
 
+func TestFamilyPolicyRoutesSelectedDomainToProxyIPv4(t *testing.T) {
+	policy := newFamilyPolicy("")
+	policy.routeIPs = map[string]string{"openai.com": "203.0.113.40"}
+	if got := policy.routeIP("chat.openai.com"); got != "203.0.113.40" {
+		t.Fatalf("expected selected domain to use proxy IPv4, got %q", got)
+	}
+	if got := policy.routeIP("example.com"); got != "" {
+		t.Fatalf("unselected domain must remain direct, got %q", got)
+	}
+}
+
 func TestPreferIPv6OnlyWhenItImprovesThePath(t *testing.T) {
 	service := servicePolicy{IPv6Candidate: true}
 	if !preferIPv6Result(service,
