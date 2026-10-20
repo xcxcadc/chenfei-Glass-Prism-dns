@@ -91,6 +91,12 @@ remove_unit_file() {
 
 remove_transport_units() {
   local path unit
+  if [[ -x /usr/local/bin/prism-media-check ]]; then
+    /usr/local/bin/prism-media-check --uninstall
+  fi
+  remove_unit_file prism-media-check.timer
+  remove_unit_file prism-media-check.service
+  rm -f /usr/local/bin/prism-media-check
   for path in /etc/systemd/system/prism-transport-ssh-*.service; do
     [[ -e "$path" ]] || continue
     unit=$(basename "$path")

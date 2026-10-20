@@ -6,25 +6,28 @@ const translations = {
     addNode: "新增节点", refresh: "刷新", logout: "退出", totalServices: "服务数量", configured: "已配置", proxyNodes: "解锁机",
     customServices: "自定义服务", notConfigured: "未配置", auto: "自动选择", manual: "手动", open: "配置", domains: "域名",
     serviceConfig: "配置服务", currentRoute: "当前路由", targetServer: "目标解锁机", assign: "保存并切换", reset: "恢复自动",
-    connectivity: "DNS 解锁检测", testing: "正在检测...", triggerUnlock: "运行目标机实测", customEdit: "编辑服务", customDelete: "删除服务", deleteService: "彻底删除服务",
+    connectivity: "媒体实测 / 查看任务", testing: "正在检测...", triggerUnlock: "解锁机自检 / 查看任务", customEdit: "编辑服务", customDelete: "删除服务", deleteService: "彻底删除服务",
     serviceName: "服务名称", category: "分类", domainList: "域名列表", domainKeywordList: "域名关键词", cidrList: "IP-CIDR 网段", ruleHint: "每行一条；域名支持泛域名，关键词和 CIDR 会按原规则类型下发。", viewDomains: "查看/编辑域名与规则", restoreDomains: "恢复默认规则", domainOverrideHint: "已保存自定义规则覆盖；恢复后使用域名库当前值。", save: "保存", cancel: "取消", deleteConfirm: "确认彻底删除这个服务？",
     nodeName: "节点名称", role: "节点类型", proxy: "解锁机", dns: "DNS 客户端", address: "连接 IP / DNS 地址", country: "地区",
     group: "分组", priority: "优先级", smartMode: "智能模式", standardMode: "标准模式", createNode: "创建节点", editNode: "编辑节点", deleteNode: "删除节点", installCommand: "Agent 安装命令", showInstallCommand: "安装命令",
     nextStep: "下一步", back: "上一步", copy: "复制命令", copied: "已复制", close: "关闭", nodeHint: "支持字母、数字和空格；点、短横线、下划线会自动转换为空格。", groupHint: "支持字母、数字、空格和逗号；其他分隔符会自动转换为空格。",
     nameRequired: "请输入节点名称", nameInvalid: "节点名称只能包含字母、数字和空格", nameTooLong: "节点名称不能超过 64 个字符", groupInvalid: "分组只能包含字母、数字、空格和逗号", groupTooLong: "分组不能超过 64 个字符", addressInvalid: "连接地址必须是有效的 IPv4 或 IPv6 地址", priorityInvalid: "优先级必须在 1 到 100 之间", deleteNodeConfirm: "确定删除这个节点吗？此操作不可撤销。",
     noDNS: "尚未创建 DNS 节点", noProxy: "尚未添加解锁机", noServices: "没有匹配的服务", sourceUpdated: "名单更新时间",
-    supported: "DNS 检测可用", unavailable: "DNS 检测不可用", unknown: "未检测", active: "正在使用", manualOffline: "手动目标离线", ruleCreated: "服务规则已创建",
+    supported: "媒体实测可用", unavailable: "媒体实测不可用", unknown: "未检测", active: "正在使用", manualOffline: "手动目标离线", ruleCreated: "服务规则已创建",
     saved: "保存成功", deleted: "删除成功", switched: "切换成功", resetDone: "已恢复自动选择", testDone: "测试完成", failed: "操作失败",
-    catalogRefresh: "同步域名名单", sourceList: "细化域名库", theme: "切换主题", language: "English", originalStatus: "DNS 解锁检测",
+    catalogRefresh: "同步域名名单", sourceList: "细化域名库", theme: "切换主题", language: "English", originalStatus: "媒体解锁实测",
     addIP: "添加 IP", editIP: "配置服务", targetIP: "目标 IP", note: "备注", defaultProxy: "默认解锁机", chooseServices: "选择服务", selectedServices: "已选服务", clientScript: "客户端脚本", runScriptHint: "在目标服务器以 root 身份执行，脚本会安装 DNS Agent、测试本机 DNS，并可接管或恢复系统 DNS。", noIPConfigs: "尚未添加 IP 配置", ipDeleteConfirm: "删除该 IP 配置及其 DNS 节点？", saveConfig: "保存配置", scriptCommand: "一键配置命令", importConfig: "导入配置", exportConfig: "导出配置", rotateToken: "轮换令牌", rotateTokenConfirm: "轮换后旧安装命令会立即失效，目标机需要重新执行新命令。继续吗？", tokenRotated: "令牌已轮换，请在目标机重新执行新命令", importConfigHint: "导入文件只包含 IP、备注、服务路由和节点标识，不包含令牌、密钥、流量或健康状态。",
     totalTraffic: "全体解锁流量", clientTraffic: "解锁链路流量", clearTraffic: "清零流量", clearAllTraffic: "全部清零", trafficHint: "按目标 IP 独立统计本机 Prism DNS 的 UDP/TCP 53，以及到已选解锁机 TCP 80/443 的 RX/TX；不统计整机网卡流量。", trafficUpdated: "流量更新时间",
-    clientState: "数据面状态", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "路由探针",
+    clientState: "数据面状态", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "心跳超时", healthRoutes: "路由探针",
     actualAudit: "目标机实测", auditPending: "待实测", targetAvailable: "目标机可用", targetUncertain: "探测待确认", targetProblem: "目标机异常", targetCompatibility: "目标机兼容性",
     actualAvailable: "实测可用", actualProblem: "异常或波动", referenceOnly: "仅节点自检", agentReference: "节点自检（仅参考）", noTargetAudit: "尚无目标机实测", auditNotCovered: "脚本未覆盖",
     accountSettings: "账户安全", accountHint: "验证旧账号后修改管理员用户名和密码。", oldUsername: "旧用户名", oldPassword: "旧密码", newUsername: "新用户名", newPassword: "新密码", confirmPassword: "确认新密码", updateAccount: "更新账户", credentialsInvalid: "旧用户名或旧密码不正确", passwordMismatch: "两次输入的新密码不一致", accountUpdated: "账户已更新，请使用新账号重新登录",
     siteSettings: "站点设置", siteSettingsHint: "自定义左上角产品名称、说明文字和浏览器标签标题。", siteName: "网页名称", browserTitle: "页面标签名称", siteTagline: "网页说明", saveBranding: "保存站点设置", brandingUpdated: "站点名称已更新", iconTitle: "站点图标", iconHint: "仅支持带透明背景的 PNG，最大 2 MB。上传后会立即替换浏览器图标和账户安全图标。", chooseIcon: "上传 PNG 图标", restoreIcon: "恢复默认图标", iconUpdated: "图标已更新", iconRestored: "已恢复默认图标", restoreIconConfirm: "恢复默认透明图标？", iconTypeError: "请选择 PNG 图标文件", iconSizeError: "图标不能超过 2 MB",
     manageCategories: "分类管理", categoryHint: "服务分类只影响整理和筛选，不会修改域名、路由或客户端配置。", newCategory: "新建分类", categoryName: "分类名称", categoryCreated: "分类已创建", categoryDeleted: "分类已删除", editCategory: "分类", serviceCategory: "调整服务分类", restoreCategory: "恢复原分类", originalCategory: "原始分类", useCategory: "使用", builtInCategory: "内置", customCategory: "自定义", categoryInUse: "该分类仍有服务，请先移动这些服务", categoryDeleteConfirm: "删除这个空分类？",
-    unlockResults: "解锁检测结果", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "节点页仅展示解锁机 Agent 参考状态；最终状态来自目标机的 check.unlock.media IPv4 实测和 DNS/TLS 路径校验。", checkAgain: "重新检测", waitingResults: "正在等待目标机返回 IPv4 实测结果...",
+    unlockResults: "完整媒体检测任务", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "官方 check.unlock.media 脚本 0（跨国平台）完整 IPv4 实测，每秒读取任务，输出返回即展示，直到任务结束，无固定时长截止。Global_UnlockTest 分两批输出，等待期间可能没有新增项目。原始 Yes / No / WAF 和地区原样展示；DNS/TLS 探针不作为媒体解锁结果。", checkAgain: "新建检测任务", waitingResults: "等待脚本下一批输出；完整检测仍在运行。",
+    mediaNodeSelfCheck: "媒体自检（解锁机本机）",
+    mediaMissingStatus: "任务记录丢失", mediaJobMissing: "服务端尚无此任务记录，已保留现有结果；正在查询最新任务，也可手动新建检测。",
+    mediaQueued: "排队中", mediaRunning: "检测中", mediaCompleted: "已完成", mediaFailed: "任务失败", mediaSubmitting: "正在创建任务", mediaDisconnected: "面板连接中断，正在重连", mediaOffline: "执行机当前离线，请检查 Agent；任务状态以服务端返回为准。", mediaSearch: "筛选平台或原始结果", mediaFullResults: "脚本 0 完整跨国平台结果", mediaCoverage: "服务覆盖对照", mediaCoverageHint: "仅对照本任务实际返回的脚本标签；完成后没有对应标签的服务显示未覆盖。", mediaNotCovered: "未覆盖（脚本 0 未返回此服务标签）", mediaAwaiting: "等待对应脚本标签", mediaIncomplete: "未返回（任务失败，结果不完整）", mediaReceived: "已返回项目", mediaOther: "其他原始结果", mediaEmpty: "尚未返回平台结果", mediaNoMatches: "没有匹配的结果", mediaResume: "立即重连", mediaNodeHint: "在解锁机本机运行自检；被解锁机的实际 DNS 链路请从 IP 配置或服务实测查看。", mediaConfigHint: "在被解锁机运行，使用已保存配置的实际 DNS 链路；表单内尚未保存的路由不参与本次检测。", mediaCloseHint: "关闭后任务继续，重新点击检测入口可查看同一任务。", mediaView: "实测 / 查看任务", mediaStatus: "任务状态", mediaPlatform: "平台 / 原始标签", mediaRaw: "原始结果（含地区）", mediaNoJob: "创建失败，尚无任务 ID", mediaConfirmed: "脚本返回 Yes", mediaIssue: "脚本返回 No / WAF", mediaReview: "查看原始结果", mediaLatest: "最后更新", mediaRequested: "请求时间", mediaStarted: "开始时间", mediaFinished: "结束时间",
   },
   en: {
     title: "Prism DNS Enhanced", online: "Controller connected", loginTitle: "Sign in to Prism Gateway", loginHint: "Use your Controller administrator account",
@@ -33,25 +36,28 @@ const translations = {
     addNode: "Add node", refresh: "Refresh", logout: "Sign out", totalServices: "Services", configured: "Configured", proxyNodes: "Proxy nodes",
     customServices: "Custom services", notConfigured: "Not configured", auto: "Automatic", manual: "Manual", open: "Configure", domains: "Domains",
     serviceConfig: "Configure service", currentRoute: "Current route", targetServer: "Target proxy", assign: "Save and switch", reset: "Reset to auto",
-    connectivity: "DNS unlock check", testing: "Testing...", triggerUnlock: "Run target audit", customEdit: "Edit service", customDelete: "Delete service", deleteService: "Permanently delete service",
+    connectivity: "Media test / view job", testing: "Testing...", triggerUnlock: "Proxy self-check / view job", customEdit: "Edit service", customDelete: "Delete service", deleteService: "Permanently delete service",
     serviceName: "Service name", category: "Category", domainList: "Domain list", domainKeywordList: "Domain keywords", cidrList: "IP-CIDR networks", ruleHint: "One rule per line. Domains support wildcards; keywords and CIDRs retain their rule types.", viewDomains: "View/edit domains and rules", restoreDomains: "Restore default rules", domainOverrideHint: "A custom rule override is active. Restore to use the current catalog values.", save: "Save", cancel: "Cancel", deleteConfirm: "Permanently delete this service?",
     nodeName: "Node name", role: "Node role", proxy: "Proxy agent", dns: "DNS client", address: "Connect IP / DNS address", country: "Region",
     group: "Group", priority: "Priority", smartMode: "Smart mode", standardMode: "Standard mode", createNode: "Create node", editNode: "Edit node", deleteNode: "Delete node", installCommand: "Agent install command", showInstallCommand: "Install command",
     nextStep: "Next step", back: "Back", copy: "Copy command", copied: "Copied", close: "Close", nodeHint: "Use letters, numbers, and spaces; dots, hyphens, and underscores become spaces.", groupHint: "Use letters, numbers, spaces, and commas; other separators become spaces.",
     nameRequired: "Node name is required", nameInvalid: "Node name may contain letters, numbers, and spaces only", nameTooLong: "Node name must be 64 characters or fewer", groupInvalid: "Group may contain letters, numbers, spaces, and commas only", groupTooLong: "Group must be 64 characters or fewer", addressInvalid: "Connect address must be a valid IPv4 or IPv6 address", priorityInvalid: "Priority must be between 1 and 100", deleteNodeConfirm: "Delete this node? This action cannot be undone.",
     noDNS: "No DNS client has been created", noProxy: "No proxy agent has been added", noServices: "No matching services", sourceUpdated: "Catalog updated",
-    supported: "DNS check passed", unavailable: "DNS check failed", unknown: "Not checked", active: "Active", manualOffline: "Manual target offline", ruleCreated: "Service rule created",
+    supported: "Media check passed", unavailable: "Media check failed", unknown: "Not checked", active: "Active", manualOffline: "Manual target offline", ruleCreated: "Service rule created",
     saved: "Saved", deleted: "Deleted", switched: "Switched", resetDone: "Automatic selection restored", testDone: "Test completed", failed: "Operation failed",
-    catalogRefresh: "Sync domain catalog", sourceList: "Detailed domain catalog", theme: "Toggle theme", language: "简体中文", originalStatus: "DNS unlock check",
+    catalogRefresh: "Sync domain catalog", sourceList: "Detailed domain catalog", theme: "Toggle theme", language: "简体中文", originalStatus: "Media unlock check",
     addIP: "Add IP", editIP: "Configure services", targetIP: "Target IP", note: "Note", defaultProxy: "Default proxy", chooseServices: "Choose services", selectedServices: "Selected services", clientScript: "Client script", runScriptHint: "Run as root on the target server. The script installs the DNS Agent, tests local DNS, and can take over or restore system DNS.", noIPConfigs: "No IP configuration yet", ipDeleteConfirm: "Delete this IP configuration and its DNS node?", saveConfig: "Save configuration", scriptCommand: "One-click command", importConfig: "Import config", exportConfig: "Export config", rotateToken: "Rotate token", rotateTokenConfirm: "The old install command will stop working immediately and the target must run the new command. Continue?", tokenRotated: "Token rotated. Re-run the new command on the target", importConfigHint: "The file contains only IPs, notes, service routes, and node identifiers. Tokens, secrets, traffic, and health state are excluded.",
     totalTraffic: "Total unlock traffic", clientTraffic: "Unlock link traffic", clearTraffic: "Clear traffic", clearAllTraffic: "Clear all", trafficHint: "Each target IP counts local Prism DNS UDP/TCP 53 plus TCP 80/443 to selected unlock proxies. Whole-interface traffic is excluded.", trafficUpdated: "Traffic updated",
-    clientState: "Data-plane status", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "STALE", healthRoutes: "Route probes",
+    clientState: "Data-plane status", ready: "READY", degraded: "ERROR", pending: "PENDING", stale: "Report overdue", healthRoutes: "Route probes",
     actualAudit: "Target audit", auditPending: "Not audited", targetAvailable: "Target passed", targetUncertain: "Probe inconclusive", targetProblem: "Target issue", targetCompatibility: "Target compatibility",
     actualAvailable: "Verified passed", actualProblem: "Failed or unstable", referenceOnly: "Agent only", agentReference: "Agent self-check (reference only)", noTargetAudit: "No target audit yet", auditNotCovered: "Not covered by script",
     accountSettings: "Account security", accountHint: "Verify the current credentials before changing the administrator username and password.", oldUsername: "Current username", oldPassword: "Current password", newUsername: "New username", newPassword: "New password", confirmPassword: "Confirm new password", updateAccount: "Update account", credentialsInvalid: "Current username or password is incorrect", passwordMismatch: "The new passwords do not match", accountUpdated: "Account updated. Sign in with the new credentials.",
     siteSettings: "Site settings", siteSettingsHint: "Customize the product name, supporting text, and browser tab title.", siteName: "Website name", browserTitle: "Browser tab title", siteTagline: "Website description", saveBranding: "Save site settings", brandingUpdated: "Site branding updated", iconTitle: "Site icon", iconHint: "PNG with transparency only, up to 2 MB. It replaces the browser and account-security icons immediately.", chooseIcon: "Upload PNG icon", restoreIcon: "Restore default icon", iconUpdated: "Icon updated", iconRestored: "Default icon restored", restoreIconConfirm: "Restore the default transparent icon?", iconTypeError: "Choose a PNG icon file", iconSizeError: "The icon must be 2 MB or smaller",
     manageCategories: "Manage categories", categoryHint: "Categories only organize and filter services. Domains, routes, and client configuration remain unchanged.", newCategory: "New category", categoryName: "Category name", categoryCreated: "Category created", categoryDeleted: "Category deleted", editCategory: "Category", serviceCategory: "Change service category", restoreCategory: "Restore original", originalCategory: "Original category", useCategory: "Use", builtInCategory: "Built-in", customCategory: "Custom", categoryInUse: "This category still contains services. Move them first.", categoryDeleteConfirm: "Delete this empty category?",
-    unlockResults: "Unlock check results", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "The node page is reference-only. Final status comes from the target's IPv4 check.unlock.media check and DNS/TLS path validation.", checkAgain: "Check again", waitingResults: "Waiting for the target's IPv4 audit...",
+    unlockResults: "Complete media check jobs", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "Full IPv4 results from official check.unlock.media script 0 (multinational platforms). Jobs are read every second; output appears as soon as it arrives, until the job ends, with no fixed duration limit. Global_UnlockTest outputs in two batches, so there may be no new items between batches. Original Yes / No / WAF values and regions are preserved. DNS/TLS probes are not media unlock results.", checkAgain: "Start new check", waitingResults: "Waiting for the next script output batch; the full check is still running.",
+    mediaNodeSelfCheck: "Media self-check (on proxy)",
+    mediaMissingStatus: "Job record missing", mediaJobMissing: "No job record is currently available on the server. Existing results are preserved while checking for the latest job. You can also start a new check manually.",
+    mediaQueued: "Queued", mediaRunning: "Running", mediaCompleted: "Completed", mediaFailed: "Job failed", mediaSubmitting: "Creating job", mediaDisconnected: "Panel disconnected; reconnecting", mediaOffline: "The execution host is currently offline. Check its Agent; the server determines the job status.", mediaSearch: "Filter platforms or raw results", mediaFullResults: "Script 0: all multinational platform results", mediaCoverage: "Service coverage", mediaCoverageHint: "Matches only labels actually returned by this job. Services without a matching label after completion are not covered.", mediaNotCovered: "Not covered (no script 0 label returned)", mediaAwaiting: "Waiting for the matching script label", mediaIncomplete: "No result (failed job; incomplete output)", mediaReceived: "Results received", mediaOther: "Other raw results", mediaEmpty: "No platform results yet", mediaNoMatches: "No matching results", mediaResume: "Reconnect now", mediaNodeHint: "Self-check runs on the proxy itself. Use IP configuration or a service test to check the target's actual DNS path.", mediaConfigHint: "Runs on the target through the saved configuration's actual DNS path. Unsaved form routes are not used.", mediaCloseHint: "Closing keeps the job running. Open the same test entry to view it again.", mediaView: "Test / view job", mediaStatus: "Job status", mediaPlatform: "Platform / original label", mediaRaw: "Raw result (including region)", mediaNoJob: "Creation failed; no job ID", mediaConfirmed: "Script returned Yes", mediaIssue: "Script returned No / WAF", mediaReview: "Inspect raw result", mediaLatest: "Last update", mediaRequested: "Requested", mediaStarted: "Started", mediaFinished: "Finished",
   }
 };
 
@@ -75,7 +81,8 @@ const state = {
   theme: localStorage.getItem("prism_theme_v2") || "light",
   tab: localStorage.getItem("enhancer_tab") || "services", nodes: [], rules: [], catalog: [], categories: [], customCategories: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
   overrides: {}, activeSelections: {}, search: "", category: "", statusFilter: "", nodeFilter: "", page: 1, pageSize: 20, selectedServiceIds: new Set(),
-  loading: false, modal: null, testResults: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "",
+  loading: false, modal: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "",
+  mediaChecks: new Map(), mediaCheckView: null, mediaCheckPositions: new Map(),
   branding: {site_name:"", browser_title:"", site_tagline:""}
 };
 
@@ -174,15 +181,6 @@ function nodeID(value) { return value == null ? "" : String(value); }
 function selectedDNS() { return state.nodes.find(node => nodeID(node.id) === nodeID(state.dnsNodeId)); }
 function proxyNodes() { return state.nodes.filter(node => node.role === "proxy"); }
 function dnsNodes() { return state.nodes.filter(node => node.role === "dns"); }
-function parseUnlock(node) {
-  if (!node) return {};
-  if (node.unlock_data && typeof node.unlock_data === "object") return node.unlock_data;
-  try { return JSON.parse(node.unlock_json || "{}"); } catch { return {}; }
-}
-function unlockEntries(node) {
-  return Object.entries(parseUnlock(node)).filter(([, value]) => String(value || "").trim()).sort(([left], [right]) => left.localeCompare(right));
-}
-function unlockPassed(value) { return /^YES\b/i.test(String(value || "").trim()); }
 function serviceDetectorKey(service) {
   const value = `${service.name} ${(service.domains || []).join(" ")} ${(service.domain_keywords || []).join(" ")} ${(service.cidrs || []).join(" ")}`.toLowerCase();
   const tests = [
@@ -313,14 +311,13 @@ function routedNodeForService(service) {
 }
 function serviceStatus(service, node) {
   const targetConfig = configForNode(selectedDNS());
+  const mediaAudit = mediaServiceState(state.mediaChecks.get(`config:${nodeID(targetConfig?.id)}`), service);
+  if (mediaAudit && nodeID(serviceRouteEntry(targetConfig, service)?.value) === nodeID(node?.id)) return mediaAudit;
   const targetResult = serviceResult(targetConfig, service);
   if (targetResult && nodeID(serviceRouteEntry(targetConfig, service)?.value) === nodeID(node?.id)) {
     const audit = auditResultState(targetResult);
-    return {kind:audit.kind, label:audit.kind === "good" ? t("targetAvailable") : audit.kind === "warn" ? t("targetUncertain") : t("targetProblem"), raw:targetResult};
+    return {kind:audit.kind, label:audit.label, raw:targetResult};
   }
-  const key = serviceDetectorKey(service);
-  const value = key ? parseUnlock(node)[key] || "" : "";
-  if (value) return {kind:"warn", label:t("referenceOnly"), raw:value};
   return {kind:"", label:t("unknown"), raw:""};
 }
 const serviceIconDomains = {
@@ -494,8 +491,7 @@ function clientState(config, node) {
 function viewFingerprint() {
   const nodes = state.nodes.map(node => ({
     id:nodeID(node.id), role:node.role, name:node.name, address:node.address, public_ip:node.public_ip,
-    country:node.country, group:node.group, priority:node.priority, online:isOnline(node),
-    unlock:state.tab === "nodes" || state.tab === "audit" || state.tab === "alerts" ? parseUnlock(node) : undefined
+    country:node.country, group:node.group, priority:node.priority, online:isOnline(node)
   }));
   const configs = state.ipConfigs.map(config => ({
     id:config.id, ip:config.ip, note:config.note, dns_node_id:nodeID(config.dns_node_id), routes:config.routes,
@@ -540,34 +536,10 @@ function auditResultState(result) {
   if (/^NOT COVERED\b/i.test(value)) {
     return {kind:"warn", label:t("auditNotCovered"), detail:value};
   }
-  if (/^PASS\b/i.test(value) && /diagnostics:/i.test(value) && /(DNS [^;]*\b0\/|DNS route mismatch|TLS\/SNI [^;]*\b0\/|required TLS\/SNI probe mismatch|HTTP response 0\/|representative endpoint did not return|no DNS route domains|no TLS\/SNI probe domains)/i.test(value)) {
-    return {kind:"bad", label:state.lang === "zh" ? "不可用（实际链路检测失败）" : "Unavailable (path check failed)", detail:value};
+  if (/^PASS\b|\bdiagnostics:/i.test(value)) {
+    return {kind:"warn", label:state.lang === "zh" ? "历史链路探针，待媒体实测" : "Legacy path probe; media check needed", detail:value};
   }
-  if (/^YES\b|^PASS\b/i.test(value)) {
-    return {kind:"good", label:state.lang === "zh" ? "完整应用链实测通过" : "Full application path verified", detail:value};
-  }
-  const ratio = value.match(/(\d+)\s*\/\s*(\d+)(?:\s*YES)?/i);
-  if (/INCONCLUSIVE|DEGRADED|UNSTABLE|Banned|WAF/i.test(value) && ratio) {
-    const passed = Number(ratio[1]); const total = Number(ratio[2]);
-    const wafCount = /WAF|Banned/i.test(value) ? Math.max(1, total - passed) : 0;
-    const suffix = wafCount
-      ? (state.lang === "zh" ? `，${wafCount} 次被 WAF 拒绝` : `, ${wafCount} WAF rejection${wafCount > 1 ? "s" : ""}`)
-      : "";
-    return {
-      kind:"bad",
-      label:state.lang === "zh"
-        ? `不可用（${total} 次仅 ${passed} 次成功${suffix}）`
-        : `Unavailable (${passed} of ${total} passed${suffix})`,
-      detail:value
-    };
-  }
-  if (/INCONCLUSIVE|DEGRADED|UNSTABLE|Banned|WAF/i.test(value)) {
-    return {kind:"bad", label:state.lang === "zh" ? "不可用（真实检测未通过）" : "Unavailable (real check failed)", detail:value};
-  }
-  if (/Restricted|Partial|Error|Failed|FAIL|N\/A|Unavailable|No result|^NO\b/i.test(value)) {
-    return {kind:"bad", label:state.lang === "zh" ? "不可用" : "Unavailable", detail:value};
-  }
-  return {kind:"bad", label:state.lang === "zh" ? "不可用" : "Unavailable", detail:value};
+  return {...mediaRawState(value), detail:value};
 }
 
 function targetAuditObservations(proxyId, service) {
@@ -693,6 +665,12 @@ function logout(callAPI = true) {
   if (callAPI && state.token) fetch("/api/logout", {method:"POST", headers:{Authorization:`Bearer ${state.token}`}}).catch(() => {});
   if (eventSource) { eventSource.close(); eventSource = null; }
   clearTimeout(reloadTimer);
+  closeMediaCheck();
+  state.mediaChecks.forEach(record => clearTimeout(record.timer));
+  state.mediaChecks.clear();
+  state.mediaCheckPositions.clear();
+  state.modal = null;
+  renderModal();
   state.token = ""; state.user = {}; state.nodes = []; state.rules = []; state.ipConfigs = [];
   localStorage.removeItem("prism_token"); localStorage.removeItem("prism_user");
   render();
@@ -719,12 +697,13 @@ async function loadAll(silent = false) {
   } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
   finally {
     state.loading = false;
-    const preserveDraft = silent && ["service-form", "service-category", "category-manager", "node-form", "ip-form"].includes(state.modal?.type);
+    const preserveDraft = silent && (state.modal || state.mediaCheckView || document.activeElement?.matches?.("input, textarea, select, [contenteditable=true]"));
     const changed = previousFingerprint !== viewFingerprint();
     state.lastBackgroundSync = new Date().toISOString();
     state.backgroundPending = preserveDraft && changed;
     if (!preserveDraft && (!silent || changed)) render();
     else updateBackgroundIndicator();
+    if (state.tab === "nodes") proxyNodes().forEach(node => syncMediaCheck(mediaCheckRecord({node_id:nodeID(node.id)}), "read"));
   }
 }
 
@@ -748,7 +727,7 @@ function scheduleLiveReload() {
   reloadTimer = setTimeout(() => {
     reloadTimer = null;
     const active = document.activeElement;
-    if (state.modal || active?.matches?.("input, textarea, select, [contenteditable=true]")) {
+    if (state.modal || state.mediaCheckView || active?.matches?.("input, textarea, select, [contenteditable=true]")) {
       state.backgroundPending = true;
       updateBackgroundIndicator();
       scheduleLiveReload();
@@ -937,7 +916,8 @@ function serviceTableRowHTML(service) {
   const checked = state.selectedServiceIds.has(service.id);
   const statusClass = !configured ? "neutral" : status.kind === "warn" ? "warn" : status.kind === "bad" ? "bad" : "";
   const statusLabel = configured ? (status.kind === "bad" ? (state.lang === "zh" ? "异常" : "Issue") : (state.lang === "zh" ? "已配置" : "Configured")) : t("notConfigured");
-  const auditLabel = status.kind === "good" ? (state.lang === "zh" ? "成功" : "Passed") : status.kind === "warn" ? (state.lang === "zh" ? "待确认" : "Review") : status.kind === "bad" ? (state.lang === "zh" ? "失败" : "Failed") : t("auditPending");
+  const uncovered = /^NOT COVERED\b/i.test(result) || [t("auditNotCovered"), t("mediaNotCovered")].includes(status.label);
+  const auditLabel = uncovered ? t("auditNotCovered") : status.kind === "good" ? (state.lang === "zh" ? "成功" : "Passed") : status.kind === "warn" ? (state.lang === "zh" ? "待确认" : "Review") : status.kind === "bad" ? (state.lang === "zh" ? "失败" : "Failed") : t("auditPending");
   const customActions = service.custom ? `<button class="btn small icon service-custom-edit" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("customEdit"))}"><i class="bi bi-pencil"></i></button>` : "";
   const domainAction = `<button class="btn small icon service-domains-open" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("viewDomains"))}"><i class="bi bi-pencil-square"></i></button>`;
   const deleteAction = `<button class="btn small icon danger service-delete${service.custom ? " service-custom-delete" : ""}" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("deleteService"))}"><i class="bi bi-trash3"></i></button>`;
@@ -970,7 +950,7 @@ function auditRows() {
 
 function auditHTML() {
   const rows = auditRows();
-  return `${contentHeaderHTML(state.lang === "zh" ? "日志与审计" : "Logs & Audits", state.lang === "zh" ? "这里仅展示目标机经过真实 DNS、HTTPS 与服务依赖路径后的结果；节点自检不等同于可用。" : "Only target-machine DNS, HTTPS, and dependency-path results are shown here. Node self-checks are not treated as proof.", `<button class="btn" id="refresh-audits"><i class="bi bi-arrow-clockwise"></i>${t("refresh")}</button>`)}
+  return `${contentHeaderHTML(state.lang === "zh" ? "日志与审计" : "Logs & Audits", state.lang === "zh" ? "被解锁机实际 DNS 链路的媒体原始结果；NOT COVERED 表示脚本未覆盖。完整跨国平台输出及任务进度请打开媒体实测；解锁机自检不能替代被解锁机实测。" : "Raw media results through the target's actual DNS path. NOT COVERED means the script does not cover that service. Open media tests for full multinational output and progress. Proxy self-checks do not replace target tests.", `<button class="btn" id="refresh-audits"><i class="bi bi-arrow-clockwise"></i>${t("refresh")}</button>`)}
     <section class="panel audit-table"><div class="audit-table-head"><span>${state.lang === "zh" ? "目标 / 服务" : "Target / service"}</span><span>${state.lang === "zh" ? "路由节点" : "Route node"}</span><span>${state.lang === "zh" ? "真实结果" : "Real result"}</span><span>${state.lang === "zh" ? "检测时间" : "Checked"}</span></div>${rows.length ? rows.map(item => `<article class="audit-row"><div>${item.service ? serviceIconHTML(item.service) : ""}<span><strong>${escapeHTML(item.service ? displayServiceName(item.service) : item.serviceID)}</strong><small>${escapeHTML(item.config.ip)}</small></span></div><div><strong>${escapeHTML(item.proxy?.name || "-")}</strong><small>${escapeHTML(item.proxy?.country || "")}</small></div><div><span class="result-badge ${item.audit.kind}">${escapeHTML(item.audit.label)}</span><small title="${escapeHTML(item.raw)}">${escapeHTML(item.raw)}</small></div><div><strong>${escapeHTML(formatRelativeDate(item.config.service_audited_at))}</strong><small>${escapeHTML(formatDate(item.config.service_audited_at))}</small></div></article>`).join("") : `<div class="empty"><strong>${t("noTargetAudit")}</strong></div>`}</section>`;
 }
 
@@ -1035,31 +1015,22 @@ function nodesHTML() {
   const header = contentHeaderHTML(state.lang === "zh" ? "节点管理" : "Nodes", state.lang === "zh" ? "统一管理解锁机和被解锁机；节点状态变化不会自动改写服务路由。" : "Manage proxy and target nodes. Status changes never rewrite service routes automatically.", `<button class="btn primary" id="add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button>`);
   if (!state.nodes.length) return `${header}<div class="panel empty"><strong>${state.lang === "zh" ? "还没有节点" : "No nodes"}</strong><button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button></div>`;
   return `${header}<section class="node-grid">${state.nodes.map(node => {
-    const online = isOnline(node); const compatibility = proxyCompatibilitySummary(node.id);
-    const proxyDetail = compatibility.total ? `${compatibility.passed}/${compatibility.total}` : t("noTargetAudit");
-    const managedTarget = node.role === "proxy" && targetAuditConfigs(node.id).length > 0;
+    const online = isOnline(node);
+    const proxyDetail = nodeMediaSummary(node);
     const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail};
     return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${status.kind}" title="${escapeHTML(status.detail)}">${escapeHTML(status.label)}</span></div>
-      <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("targetCompatibility")}</span><strong title="${escapeHTML(status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
-       <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${nodeID(node.id)}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}<button class="btn small node-test" data-node-id="${nodeID(node.id)}" ${node.role !== "proxy" || !managedTarget ? "disabled" : ""} title="${managedTarget ? "" : (state.lang === "zh" ? "请先在 IP 配置中绑定目标机" : "Bind a managed target IP first")}">${t("triggerUnlock")}</button><button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
+      <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("mediaNodeSelfCheck")}</span><strong ${node.role === "proxy" ? `data-media-node-id="${escapeHTML(nodeID(node.id))}"` : ""} title="${escapeHTML(status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
+       <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${nodeID(node.id)}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}${node.role === "proxy" ? `<button class="btn small node-test" data-node-id="${nodeID(node.id)}" title="${t("mediaNodeHint")}">${t("triggerUnlock")}</button>` : ""}<button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
 
 function nodeCheckHTML() {
-  const node = state.nodes.find(item => nodeID(item.id) === nodeID(state.modal.nodeId));
-  const rowsData = state.catalog.filter(service => targetAuditObservations(node?.id, service).length).map(service => ({service, compatibility:targetCompatibility(node?.id, service)}));
-  const actual = rowsData.filter(item => item.compatibility.observations.length);
-  const available = actual.filter(item => item.compatibility.kind === "good");
-  const problems = actual.filter(item => item.compatibility.kind !== "good");
-  const pending = rowsData.filter(item => !item.compatibility.measured.length);
-  const rows = rowsData.map(({service, compatibility}) => {
-    const targetLines = compatibility.observations.map(item => {
-      const audit = auditResultState(item.result);
-      return `<span title="${escapeHTML(audit.detail)}">${escapeHTML(item.ip)} · ${escapeHTML(audit.label)}</span>`;
-    }).join("");
-    return `<div class="unlock-result-row"><div>${serviceIconHTML(service)}<strong>${escapeHTML(displayServiceName(service))}</strong>${targetLines}</div><span class="badge ${compatibility.kind}">${escapeHTML(compatibility.label)}</span></div>`;
-  }).join("");
-  return `<div class="modal-backdrop"><section class="modal panel"><header class="modal-head"><div><h2>${t("unlockResults")} · ${escapeHTML(node?.name || "-")}</h2><p>${t("unlockSourceHint")}</p></div><button class="btn icon modal-close">×</button></header><div class="modal-body"><div class="unlock-summary"><div><span>${t("actualAvailable")}</span><strong>${available.length}</strong></div><div><span>${t("actualProblem")}</span><strong>${problems.length}</strong></div><div><span>${t("auditPending")}</span><strong>${pending.length}</strong></div></div>${state.modal.running ? `<div class="unlock-wait"><div class="spinner"></div><span>${t("waitingResults")}</span></div>` : ""}<div class="unlock-results">${rows || `<div class="empty"><strong>${targetAuditConfigs(node?.id).length ? t("auditPending") : t("noTargetAudit")}</strong></div>`}</div>${state.modal.error ? `<div class="form-error">${escapeHTML(state.modal.error)}</div>` : ""}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close">${t("close")}</button><button class="btn primary" id="node-check-retry" ${state.modal.running ? "disabled" : ""}>${t("checkAgain")}</button></div></footer></section></div>`;
+  const view = state.mediaCheckView;
+  const onProxy = !!view.records[0]?.payload.node_id;
+  const context = onProxy
+    ? (state.lang === "zh" ? "执行位置：解锁机本机" : "Runs on the proxy")
+    : (state.lang === "zh" ? "执行位置：被解锁机 · 使用已保存配置，不含未保存更改" : "Runs on the target · Saved configuration only; unsaved changes excluded");
+  return `<div class="modal-backdrop media-check-backdrop"><section class="modal panel media-check-modal" role="dialog" aria-modal="true" aria-labelledby="media-check-title"><header class="modal-head"><div><h2 id="media-check-title">${t("unlockResults")}${view.service ? ` · ${escapeHTML(displayServiceName(view.service))}` : ""}</h2><p title="${escapeHTML(t("unlockSourceHint"))}">check.unlock.media · IPv4 · ${state.lang === "zh" ? "菜单" : "Menu"} 0</p></div><button class="btn icon media-check-close" type="button" aria-label="${t("close")}">×</button></header><div class="modal-body"><p class="hint media-context" title="${escapeHTML(t(onProxy ? "mediaNodeHint" : "mediaConfigHint"))}">${context}</p><div class="field media-filter"><label for="media-check-search">${t("mediaSearch")}</label><input class="input" id="media-check-search" type="search" autocomplete="off" value="${escapeHTML(view.position.search)}"></div><div id="media-check-jobs"></div></div><footer class="modal-foot"><span class="hint">${t("mediaCloseHint")}</span><div class="modal-foot-right"><button class="btn media-check-close" type="button">${t("close")}</button></div></footer></section></div>`;
 }
 
 function ipConfigNode(config) { return config ? state.nodes.find(node => nodeID(node.id) === nodeID(config.dns_node_id)) : null; }
@@ -1081,7 +1052,7 @@ function bindShell() {
   if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
   if (!statusPollTimer) statusPollTimer = setInterval(() => {
     const active = document.activeElement;
-    if (state.token && ["nodes", "ips", "alerts"].includes(state.tab) && !state.modal &&
+    if (state.token && ["nodes", "ips", "alerts"].includes(state.tab) && !state.modal && !state.mediaCheckView &&
       !active?.matches?.("input, textarea, select, [contenteditable=true]")) loadAll(true);
   }, 60000);
   document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
@@ -1223,8 +1194,9 @@ function openService(id) {
   const current = routedNodeForService(service);
   const fallback = proxyNodes().find(isOnline) || proxyNodes()[0];
   state.modal = {type:"service", service, proxyId:nodeID(current?.id || fallback?.id)};
-  state.testResults = null;
   renderModal();
+  const config = configForNode(selectedDNS());
+  if (config?.id) syncMediaCheck(mediaCheckRecord({config_id:nodeID(config.id)}), "read");
 }
 function openServiceDomains(id) {
   const service = state.catalog.find(item => item.id === id);
@@ -1313,6 +1285,7 @@ function openIPForm(config = null, step = config ? 2 : 1, existingNode = null) {
   const defaultProxy = Object.values(routes)[0] || nodeID(proxyNodes()[0]?.id);
   state.modal = {type:"ip-form", config, existingNode, step, draft:{ip:config?.ip || serverHost(existingNode || {}) || "", note:config?.note || existingNode?.name || "", smart:config?.smart !== false}, routes, defaultProxy, serviceSearch:"", error:""};
   renderModal();
+  if (config?.id) syncMediaCheck(mediaCheckRecord({config_id:nodeID(config.id)}), "read");
 }
 function ipScriptCommand(config) {
   return `wget -qO- ${prismRawURL("prismdns.sh")} | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click --non-interactive`;
@@ -1371,7 +1344,7 @@ async function rotateIPToken(id) {
     toast(t("tokenRotated"), "good");
   } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
-function closeModal() { state.modal = null; state.testResults = null; renderModal(); }
+function closeModal() { state.modal = null; renderModal(); }
 
 function renderModal() {
   const root = document.getElementById("modal-root");
@@ -1384,7 +1357,6 @@ function renderModal() {
   if (state.modal.type === "node-form") root.innerHTML = nodeFormHTML();
   if (state.modal.type === "install-command") root.innerHTML = installCommandHTML();
   if (state.modal.type === "node-delete") root.innerHTML = nodeDeleteHTML();
-  if (state.modal.type === "node-check") root.innerHTML = nodeCheckHTML();
   if (state.modal.type === "ip-form") root.innerHTML = ipFormHTML();
   if (state.modal.type === "ip-script") root.innerHTML = ipScriptHTML();
   if (state.modal.type === "ip-delete") root.innerHTML = ipDeleteHTML();
@@ -1415,22 +1387,12 @@ function serviceModalHTML(service) {
      }).join("") : `<div class="empty"><strong>${t("noProxy")}</strong></div>`}</div></div>
      <div class="service-domain-box"><div class="service-domain-head"><div><strong>${t("domainList")}</strong><span>${service.domain_override ? t("domainOverrideHint") : `${service.domains.length} ${t("domains")}`}</span></div><button class="btn small" id="edit-service-domains" type="button">${t("viewDomains")}</button></div><div class="domain-chip-list">${visibleDomains.map(domain => `<code>${escapeHTML(domain)}</code>`).join("")}${hiddenDomainCount ? `<span class="domain-chip-more">+${hiddenDomainCount}</span>` : ""}</div>${service.domain_override ? `<button class="btn small" id="restore-service-domains" type="button">${t("restoreDomains")}</button>` : ""}</div>
      <div class="inline" style="margin-top:15px"><span class="badge ${manual ? "warn" : ""}">${manual ? t("manual") : t("auto")}</span><span class="hint">${t("currentRoute")}: ${escapeHTML(current?.name || "-")}</span></div>
-     ${state.testResults ? testResultsHTML(state.testResults) : ""}</div>
+     <p class="hint media-context">${t("mediaConfigHint")} ${t("unlockSourceHint")}</p></div>
       <footer class="modal-foot"><div class="inline"><button class="btn small" id="edit-service-category" type="button">${t("serviceCategory")}</button>${service.custom ? `<button class="btn small" id="edit-custom" type="button">${t("customEdit")}</button>` : ""}<button class="btn small danger" id="delete-service" type="button">${t("deleteService")}</button></div><div class="modal-foot-right"><button class="btn" id="test-service" type="button" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" type="button" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" type="button" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
 }
 
 function serviceDomainFormHTML(service) {
   return `<div class="modal-backdrop"><form class="modal medium panel" id="service-domains-form"><header class="modal-head"><div><h2>${t("viewDomains")}</h2><p>${escapeHTML(displayServiceName(service))}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body form-stack"><div class="field"><label>${t("domainList")}</label><textarea class="textarea" name="domains" spellcheck="false">${escapeHTML((service.domains || []).join("\n"))}</textarea><span class="hint">${state.lang === "zh" ? "每行一个域名；泛域名请使用 *.example.com，也支持逗号和分号分隔。" : "One domain per line. Use *.example.com for wildcards; commas and semicolons are accepted."}</span></div><div class="field"><label>${t("domainKeywordList")}</label><textarea class="textarea" name="domain_keywords" spellcheck="false">${escapeHTML((service.domain_keywords || []).join("\n"))}</textarea><span class="hint">${t("ruleHint")}</span></div><div class="field"><label>${t("cidrList")}</label><textarea class="textarea" name="cidrs" spellcheck="false" placeholder="192.0.2.0/24\n2001:db8::/32">${escapeHTML((service.cidrs || []).join("\n"))}</textarea><span class="hint">${t("ruleHint")}</span></div><div class="form-error">${escapeHTML(state.modal.error || "")}</div></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" type="submit" ${state.modal.busy ? "disabled" : ""}>${t("save")}</button></div></footer></form></div>`;
-}
-
-function testResultsHTML(results) {
-  return `<div class="test-results">${results.map(result => {
-    const detail = result.detail || result.error || (result.addresses || []).join(", ");
-    const audit = result.detail ? auditResultState(result.detail) : null;
-    const label = audit ? (audit.kind === "good" ? t("supported") : audit.kind === "warn" ? (state.lang === "zh" ? "检测未完成" : "Not tested") : t("unavailable")) : (result.success ? `TLS ${result.tls_ms}ms` : "FAIL");
-    const color = audit?.kind === "good" || (!audit && result.success) ? "var(--good)" : audit?.kind === "warn" ? "var(--warn)" : "var(--bad)";
-    return `<div class="test-row"><span title="${escapeHTML(detail)}">${escapeHTML(result.domain)} · ${escapeHTML(detail)}</span><strong style="color:${color}">${label}</strong></div>`;
-  }).join("")}</div>`;
 }
 
 function serviceFormHTML(service) {
@@ -1497,7 +1459,7 @@ function ipFormHTML() {
   const services = state.catalog;
   const selectedCount = Object.keys(modal.routes).length;
   return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
-     const selectedProxy = serviceRouteEntry({routes:modal.routes}, service)?.value || ""; const checked = !!selectedProxy; const audit = auditResultState(serviceResult(modal.config, service));
+     const selectedProxy = serviceRouteEntry({routes:modal.routes}, service)?.value || ""; const checked = !!selectedProxy; const audit = mediaServiceState(state.mediaChecks.get(`config:${nodeID(modal.config?.id)}`), service) || auditResultState(serviceResult(modal.config, service));
     const canAudit = checked && !!modal.config?.id;
     return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "立即实测" : "Test now"}</button></div></div></article>`;
   }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 自动同步配置；实测只更新结果，不会改动您选择的节点" : "The Agent syncs configuration; audits update reports without changing your selected node"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
@@ -1548,7 +1510,6 @@ function bindModal() {
   document.getElementById("node-form")?.addEventListener("submit", submitNodeForm);
   document.getElementById("copy-install-command")?.addEventListener("click", copyInstallCommand);
   document.getElementById("confirm-delete-node")?.addEventListener("click", deleteNode);
-  document.getElementById("node-check-retry")?.addEventListener("click", () => triggerNodeCheck(state.modal.nodeId));
   document.getElementById("ip-form")?.addEventListener("submit", submitIPForm);
   document.getElementById("ip-back")?.addEventListener("click", () => { state.modal.step = 1; state.modal.error = ""; renderModal(); });
   document.getElementById("ip-service-search")?.addEventListener("input", event => { state.modal.serviceSearch = event.target.value; filterIPServiceOptions(); });
@@ -1859,53 +1820,12 @@ function serverHost(node) {
 async function testService() {
   const service = state.modal.service;
   const proxyID = nodeID(state.modal.proxyId);
-  const node = state.nodes.find(item => nodeID(item.id) === proxyID);
-  if (!node) return;
-  const button = document.getElementById("test-service");
-  button.disabled = true;
-  button.textContent = t("testing");
-  try {
-    const configs = targetAuditConfigs(proxyID).filter(config => {
-      const route = serviceRouteEntry(config, service);
-      return route && nodeID(route.value) === proxyID;
-    });
-    if (!configs.length) {
-      throw new Error(state.lang === "zh" ? "请先在 IP 配置中把此服务绑定到当前解锁机，并安装目标机 Agent" : "Bind this service to the selected proxy in IP configuration and install the target Agent first");
-    }
-    const requestedAt = new Map();
-    await Promise.all(configs.map(async config => {
-      const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(config.id)}/audit`, {method:"POST"});
-      requestedAt.set(config.id, new Date(requested.service_audit_requested_at || Date.now()).getTime());
-    }));
-    const pending = new Set(configs.map(config => config.id));
-    const started = Date.now();
-    while (pending.size && Date.now() - started < 330000) {
-      await delay(2500);
-      const latestConfigs = await api("/enhancer/api/ip-configs");
-      state.ipConfigs = Array.isArray(latestConfigs) ? latestConfigs : state.ipConfigs;
-      for (const config of configs) {
-        if (!pending.has(config.id)) continue;
-        const latest = state.ipConfigs.find(item => item.id === config.id);
-        const auditedAt = new Date(latest?.service_audited_at || 0).getTime();
-        if (latest && auditedAt >= requestedAt.get(config.id) && serviceResult(latest, service)) pending.delete(config.id);
-      }
-    }
-    const results = configs.map(config => {
-      const latest = state.ipConfigs.find(item => item.id === config.id);
-      const detail = latest && !pending.has(config.id)
-        ? serviceResult(latest, service)
-        : "NOT TESTED (target audit did not finish within 5 minutes)";
-      return {domain:`${config.ip} · ${t("actualAudit")} · check.unlock.media`, detail, success:auditResultState(detail).kind === "good"};
-    });
-    state.testResults = results;
-    if (pending.size) toast(state.lang === "zh" ? `检测超时，${pending.size} 个目标未完成` : `${pending.size} target audits timed out`, "error");
-    else toast(t("testDone"), "good");
-    renderModal();
-  } catch (error) {
-    toast(cleanErrorMessage(error.message), "error");
-    button.disabled = false;
-    button.textContent = t("connectivity");
+  const configs = targetAuditConfigs(proxyID).filter(config => nodeID(serviceRouteEntry(config, service)?.value) === proxyID);
+  if (!configs.length) {
+    toast(state.lang === "zh" ? "请先在 IP 配置中把此服务绑定到当前解锁机，并安装被解锁机 Agent" : "Bind this service to the selected proxy in IP configuration and install the target Agent first", "warn");
+    return;
   }
+  openMediaChecks(configs.map(config => ({config_id:nodeID(config.id)})), service);
 }
 
 async function saveCustomService(event) {
@@ -1994,15 +1914,16 @@ async function saveIPConfig() {
 }
 
 function updateIPServiceAuditUI(config) {
+  if (state.modal?.type !== "ip-form" || nodeID(state.modal.config?.id) !== nodeID(config?.id)) return;
   document.querySelectorAll(".ip-service-option").forEach(option => {
     const serviceId = option.dataset.serviceId;
     const service = state.catalog.find(item => item.id === serviceId);
     const badge = option.querySelector(".service-audit .badge");
     if (!badge) return;
-    const audit = auditResultState(serviceResult(config, service));
+    const audit = mediaServiceState(state.mediaChecks.get(`config:${nodeID(config.id)}`), service) || auditResultState(serviceResult(config, service));
     badge.className = `badge ${audit.kind}`;
     badge.textContent = audit.label;
-    badge.title = audit.detail;
+    badge.title = audit.raw || audit.detail || audit.label;
   });
 }
 
@@ -2010,50 +1931,8 @@ async function triggerIPServiceAudit(serviceId) {
   const modal = state.modal;
   const configID = modal?.config?.id;
   if (!configID) return;
-  const buttons = [...document.querySelectorAll(".ip-service-audit")];
-  buttons.forEach(button => {
-    button.disabled = true;
-    if (button.dataset.serviceId === serviceId) button.textContent = state.lang === "zh" ? "实测中..." : "Testing...";
-  });
-  try {
-    const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(configID)}/audit`, {method:"POST"});
-    const requestedAt = new Date(requested.service_audit_requested_at || Date.now()).getTime();
-    const latest = await waitForTargetServiceAudit(configID, serviceId, requestedAt, config => {
-      const activeModal = state.modal;
-      if (activeModal?.type !== "ip-form" || activeModal.config?.id !== configID) return false;
-      activeModal.config = config;
-      activeModal.routes = {...(config.routes || activeModal.routes)};
-      updateIPServiceAuditUI(config);
-      return true;
-    });
-    const service = state.catalog.find(item => item.id === serviceId);
-    const audit = auditResultState(serviceResult(latest, service));
-    toast(audit.label || t("testDone"), audit.kind === "bad" ? "error" : audit.kind || "good");
-  } catch (error) {
-    toast(cleanErrorMessage(error.message), "error");
-  } finally {
-    document.querySelectorAll(".ip-service-audit").forEach(button => {
-      button.disabled = false;
-      button.textContent = state.lang === "zh" ? "立即实测" : "Test now";
-    });
-  }
-}
-
-async function waitForTargetServiceAudit(configID, serviceID, requestedAt, onUpdate) {
-  const started = Date.now();
-  let latest = state.ipConfigs.find(config => config.id === configID) || null;
-  while (Date.now() - started < 330000) {
-    await delay(2500);
-    const configs = await api("/enhancer/api/ip-configs");
-    state.ipConfigs = Array.isArray(configs) ? configs : state.ipConfigs;
-    latest = state.ipConfigs.find(config => config.id === configID) || latest;
-    if (!latest) continue;
-    if (onUpdate && onUpdate(latest) === false) return latest;
-    const auditedAt = new Date(latest.service_audited_at || 0).getTime();
-    const service = state.catalog.find(item => nodeID(item.id) === nodeID(serviceID));
-    if (auditedAt >= requestedAt && serviceResult(latest, service)) return latest;
-  }
-  throw new Error(state.lang === "zh" ? "目标机未在 5 分钟内返回检测结果，请检查 Agent、出口 80/443 连通性和审计日志" : "No target audit result within 5 minutes. Check the Agent, proxy ports 80/443, and audit logs.");
+  const service = state.catalog.find(item => item.id === serviceId);
+  openMediaChecks([{config_id:nodeID(configID)}], service);
 }
 
 async function deleteIPConfig() {
@@ -2171,51 +2050,287 @@ async function copyInstallCommand() {
   } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
 
-function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
-
-async function refreshNodeUnlock(id, trigger = false) {
-  const configs = targetAuditConfigs(id);
-  if (!configs.length) throw new Error(state.lang === "zh" ? "该解锁机尚未绑定任何目标 IP" : "No managed target IP uses this proxy");
-  const requestedAt = new Map();
-  if (trigger) {
-    await Promise.all(configs.map(async config => {
-      const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(config.id)}/audit`, {method:"POST"});
-      requestedAt.set(config.id, new Date(requested.service_audit_requested_at || Date.now()).getTime());
-    }));
-  }
-  const started = Date.now();
-  while (Date.now() - started < 330000) {
-    await delay(2500);
-    const configsLatest = await api("/enhancer/api/ip-configs");
-    state.ipConfigs = Array.isArray(configsLatest) ? configsLatest : state.ipConfigs;
-    const complete = configs.every(config => {
-      const latest = state.ipConfigs.find(item => item.id === config.id);
-      if (!latest?.service_audited_at) return false;
-      const auditedAt = new Date(latest.service_audited_at).getTime();
-      return auditedAt >= (requestedAt.get(config.id) || 0) && Object.keys(latest.service_results || {}).length > 0;
-    });
-    if (complete) return state.nodes.find(node => nodeID(node.id) === nodeID(id));
-  }
-  throw new Error(state.lang === "zh" ? "目标机未在 5 分钟内返回检测结果，请检查 Agent、出口 80/443 连通性和审计日志" : "No target audit result within 5 minutes. Check the Agent, proxy ports 80/443, and audit logs.");
+function mediaCheckFinished(job) { return job?.status === "completed" || job?.status === "failed"; }
+function nodeMediaSummary(node) {
+  const record = state.mediaChecks.get(`node:${nodeID(node.id)}`);
+  if (!record?.job) return record?.error ? t("mediaDisconnected") : t("unknown");
+  const status = {queued:"mediaQueued", running:"mediaRunning", completed:"mediaCompleted", failed:"mediaFailed"}[record.job.status];
+  return `${t(record.missing ? "mediaMissingStatus" : status)} · ${t("mediaReceived")} ${Object.keys(record.job.results || {}).length}`;
 }
-
-async function triggerNodeCheck(id) {
-  state.modal = {type:"node-check", nodeId:id, running:true, error:""};
-  renderModal();
+function updateNodeMediaUI() {
+  document.querySelectorAll("[data-media-node-id]").forEach(element => {
+    const node = state.nodes.find(item => nodeID(item.id) === element.dataset.mediaNodeId);
+    if (!node) return;
+    element.textContent = nodeMediaSummary(node);
+    element.title = element.textContent;
+  });
+}
+function mediaLabelKey(label) { return String(label || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); }
+function mediaServiceLabels(service) {
+  if (!service) return [];
+  const aliases = {
+    openai:["ChatGPT"], chatgptopenai:["ChatGPT"], chatgpt:["ChatGPT"],
+    gemini:["Google Gemini"], googleaistudio:["Google Gemini"], youtube:["YouTube Premium"],
+    primevideo:["Amazon Prime Video"], amazonprime:["Amazon Prime Video"],
+    spotify:["Spotify Registration"], peacock:["Peacock TV"], paramount:["Paramount+"],
+    hbomax:["HBO Max"], hbomaxeu:["HBO Max"], huluusa:["Hulu"], appletv:["Apple TV+"],
+    bilibili:["BiliBili China Mainland Only", "BiliBili Hongkong/Macau/Taiwan", "Bilibili Taiwan Only"],
+    bglobal:["B-Global Indonesia Only", "B-Global SouthEastAsia", "B-Global Thailand Only", "B-Global Việt Nam Only"],
+    abema:["Abema.TV"],
+    au10play:["Channel 10"], au7plus:["7plus"], au9now:["Channel 9"], auabciview:["ABC iView"],
+    aubingekayosports:["Binge", "Kayo Sports"], auoptus:["Optus Sports"],
+    gbbbc:["BBC iPLAYER"], gbchannel4:["Channel 4"], gbchannel5:["Channel 5"],
+    dejoyn:["Joyn"], desky:["SKY DE"], dezdf:["ZDF"], euhbomax:["HBO Max"],
+    eurakutentv:["Rakuten TV"], euskyshowtime:["SkyShowTime"], eurosport:["Eurosport RO"],
+    injiocinema:["Jio Cinema"], inmxplayer:["MX Player"], inzee5:["Zee5"],
+    itraiplay:["Rai Play"], nlnpo:["NPO Start Plus"], nzneontv:["Neon TV"],
+    nzskygonz:["SkyGo NZ"], nzthreenow:["ThreeNow"], nfl:["NFL+"],
+    ruamediateka:["Amediateka"], sgmewatch:["MeWatch"], thaisplay:["AIS Play"], thtrueid:["trueID"],
+    uamegogotv:["Megogo TV"], vngalaxyplay:["Galaxy Play"], vnk:["K+"]
+  };
+  const name = mediaLabelKey(service.name);
+  if (aliases[name]) return aliases[name];
+  const detector = serviceDetectorKey(service);
+  return [...new Set([service.name, ...(aliases[mediaLabelKey(detector)] || [detector])].filter(Boolean))];
+}
+function mediaServiceEntries(job, service) {
+  const keys = new Set(mediaServiceLabels(service).map(mediaLabelKey));
+  return Object.entries(job?.results || {}).filter(([label]) => keys.has(mediaLabelKey(label)));
+}
+function mediaRawState(raw) {
+  const value = String(raw ?? "").trim();
+  if (!value) return {kind:"warn", label:t("mediaAwaiting")};
+  if (/^NOT COVERED\b/i.test(value)) return {kind:"warn", label:t("auditNotCovered")};
+  if (/Network|Timeout|Timed out|Connection (?:failed|error|refused)|TLS error|DNS error/i.test(value)) return {kind:"bad", label:state.lang === "zh" ? "网络检测失败" : "Network check failed"};
+  if (/\bWAF\b|\bBanned\b/i.test(value)) return {kind:"bad", label:state.lang === "zh" ? "WAF / 访问被拒绝" : "WAF / access denied"};
+  if (/(?:^|[;\n]\s*)(?:No\b|Fail(?:ed)?\b|Error\b|Unavailable\b|Restricted\b|N\/A\b)|INCONCLUSIVE|DEGRADED|UNSTABLE/i.test(value)) return {kind:"bad", label:t("mediaIssue")};
+  if (/^Yes\b/i.test(value) && !/\bOnly\b|\bPartial\b|\bRestricted\b/i.test(value)) return {kind:"good", label:t("mediaConfirmed")};
+  return {kind:"warn", label:t("mediaReview")};
+}
+function mediaServiceState(record, service) {
+  if (!record?.job || !service) return null;
+  const entries = mediaServiceEntries(record.job, service);
+  const raw = entries.map(([label, value]) => `${label}: ${value}`).join("\n");
+  if (entries.length) {
+    const results = entries.map(([, value]) => mediaRawState(value));
+    const kind = results.some(result => result.kind === "bad") ? "bad" : results.every(result => result.kind === "good") ? "good" : "warn";
+    return {kind, label:kind === "good" ? t("mediaConfirmed") : kind === "bad" ? t("mediaIssue") : t("mediaReview"), raw, detail:raw};
+  }
+  const label = record.job.status === "completed" ? t("mediaNotCovered") : record.job.status === "failed" ? t("mediaIncomplete") : t("mediaAwaiting");
+  return {kind:"warn", label, raw:label, detail:label};
+}
+function mediaCheckRecord(payload) {
+  const key = payload.node_id ? `node:${payload.node_id}` : `config:${payload.config_id}`;
+  if (!state.mediaChecks.has(key)) state.mediaChecks.set(key, {key, payload, job:null, busy:false, error:"", timer:null});
+  return state.mediaChecks.get(key);
+}
+function mediaRecordCurrent(record) { return !!state.token && state.mediaChecks.get(record.key) === record; }
+async function syncMediaCheck(record, operation = "latest") {
+  if (operation === "latest") record.startIfMissing = true;
+  if (record.busy || !mediaRecordCurrent(record)) return;
+  clearTimeout(record.timer);
+  record.busy = true;
+  record.operation = operation;
+  updateMediaCheckUI();
   try {
-    await refreshNodeUnlock(id, true);
-    if (state.modal?.type === "node-check" && nodeID(state.modal.nodeId) === nodeID(id)) {
-      state.modal.running = false;
-      renderModal();
+    let job;
+    if (operation === "poll" && record.job?.id) {
+      job = await api(`/enhancer/api/media-checks/${encodeURIComponent(record.job.id)}`, {cache:"no-store"});
+    } else if (operation === "create") {
+      job = await api("/enhancer/api/media-checks", {method:"POST", body:JSON.stringify(record.payload)});
+    } else {
+      const query = new URLSearchParams(record.payload);
+      job = await api(`/enhancer/api/media-checks?${query}`, {cache:"no-store"});
+      if (job === null && mediaRecordCurrent(record) && !record.job && (operation === "latest" || record.startIfMissing)) job = await api("/enhancer/api/media-checks", {method:"POST", body:JSON.stringify(record.payload)});
+    }
+    if (!mediaRecordCurrent(record)) return;
+    if (job === null) {
+      record.missing = !!record.job || !!record.error;
+      record.error = record.missing ? t("mediaJobMissing") : "";
+      return;
+    }
+    if (!job?.id || !["queued", "running", "completed", "failed"].includes(job.status) || !job.results || typeof job.results !== "object" || Array.isArray(job.results)) {
+      throw new Error(state.lang === "zh" ? "媒体任务响应无效，请检查 API" : "Invalid media job response. Check the API.");
+    }
+    const previous = record.job?.id === job.id ? record.job.results : {};
+    record.job = {...job, results:{...previous, ...job.results}};
+    record.missing = false;
+    record.error = "";
+    if (record.payload.config_id) {
+      const config = state.ipConfigs.find(item => nodeID(item.id) === record.payload.config_id);
+      if (config) updateIPServiceAuditUI(config);
     }
   } catch (error) {
-    if (state.modal?.type === "node-check" && nodeID(state.modal.nodeId) === nodeID(id)) {
-      state.modal.running = false;
-      state.modal.error = cleanErrorMessage(error.message);
-      renderModal();
-    } else toast(cleanErrorMessage(error.message), "error");
+    if (mediaRecordCurrent(record)) record.error = cleanErrorMessage(error.message);
+  } finally {
+    record.busy = false;
+    record.startIfMissing = false;
+    if (mediaRecordCurrent(record)) {
+      updateMediaCheckUI();
+      updateNodeMediaUI();
+      if (record.error || (record.job && !mediaCheckFinished(record.job))) {
+        const next = record.error ? "read" : "poll";
+        record.timer = setTimeout(() => syncMediaCheck(record, next), 1000);
+      }
+    }
   }
 }
+function mediaCheckRoot() {
+  let root = document.getElementById("media-check-root");
+  if (!root) {
+    root = document.createElement("div");
+    root.id = "media-check-root";
+    document.body.appendChild(root);
+  }
+  return root;
+}
+function closeMediaCheck() {
+  const view = state.mediaCheckView;
+  if (!view) return;
+  const root = document.getElementById("media-check-root");
+  const body = root?.querySelector(".modal-body");
+  if (body) view.position.top = body.scrollTop;
+  root?.querySelectorAll(".media-job").forEach(card => {
+    view.position.details[card.dataset.mediaKey] = card.querySelector("details").open;
+  });
+  state.mediaCheckView = null;
+  root?.replaceChildren();
+  document.removeEventListener("keydown", mediaCheckKeydown, true);
+  view.focus?.focus?.({preventScroll:true});
+}
+function mediaCheckKeydown(event) {
+  const root = document.getElementById("media-check-root");
+  if (!state.mediaCheckView || !root) return;
+  if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeMediaCheck(); return; }
+  if (event.key !== "Tab") return;
+  const controls = [...root.querySelectorAll("button, input, summary")].filter(element => !element.disabled && element.getClientRects().length);
+  const first = controls[0]; const last = controls[controls.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+}
+function openMediaChecks(payloads, service = null) {
+  closeMediaCheck();
+  const records = payloads.map(mediaCheckRecord);
+  const viewKey = records.map(record => record.key).join("|") + `:${service?.id || ""}`;
+  if (!state.mediaCheckPositions.has(viewKey)) state.mediaCheckPositions.set(viewKey, {top:0, search:"", details:{}});
+  state.mediaCheckView = {records, service, position:state.mediaCheckPositions.get(viewKey), focus:document.activeElement};
+  const root = mediaCheckRoot();
+  root.innerHTML = nodeCheckHTML();
+  root.querySelectorAll(".media-check-close").forEach(button => button.addEventListener("click", closeMediaCheck));
+  root.querySelector(".modal-backdrop").addEventListener("click", event => { if (event.target === event.currentTarget) closeMediaCheck(); });
+  root.querySelector("#media-check-search").addEventListener("input", event => {
+    state.mediaCheckView.position.search = event.target.value;
+    updateMediaCheckUI();
+  });
+  updateMediaCheckUI();
+  const body = root.querySelector(".modal-body");
+  body.scrollTop = state.mediaCheckView.position.top;
+  root.querySelector(".media-check-close").focus({preventScroll:true});
+  document.addEventListener("keydown", mediaCheckKeydown, true);
+  records.forEach(record => syncMediaCheck(record));
+}
+function mediaJobCard(record) {
+  const card = document.createElement("article");
+  card.className = "media-job";
+  card.dataset.mediaKey = record.key;
+  card.innerHTML = `<header class="media-job-head"><div><h3 class="media-job-title"></h3><span class="badge media-job-status" role="status"></span></div><div class="inline-actions"><button class="btn small media-reconnect" type="button">${t("mediaResume")}</button><button class="btn small primary media-new" type="button">${t("checkAgain")}</button></div></header><p class="media-job-meta"></p><p class="media-job-offline form-error" hidden></p><p class="media-job-error form-error" role="alert" hidden></p><p class="media-job-connection form-error" role="status" hidden></p><p class="media-job-progress" role="status"></p><h4>${t("mediaFullResults")}</h4><div class="media-table-wrap"><table class="media-results-table"><thead><tr><th>${t("mediaPlatform")}</th><th>${t("mediaRaw")}</th><th>${t("mediaStatus")}</th></tr></thead><tbody></tbody></table></div><p class="hint media-job-empty"></p><details class="media-coverage"><summary>${t("mediaCoverage")}</summary><p class="hint">${t("mediaCoverageHint")}</p><div class="media-coverage-rows"></div></details>`;
+  card.querySelector(".media-new").addEventListener("click", () => syncMediaCheck(record, "create"));
+  card.querySelector(".media-reconnect").addEventListener("click", () => syncMediaCheck(record));
+  card.querySelector("details").open = state.mediaCheckView.position.details[record.key] ?? !!state.mediaCheckView.service;
+  return card;
+}
+function updateMediaCheckUI() {
+  const view = state.mediaCheckView;
+  const root = document.getElementById("media-check-root");
+  if (!view || !root) return;
+  const body = root.querySelector(".modal-body");
+  const scrollTop = body.scrollTop;
+  const query = view.position.search.trim().toLocaleLowerCase();
+  const container = root.querySelector("#media-check-jobs");
+  for (const record of view.records) {
+    let card = [...container.children].find(element => element.dataset.mediaKey === record.key);
+    if (!card) { card = mediaJobCard(record); container.appendChild(card); }
+    const job = record.job;
+    const node = record.payload.node_id
+      ? state.nodes.find(item => nodeID(item.id) === record.payload.node_id)
+      : ipConfigNode(state.ipConfigs.find(item => nodeID(item.id) === record.payload.config_id));
+    const config = record.payload.config_id ? state.ipConfigs.find(item => nodeID(item.id) === record.payload.config_id) : null;
+    card.querySelector(".media-job-title").textContent = record.payload.node_id ? `${t("proxy")} · ${node?.name || record.payload.node_id}` : `${t("targetIP")} · ${config?.ip || record.payload.config_id}`;
+    const status = card.querySelector(".media-job-status");
+    const statusKey = {queued:"mediaQueued", running:"mediaRunning", completed:"mediaCompleted", failed:"mediaFailed"}[job?.status];
+    status.textContent = record.missing ? t("mediaMissingStatus") : statusKey ? t(statusKey) : record.error ? t("mediaNoJob") : t("mediaSubmitting");
+    status.className = `badge media-job-status ${record.missing || job?.status === "failed" || (!job && record.error) ? "bad" : job?.status === "completed" ? "good" : "warn"}`;
+    card.querySelector(".media-new").disabled = record.busy || (!!job && !mediaCheckFinished(job) && !record.missing);
+    card.querySelector(".media-reconnect").hidden = !record.error;
+    card.querySelector(".media-reconnect").disabled = record.busy;
+    card.querySelector(".media-job-meta").textContent = job
+      ? `${job.source || "check.unlock.media"} · ${job.network || "ipv4"} · ${state.lang === "zh" ? "菜单" : "Menu"} ${job.region ?? "0"} · ID ${job.id}\n${[["mediaRequested", job.requested_at], ["mediaStarted", job.started_at], ["mediaLatest", job.updated_at], ["mediaFinished", job.finished_at]].filter(([, value]) => value).map(([label, value]) => `${t(label)}: ${formatDate(value)}`).join(" · ")}`
+      : "check.unlock.media · ipv4 · 0";
+    const offline = card.querySelector(".media-job-offline");
+    offline.hidden = !node || isOnline(node) || mediaCheckFinished(job);
+    offline.textContent = t("mediaOffline");
+    const failure = card.querySelector(".media-job-error");
+    failure.hidden = job?.status !== "failed" && !job?.error;
+    failure.textContent = job?.error ? `${t("mediaFailed")}: ${job.error}` : t("mediaFailed");
+    const connection = card.querySelector(".media-job-connection");
+    connection.hidden = !record.error;
+    connection.textContent = record.error ? record.missing ? record.error : `${t("mediaDisconnected")}: ${record.error}` : "";
+    const entries = Object.entries(job?.results || {});
+    const passed = entries.filter(([, raw]) => mediaRawState(raw).kind === "good").length;
+    const issues = entries.filter(([, raw]) => mediaRawState(raw).kind === "bad").length;
+    card.querySelector(".media-job-progress").textContent = `${t("mediaReceived")}: ${entries.length} · Yes: ${passed} · No / WAF: ${issues} · ${t("mediaOther")}: ${entries.length - passed - issues}${job && !mediaCheckFinished(job) ? ` · ${t("waitingResults")}` : ""}`;
+    const tbody = card.querySelector("tbody");
+    const existing = new Map([...tbody.children].map(row => [row.dataset.label, row]));
+    const matching = new Set(mediaServiceEntries(job, view.service).map(([label]) => label));
+    let visible = 0;
+    for (const [label, raw] of entries) {
+      let row = existing.get(label);
+      if (!row) {
+        row = document.createElement("tr");
+        row.dataset.label = label;
+        row.innerHTML = '<th scope="row"></th><td class="media-raw"></td><td><span class="badge"></span></td>';
+        tbody.appendChild(row);
+      }
+      row.querySelector("th").textContent = label;
+      const result = row.querySelector(".media-raw");
+      if (result.textContent !== String(raw ?? "")) result.textContent = String(raw ?? "");
+      const rawState = mediaRawState(raw);
+      const badge = row.querySelector(".badge");
+      badge.className = `badge ${rawState.kind}`;
+      badge.textContent = rawState.label;
+      row.classList.toggle("media-service-match", matching.has(label));
+      row.hidden = !!query && !`${label} ${raw}`.toLocaleLowerCase().includes(query);
+      if (!row.hidden) visible++;
+      existing.delete(label);
+    }
+    existing.forEach(row => row.remove());
+    const empty = card.querySelector(".media-job-empty");
+    empty.hidden = visible > 0;
+    empty.textContent = t(entries.length ? "mediaNoMatches" : "mediaEmpty");
+    const coverage = card.querySelector(".media-coverage-rows");
+    const services = view.service ? [view.service] : state.catalog;
+    const coverageRows = new Map([...coverage.children].map(row => [row.dataset.serviceId, row]));
+    for (const service of services) {
+      let row = coverageRows.get(service.id);
+      if (!row) {
+        row = document.createElement("div");
+        row.className = "media-coverage-row";
+        row.dataset.serviceId = service.id;
+        row.innerHTML = '<strong></strong><span class="badge"></span><pre class="media-raw"></pre>';
+        coverage.appendChild(row);
+      }
+      const result = mediaServiceState(record, service) || {kind:"warn", label:t("mediaAwaiting"), raw:""};
+      row.querySelector("strong").textContent = displayServiceName(service);
+      row.querySelector(".badge").className = `badge ${result.kind}`;
+      row.querySelector(".badge").textContent = result.label;
+      const raw = row.querySelector("pre");
+      if (raw.textContent !== result.raw) raw.textContent = result.raw;
+      raw.hidden = !result.raw || result.raw === result.label;
+    }
+  }
+  body.scrollTop = scrollTop;
+}
+function triggerNodeCheck(id) { openMediaChecks([{node_id:nodeID(id)}]); }
 
 function toast(message, type = "") {
   const root = document.getElementById("toast-root");

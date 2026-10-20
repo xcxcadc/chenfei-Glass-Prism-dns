@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名与分类、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前面板增强层与发布脚本版本为 `1.5.28`，SNI 传输版本为 `2.5.0`；完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名与分类、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前面板增强层与发布脚本版本为 `1.5.29`，SNI 传输版本为 `2.5.1`；完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 
@@ -20,8 +20,8 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 
 - **智能 DNS 路由** - 根据域名规则将流量路由到不同 Proxy Agent
 - **外部规则集支持** - 支持导入外部规则集文件，快速配置常用服务
-- **流媒体解锁检测** - 自动检测 Netflix、Disney+、HBO Max 等 20+ 服务的解锁状态
-- **AI 服务解锁检测** - 自动检测 OpenAI、Claude、Gemini、Copilot 等 AI 服务的可用状态
+- **流媒体解锁检测** - 完整显示官方脚本菜单 `0` 的 IPv4 跨国平台结果，包括 Netflix、Disney+；未覆盖的服务明确标注，不冒充已验证
+- **AI 服务解锁检测** - 原样显示官方脚本的 ChatGPT、Claude、Google Gemini 结果及限制信息；不等同于账号登录或付费功能已验证
 - **双栈节点管理** - 面板仍可管理 IPv4/IPv6 节点；受管 DNS 解锁链路固定使用 Proxy IPv4，egress 不会自动切到 IPv6，并抑制已选服务的 AAAA，避免误走不解锁的 IPv6
 - **实时监控** - 基于 SSE 的节点状态实时更新
 - **现代控制台** - 表格化服务编排与概览卡片，提供服务编排、节点管理、IP 配置、域名同步、日志审计、告警和设置七个真实功能页，支持桌面/移动端、深浅主题和中英文切换
@@ -36,13 +36,13 @@ Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵�
 - **共享域名联动** - 使用相同父域、子域或泛域名的服务自动绑定同一解锁机；最后一次选择优先，避免一条 DNS 规则被两个出口互相覆盖
 - **实测不改路由** - 目标机审计只更新结果，绝不会依据 WAF、超时或第三方检测波动自动切换解锁机；节点选择始终以用户最后一次保存为准
 - **5 秒授权白名单** - Proxy 每 5 秒从面板同步已纳管目标 IPv4，只允许白名单访问 IPv4 DNS 53 与 SNI 80/443，只拒绝 IPv6 DNS 53，不拦截 IPv6 80/443；同机 MTProxy 等 IPv6 业务可继续使用
-- **双层解锁检测** - 解锁机自检仍只作参考；目标 IP 审计在 IPv4 路由上执行 `check.unlock.media` 的完整媒体检测，并叠加 DNS/TLS/SNI 路径校验
-- **真实兼容性优先** - 每项已选服务依次验证精确 A 映射、AAAA 抑制、TLS/SNI 握手和服务方项目；HTTP 403/WAF 页面响应只作诊断，不会单独覆盖 `check.unlock.media` 的 PASS
+- **官方脚本实时检测** - 每台 Proxy/Client 默认安装独立 `prism-media-check` worker；仅运行官方脚本的 IPv4 跨国平台项目，按官方 label 原样展示 `Yes`、`No`、地区和 WAF
+- **媒体与路由分离** - 官方脚本结果是媒体结论，DNS/TLS/SNI 和页面探测独立保留为路由诊断，不再覆盖或改写媒体结果；不保证付费播放或账号登录成功
 - **IP 配置闭环** - 添加目标 IP，批量选择服务及对应解锁机，自动创建 DNS 节点和服务覆盖
 - **配置自动生效** - 增强层持久化逐节点路由并由专用 dnsmasq 应用；10 秒守卫检查配置哈希、DNS 监听和代理进程 DNS 接管，保存后安全刷新本地 IPv4 路由，300 秒抽测每项服务代表域名
 - **代理 DNS 统一接管** - 对 XrayR、V2bX、sing-box、Hysteria、TUIC 等活动 systemd 代理进程建立独立 DNS cgroup 规则，将请求交给本机 Prism Agent；不会读取、修改或重启 XrayR、V2bX、Docker、MTProxy 或其他业务配置
 - **受限网络传输** - 目标机可通过加密 TCP SNI 传输连接解锁机；客户端每 60 秒同步并用真实 HTTPS 路径检查隧道，SSH 自身仍以 15 秒保活、3 次失联判定，发现“TCP 假在线”时只重建该隧道
-- **四阶段全域名实测** - 每项服务逐一核对全部路由域名和应用依赖，结果给出 `DNS x/x`、`TLS/SNI y/y`、页面成功数和服务方结论；TLS 连续三次至少两次成功才通过
+- **可恢复检测任务** - 有输出即逐批上报，界面每秒刷新；任务进度和历史持久化，关窗重开可继续读取，旧四阶段检测不再作为最终媒体结论
 - **共存守护** - 仅监控并恢复 Prism 自有服务，不会重启或覆盖 XrayR、V2bX、MTProxy、Docker 等业务
 - **服务品牌图标** - 服务卡片和 IP 选择器立即显示本地占位并异步替换为对应品牌图标；图标 URL 带版本指纹，发布后不会继续命中旧缓存，服务与图标映射持久化后可直接复用
 - **客户端管理脚本** - 安装 DNS Agent、测试本机 DNS、接管/备份/恢复系统 DNS
@@ -100,60 +100,66 @@ flowchart LR
 
 ### 解锁检测
 
-自动检测以下服务的解锁状态：
+官方脚本菜单 `0` 当前覆盖以下平台与地区信息：
 
-“节点管理”显示解锁机自身的 Agent 自检，但只作参考；“IP 配置”会在目标服务器上执行 `check.unlock.media` IPv4 检测，再核对全部路由域名、AAAA 抑制、TLS/SNI 和代表页面。HTTP 403/WAF 页面响应只作诊断，不会单独推翻媒体脚本的 PASS；脚本没有对应项目的服务会明确显示“未覆盖”，不会伪造为可用。目标机审计在路由变化后自动执行并定期刷新，但只报告结果，不修改用户选择的解锁机。
+“节点管理”和“IP 配置”的媒体检测由对应 Proxy/Client 上的独立 worker 执行。安装路径为 `/usr/local/bin/prism-media-check`，由 `prism-media-check.timer` / `prism-media-check.service` 每 5 秒尝试 claim 待处理任务，独立于 transport 同步和每分钟流量上报。worker 下载并校验官方脚本后，运行等价于 `bash check.unlock.media -M4 -R0 -Een` 的命令（`check.unlock.media` 指下载后的脚本文件）：相当于交互菜单 `0`，只测跨国平台、仅 IPv4，使用英文官方 label。
+
+结果按官方 label 解析，原始 `Yes` / `No`、地区、WAF 等内容保持不变；脚本没有对应项目的服务显示“未覆盖”，不会伪造为可用。DNS A 映射、AAAA 抑制、TLS/SNI 和代表页面仍可独立诊断，但不再改写媒体结论；旧 full / 四阶段检测和 Agent 自检均不作为最终媒体结论。这是**官方脚本检测结果，不是实际付费播放、账号登录或所有应用功能通过的保证**。
+
+worker 每秒检查新输出并逐批上报，界面每 1 秒刷新已收到的结果，无需等整轮结束。脚本完整运行，不设 30 秒硬截止；15 分钟仅作异常安全兜底，超限、脚本异常或无有效结果明确标记 `failed`。90 秒无心跳显示 worker 失联并标记失败，不会当成通过。关闭检测窗口不会取消后台任务，重开可读取已持久化的任务进度和历史。
+
+媒体结果每 6 小时自动刷新，也支持手动重测及配置代更新后重测；路由、Proxy IPv4 或检测请求变化后，旧 `generation` 的迟到结果会被拒收，防止覆盖当前配置。检测只报告结果，不修改用户选择的解锁机。实现与升级说明见 [中文增强说明](ENHANCED_ZH.md)。
 
 **流媒体服务**
-- Netflix, Disney+, HBO Max, Amazon Prime Video
-- Hulu, Paramount+, Peacock, Discovery+
-- YouTube Premium, Spotify, Apple TV+
-- BBC iPlayer, ITV, Channel 4, Channel 5
-- 以及更多...
+- Netflix、Disney+、DAZN、Amazon Prime Video、TVBAnywhere+
+- YouTube Premium、Spotify Registration、iQyi Oversea Region
+- YouTube/Netflix CDN 及 Apple、Bing、Google Play、Steam 等地区信息
 
 **AI 服务**
 - OpenAI (ChatGPT)
 - Anthropic (Claude)
 - Google (Gemini)
-- GitHub Copilot
-- 以及更多...
+
+HBO Max、Hulu、Copilot 等可配置域名分流，但不在菜单 `0` 覆盖范围内，不能据此宣称检测通过。
 
 ## 安装
 
 ### 命令速查
 
-以下命令固定使用发布标签 `v1.5.28`。尖括号内容必须替换为面板实际生成的值；不要把包含令牌的专属命令公开或提交到仓库。
+以下命令固定使用发布标签 `v1.5.29`。尖括号内容必须替换为面板实际生成的值；不要把包含令牌的专属命令公开或提交到仓库。
 
 | 用途 | 命令 |
 |------|------|
-| 安装/升级面板 | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh \| sudo bash` |
-| 卸载面板但保留数据 | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/uninstall.sh \| sudo bash -s -- panel --yes` |
-| 卸载面板并删除数据 | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/uninstall.sh \| sudo bash -s -- panel --purge-data --yes` |
-| 安装解锁机 Agent | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/agent_install.sh \| sudo bash -s -- --master <面板地址> --secret <节点密钥>` |
-| 卸载解锁机 Agent | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/uninstall.sh \| sudo bash -s -- proxy --yes` |
-| 卸载被解锁机 Agent | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/uninstall.sh \| sudo bash -s -- client --yes` |
-| 卸载未知类型 Agent | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/uninstall.sh \| sudo bash -s -- agent --yes` |
+| 安装/升级面板 | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \| sudo bash` |
+| 卸载面板但保留数据 | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/uninstall.sh \| sudo bash -s -- panel --yes` |
+| 卸载面板并删除数据 | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/uninstall.sh \| sudo bash -s -- panel --purge-data --yes` |
+| 安装解锁机 Agent | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/agent_install.sh \| sudo bash -s -- --master <面板地址> --secret <节点密钥>` |
+| 卸载解锁机 Agent | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/uninstall.sh \| sudo bash -s -- proxy --yes` |
+| 卸载被解锁机 Agent | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/uninstall.sh \| sudo bash -s -- client --yes` |
+| 卸载未知类型 Agent | `curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/uninstall.sh \| sudo bash -s -- agent --yes` |
 
-被解锁机首次安装请优先执行“IP 配置”页面生成的专属命令；它会同时安装 DNS Agent、透明 SNI 出口和授权同步。已有被解锁机升级本版本时，重新执行页面生成命令，或在本机执行 `/usr/local/lib/prismdns/prism_transport.sh --sync` 触发同步。卸载会恢复原 DNS，并清理 Prism 自有服务、规则和计数器，不会启动、停止或修改 XrayR、V2bX、MTProxy、Docker 等其他业务。
+被解锁机首次安装请优先执行“IP 配置”页面生成的专属命令；它会同时安装 DNS Agent、runtime、透明 SNI transport、授权同步和媒体 worker。每台 Proxy/Client（包括以后新增的机器）都会随 transport 默认安装 worker，卸载 transport / Agent 时一并移除其 timer、service 和可执行文件。卸载被解锁机还会恢复原 DNS，并清理 Prism 自有规则和计数器，不会启动、停止或修改 XrayR、V2bX、MTProxy、Docker 等其他业务；完整命令见 [卸载说明](UNINSTALL_ZH.md)。
+
+**仅替换 enhancer 二进制不会自动刷新远端节点。** 既有 Proxy 请重新执行 `v1.5.29` 的节点 Agent 安装命令；既有 Client 请重新执行本版“IP 配置”专属命令，或用本版 `prismdns.sh --refresh-runtime` 刷新已有配置的 runtime、transport `2.5.1` 和 worker。`prism_transport.sh --sync` 仅同步已安装的传输配置，不会下载升级脚本或补装 worker；具体步骤见 [中文增强说明](ENHANCED_ZH.md#已有节点升级)。
 
 ### 为什么增加透明 SNI 出口
 
 Akile 的稳定性来自“系统 DNS 统一接管”：选中的域名返回指定解锁机 IPv4，未选中的域名保持直连。Prism 现在采用同一原则，并增加桌面兼容层：如果 XrayR、V2bX、v2node、sing-box 等受管代理进程已经把域名解析成真实 IP，目标机仍会从 TLS SNI 或 HTTP Host 识别选中的服务，并把 TCP 80/443 透明转发到该服务绑定的解锁机 IPv4；未选服务不进入透明出口。受管进程的 UDP/443 会拒绝，使客户端回落到可识别域名的 TCP/TLS，避免“手机可用、电脑加载或连接被关闭”。
 
-这不是把所有流量强制送进解锁机：Google 等未配置服务仍走目标服务器直连。每个目标 IP 的出口映射由面板动态下发，没有写死现有节点，后续新增解锁机、目标机或服务也使用同一逻辑。版本 `1.5.28` 的目标机升级后，可用 `/usr/local/lib/prismdns/prism_transport.sh --status` 确认 `mode=direct`、`client_egress=active`；若现有目标机未升级，请重新执行“IP 配置”生成命令，避免只升级面板而旧目标机继续使用旧数据面。
+这不是把所有流量强制送进解锁机：Google 等未配置服务仍走目标服务器直连。每个目标 IP 的出口映射由面板动态下发，没有写死现有节点，后续新增解锁机、目标机或服务也使用同一逻辑。版本 `1.5.29` 的目标机升级后，可用 `/usr/local/lib/prismdns/prism_transport.sh --status` 确认 `mode=direct`、`client_egress=active`；若现有目标机未升级，请重新执行“IP 配置”生成命令，避免只升级面板而旧目标机继续使用旧数据面。
 
-该版本按配置时间戳拒收旧线路的迟到审计，并将完整媒体检测限制为 120 秒、整轮审计限制为 240 秒；DNS/TLS 域名探测并发上限为 8，浏览器最多等待 5.5 分钟。第三方检测超时会明确显示“检测未完成”，不会继续无限转圈。
+transport `2.5.1` 支持在旧面板地址失效时，从运行中 Agent 的 `--master` 恢复并验证新地址后持久化；也可显式指定新 `--master`。Proxy 的 AUTH nftables 规则经校验后原子替换，不先删除整套授权规则；地址迁移步骤见 [迁移教程](MIGRATION_ZH.md)。
 
 ### 一键安装 (推荐)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh | sudo bash
 ```
 
 自定义端口：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \
   | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
 ```
 
@@ -179,7 +185,7 @@ curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/ref
 如需在一台曾安装过 Prism 的服务器上明确执行脱敏全新安装，请先确认该机不再需要原面板数据，然后执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh \\
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \\
   | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
 ```
 
@@ -208,7 +214,7 @@ cd /opt/prism && ./prism-controller --host 0.0.0.0 --port 8080
 在节点服务器上安装 Agent：
 
 ```bash
-curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/agent_install.sh | bash -s -- --master <Controller地址> --secret <节点密钥>
+curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/agent_install.sh | bash -s -- --master <Controller地址> --secret <节点密钥>
 ```
 
 ### IP 客户端一键工具
@@ -216,12 +222,16 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/
 先在 Web 界面的“IP 配置”中添加目标 IP、选择服务与解锁机并保存。页面会生成包含面板地址和配置令牌的专属命令。也可以先启动通用交互工具：
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/prismdns.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/prismdns.sh | sudo bash
 ```
 
-页面生成的专属命令只用于目标机首次安装；后续在面板保存新增、取消或切换服务会自动生效，不再弹出安装命令。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、永久或临时设置系统 DNS、自动备份、恢复及状态检查。安装器会备份并停用冲突的旧 `dnsmasq`/`sniproxy`，再安装仅监听 `127.0.0.1:5353` 的 Prism 专用 dnsmasq，不会修改 MTProxy、XrayR 或 V2bX。增强层根据面板配置动态生成精确 IPv4 与 AAAA 抑制规则，nftables 将本机 53 请求重定向到专用 dnsmasq；Agent 继续负责同步、授权和报告，但不再决定实际 DNS 路由。为避免上游 `v1.3` 被动熔断在 WAF、拒绝连接或并发实测时回退公网 DNS，稳定通道默认下载上游 `v1.2.1`、验证 SHA-256 并锁定二进制；重新执行安装或卸载时会自动解除锁定。每台新目标机默认安装配置哈希守卫：每 10 秒检查配置与 DNS 监听，每 300 秒抽测各服务代表域名；配置变化、30 分钟健康缓存刷新和服务审计仍会全量验证所有域名。安装完成时只强制验证 DNS 路由是否正确映射到面板所选解锁机，完整 HTTPS 可用性交给后台审计与定时守卫继续处理，避免第三方站点瞬时超时把安装卡死。路由变化时优先原子替换 dnsmasq 规则并重启专用本地 DNS，只有健康恢复失败才重启 Agent。受限网络目标机会使用加密 TCP SNI 传输代替不稳定的跨境 UDP 53，发往已选解锁机的 UDP/443 会被明确拒绝以促使应用回落到 TCP/TLS。每项已选服务依次执行 A 映射、AAAA 抑制、TLS/SNI 握手和服务方检测；HTTP 403/WAF 页面响应只作诊断，不会单独推翻媒体脚本 PASS，媒体脚本明确失败或必需 DNS/TLS 路径失败才会标记不可用。Proxy 每 5 秒刷新面板授权白名单，未纳管 IPv4 无法使用 DNS 53 或 SNI 80/443；IPv6 侧只保护 DNS 53，不误伤同机 IPv6 443 业务。安装完成后还会创建专用 nftables 单调计数器；面板按采样差值累计，每分钟任务只上报流量，耗时的四阶段检测由独立审计服务执行。审计结束后开启新计数纪元，检测流量不会计入用户用量；清零面板流量时保留采样基线，旧流量不会被重新加回。
+页面生成的专属命令用于首次安装及已有节点升级；日常新增、取消或切换服务只需在面板保存，路由会自动生效，不必反复安装。通用工具支持安装/连接 DNS Client Agent、本机 DNS 测试、系统 DNS 接管、备份和恢复。稳定通道默认校验并锁定上游兼容 Agent `v1.2.1`，它不是本 Fork 的 `1.5.29` 发布版本，也不是上游 `v1.3`。
 
-以上守卫、IPv4 优先、AAAA 抑制、TLS/SNI 实测、授权白名单、流量统计和自动应用逻辑均从面板数据动态生成，不包含固定 IP，可直接用于后续新增的任意解锁机和被解锁机。实测结果不会触发节点跳转；如需更换线路，必须在面板手动选择并保存。
+安装器备份并停用冲突的旧 `dnsmasq`/`sniproxy`，安装监听 `127.0.0.1:5353` 的专用 dnsmasq，按面板配置生成精确 IPv4 与 AAAA 抑制规则，并用 nftables 接管本机 53 请求。每 10 秒检查配置和 DNS 监听，每 300 秒抽测各服务代表域名；配置变化和 30 分钟路由健康缓存刷新仍全量校验域名。路由更新优先原子替换规则并重启专用 DNS，Agent 仅在健康恢复失败时兜底重启。安装只阻塞于 DNS 映射错误，不等待整轮媒体检测。
+
+transport 默认直连已授权 Proxy IPv4，受限网络可显式选择加密 TCP SNI 模式；已选出口的 UDP/443 被拒绝以促使应用回落到 TCP/TLS。每分钟任务只负责流量上报，媒体检测由独立 worker 执行，二者不会串行阻塞。清零面板流量保留采样基线，避免旧流量重新入账。
+
+以上路由守卫、IPv4 优先、AAAA 抑制、独立路由诊断、授权白名单、流量统计、媒体 worker 和自动应用逻辑均从面板数据动态生成，不包含固定 IP，可直接用于后续新增的任意解锁机和被解锁机。实测结果不会触发节点跳转；如需更换线路，必须在面板手动选择并保存。
 
 IP 配置、节点密钥、专属令牌和流量基线保存在 `/var/lib/prism-enhancer/ip-configs.json`（`0600`）。目标机另外将 DNS 与每个 SNI 解锁方向的 nftables 原始计数持久化到 `/var/lib/prismdns/traffic-cumulative.json`，单个计数器重建或审计清零不会让历史流量丢失；重新绑定新配置时按令牌隔离统计状态。不要公开页面生成的专属命令或令牌。完整操作步骤和统计口径见 [中文增强说明](ENHANCED_ZH.md)。
 
@@ -273,7 +283,7 @@ journalctl -u prism-controller -f
 
 ## 迁移与备份
 
-面板迁移不能只复制 `data.db`。节点中文名称与地区、自定义服务及分类、IP 路由、流量、品牌设置和 SNI 传输授权信息保存在 `/var/lib/prism-enhancer/`。
+面板迁移不能只复制 `data.db`。节点中文名称与地区、自定义服务及分类、IP 路由、流量、品牌设置和 SNI 传输授权信息保存在 `/var/lib/prism-enhancer/`；媒体任务进度和历史保存在同一 `dataDir` 下的 `media-checks.json`，必须随整个目录备份与恢复。
 
 请按 [面板迁移与灾备教程](MIGRATION_ZH.md) 操作，教程包含：
 

@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 type ipConfigRequest struct {
@@ -119,6 +120,12 @@ func (app *App) handleServiceAuditReport(writer http.ResponseWriter, request *ht
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "无效的服务审计上报"})
 		return
 	}
+	if record, ok := app.ipStore.GetByToken(payload.Token); ok {
+		if job, exists := app.mediaChecks.Latest("", record.ID); exists && job.StartedAt != nil && job.Generation == mediaGeneration(record) {
+			writeJSON(writer, http.StatusConflict, map[string]string{"error": "IPv4 media worker is authoritative; legacy combined probe result ignored"})
+			return
+		}
+	}
 	config, err := app.ipStore.UpdateServiceAudit(payload.Token, payload.Results, payload.RequestedAt)
 	if errors.Is(err, os.ErrNotExist) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "无效的配置令牌"})
@@ -169,6 +176,10 @@ func (app *App) handleIPConfig(writer http.ResponseWriter, request *http.Request
 		}
 		config, err := app.ipStore.RequestServiceAudit(record.ID)
 		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if _, err := app.mediaChecks.Create("", record.ID, config.ServiceAuditRequestedAt.Format(time.RFC3339Nano)); err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -296,7 +307,7 @@ var mediaScriptLabels = []string{
 	"4GTV.TV", "7plus", "A&E TV", "ABC iView", "Abema.TV", "Acorn TV", "Afreeca TV", "AIS Play",
 	"Amazon Prime Video", "AMC+", "Amediateka", "Bahamut Anime", "BBC iPLAYER", "Bein Sports Connect",
 	"Binge", "BritBox", "Canal+", "CatchPlay+", "CBC Gem", "Channel 10", "Channel 4", "Channel 5", "Channel 9",
-	"ChatGPT", "CineMax Go", "Coupang Play", "Crave", "Crunchyroll", "CW TV", "D Anime Store", "Dazn",
+	"ChatGPT", "Claude", "CineMax Go", "Coupang Play", "Crave", "Crunchyroll", "CW TV", "D Anime Store", "Dazn",
 	"DirecTV Go", "Directv Stream", "Discovery+", "Disney+", "DMM", "DMM TV", "Docplay", "DSTV", "encoreTVB",
 	"ESPN+", "Eurosport RO", "FOD(Fuji TV)", "FOX", "Fubo TV", "Funimation", "FXNOW", "Google Gemini",
 	"Hami Video", "HBO GO Asia", "HBO GO Europe", "HBO Max", "HBO Nordic", "HBO Now", "HBO Portugal", "HBO Spain",

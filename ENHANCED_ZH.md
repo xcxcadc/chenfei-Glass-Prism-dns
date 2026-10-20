@@ -23,11 +23,11 @@
 - 服务库与 IP 服务选择器共用统一搜索，可按名称、中文别名、分类、服务 ID 或域名进行精确和模糊匹配，并忽略大小写及常见分隔符。
 - 服务库可新建自定义分类，并把任意内置或自定义服务移动到任意分类；移动只覆盖显示分类，不改变稳定服务 ID、域名规则、IP 路由或客户端配置，可一键恢复原分类。
 - 自定义服务自动生成兼容 Prism 的 `DOMAIN-SUFFIX` 规则集；泛域名在面板中保留 `*.`，下发时转换为基础后缀并去重，避免把无效的 `DOMAIN-SUFFIX,*.example.com` 发送给 Agent。
-- 节点检测完成后仍可查看解锁机 Agent 自检，但它只作参考；目标服务器通过 IPv4 执行 `bash <(curl -L -s check.unlock.media) -M 4`，IP 配置页显示该脚本最终结论与 DNS/TLS/SNI 路径校验。
+- 每台 Proxy/Client 默认安装官方媒体脚本 worker，完整执行 IPv4 菜单 `0` 的跨国平台检测，按官方 label 原样展示结果；Agent 自检只作参考，DNS/TLS/SNI 诊断独立保留。
 - 新增 IP 配置闭环：保存时自动创建 DNS Client、服务规则和逐服务解锁机覆盖。
 - 已安装目标机修改服务后自动生效：每 10 秒配置哈希守卫在路由变化时原子更新专用 dnsmasq 规则并清理旧 DNS 状态，Agent 只在健康恢复失败时兜底重启。
 - 受限网络目标机通过加密 TCP SNI 传输连接解锁机；客户端每 60 秒同步并执行真实 HTTPS 路径探测，SSH 自身仍按 15 秒保活、连续 3 次失联判定，发现业务链路卡死时只重建对应隧道。
-- 解锁审计逐一检查全部路由域名的精确 A 映射、AAAA 抑制、TLS/SNI 握手及代表页面，并以 `check.unlock.media` 的 IPv4 脚本最终结果作为服务方结论；显示 `DNS x/x`、`TLS/SNI y/y` 与页面成功数，不再只抽查一个首页域名。
+- 媒体任务每秒逐批刷新，支持六小时自动刷新、手动重测、配置代更新和关窗后重读进度；路由诊断保留精确 A 映射、AAAA 抑制、TLS/SNI 和代表页面信息，不覆盖媒体结论。
 - 守护任务只操作 Prism 的 `prism-agent`、专用 dnsmasq 与传输服务，不会重启或覆盖同机 MTProxy、XrayR、V2bX。
 - 选择服务时原地更新勾选状态并保持滚动位置；图标未返回前立即显示本地首字占位，图标请求带版本指纹，增强层启动时优先预热已配置服务，并把真实品牌图标持久化到 `/var/lib/prism-enhancer/icon-cache`。
 - 服务编排使用表格控制台，可在同一页完成服务检索、状态与节点筛选、分页、批量选择、逐项节点配置和真实目标机测试；侧栏的节点管理、IP 配置、域名同步、日志审计、告警中心和设置中心均为可操作页面。
@@ -42,13 +42,13 @@
 2. 打开“IP 配置”，填写需要使用 DNS 解锁的目标服务器公网 IP；实际连接解锁机时固定选择 Proxy IPv4。
 3. 选择需要解锁的服务，并为每项服务指定任意在线 Proxy Agent。
 4. 首次保存后，系统会自动创建专属 DNS Client 节点、规则和服务覆盖，并生成专属配置命令。
-5. 在目标服务器以 `root` 身份执行该命令。脚本会安装 DNS Agent、确认 `prism-agent` 实际占用 `127.0.0.1:53`、备份原 DNS，并在确认后接管系统 DNS；发现旧 `dnsmasq`/`sniproxy` 占用端口时先备份再停用，不修改 XrayR/V2bX。
-6. 安装完成后，在面板增删服务或切换解锁机只需点击“保存配置”。页面直接关闭并自动下发，不再重复显示安装命令；目标机通常在 10 秒内安全重启 Agent 并应用新路由。
+5. 在目标服务器以 `root` 身份执行该命令。脚本会备份原 DNS，安装兼容 Agent、监听 `127.0.0.1:5353` 的专用 dnsmasq、runtime、transport 和媒体 worker，再接管系统 DNS；发现冲突的旧 `dnsmasq`/`sniproxy` 时先备份再停用，不修改 XrayR/V2bX。
+6. 安装完成后，在面板增删服务或切换解锁机只需点击“保存配置”。目标机每 10 秒检查配置并应用新路由，优先更新专用 DNS，Agent 仅在健康恢复失败时重启；新配置代会触发独立媒体任务。
 
 需要重新打开命令时，可在该 IP 行点击“客户端脚本”。通用交互入口如下：
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/prismdns.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/prismdns.sh | sudo bash
 ```
 
 ## IP 配置备份与授权令牌
@@ -59,23 +59,55 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs
 
 ## 流量统计口径
 
-`prismdns.sh` 会为每台目标服务器创建独立 nftables 统计链：本机 Prism DNS 的 UDP/TCP 53 请求与响应计入 DNS 用量，只有目标机与当前所选 Proxy IPv4 之间的 TCP 80/443 才计入 SNI 解锁用量。普通公网 80/443、SSH 控制流量、系统更新和其他非解锁机流量不会计入。systemd timer 启用后 15 秒内首次上报，之后每分钟上报一次；DNS RX/TX 与每个 SNI 解锁方向的 RX/TX 分开持久化到 `/var/lib/prismdns/traffic-cumulative.json`，单个 nftables 表重建或审计清零不会丢失另一组计数器的历史增量，面板按单调采样差值入账。统计状态按 Agent enrollment token 隔离，重新绑定目标 IP 不会串用旧数据。自动 `check.unlock.media` IPv4 审计结束后会开启新的计数纪元，避免把检测流量计入用户用量。
+`prismdns.sh` 会为每台目标服务器创建独立 nftables 统计链：本机 Prism DNS 的 UDP/TCP 53 请求与响应计入 DNS 用量，只有目标机与当前所选 Proxy IPv4 之间的 TCP 80/443 才计入 SNI 解锁用量。普通公网 80/443、SSH 控制流量、系统更新和其他非解锁机流量不会计入。systemd timer 启用后 15 秒内首次上报，之后每分钟上报一次；DNS RX/TX 与每个 SNI 解锁方向的 RX/TX 分开持久化到 `/var/lib/prismdns/traffic-cumulative.json`，单个 nftables 表重建不会丢失另一组计数器的历史增量，面板按单调采样差值入账。统计状态按 Agent enrollment token 隔离，重新绑定目标 IP 不会串用旧数据。流量上报与媒体 worker 各自调度，不等待媒体脚本结束。
 
 “清零流量”只重置面板累计值并保留目标机当前采样基线，后续只累加清零后的新流量，不会把旧计数重新加回；该操作不影响 nftables 规则、DNS 节点和服务配置。IP 配置及令牌保存在 `/var/lib/prism-enhancer/ip-configs.json`，文件权限为 `0600`；请勿公开页面生成的专属命令或配置令牌。
 
 ## 路由自动应用
 
-本次发布的固定脚本版本为 `v1.5.28`；新安装命令和面板生成命令均使用该标签，不再从 `main` 浮动拉取脚本。
+本次面板与发布脚本版本为 `1.5.29`，固定脚本标签为 `v1.5.29`，SNI transport 为 `2.5.1`，兼容 Agent 默认使用上游 `v1.2.1`；三者独立编号，不能混写为 Agent `v1.3`。安装、升级和卸载命令均使用本版标签，详见 [版本矩阵](VERSION_MATRIX_ZH.md)。
 
-`prismdns.sh 1.5.28` 会在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、Prism 专用 dnsmasq 和 DNS 守卫。增强层把服务到用户所选 Proxy IPv4 的映射持久化并生成 `127.0.0.1:5353` 与（启用 IPv6 回环时）`[::1]:5353` 的确定性路由；路由守卫每 10 秒刷新配置哈希，并为活动的 XrayR、V2bX、v2node、sing-box、Hysteria、TUIC、Trojan 等代理进程建立独立 nftables cgroup 规则，把代理内置的外部 DNS 请求转交到该端口，已选服务只返回 IPv4 路由并抑制 AAAA；不会修改这些代理、MTProxy 或 Docker 的配置。Agent 保留用于面板同步、授权和报告。配置变化、30 分钟健康缓存刷新和 `check.unlock.media` IPv4 服务审计仍会全量验证所有域名；健康上报会把 DNS 守卫或 IPv4/IPv6 本地 DNS 缺失明确标为异常。审计运行期间每分钟的轻量心跳会独立报告缓存路由健康，避免长时间的第三方流媒体测试将目标机误标为 `STALE`。节点卡只显示控制与路由链路是否生效，单项流媒体审计结果在服务配置和审计页单独呈现。安装期只强制检查 DNS 路由是否已经映射到面板所选解锁机，完整 HTTPS/流媒体可用性由后台审计继续跑，避免第三方站点瞬时超时拖死新机上线。`prism_transport.sh 2.5.0` 默认采用与 Akile 类似的授权源 IP 直连模式：目标机直接连接面板所选解锁机的 TCP 80/443，Proxy 每 5 秒刷新授权名单，未纳管来源会被防火墙拒绝；这样避免高并发浏览器流量被单条 SSH/TCP 隧道的队头阻塞，同时继续按目标 IP 独立统计 TX/RX。兼容场景仍可显式选择 `--mode encrypted`。发往已选解锁机的 UDP/443 会被明确拒绝，促使支持 QUIC 的应用回落到 SNIproxy 可处理的 TCP/TLS。为保持 Google 直连稳定，守卫还会仅对已识别代理进程发往 Google 网段的 UDP/443 快速拒绝，浏览器将回退到该目标机直连 Google 的 TCP/TLS；不会更改 Google DNS，不会将其送往解锁机，也不影响服务器其他业务。每分钟定时器只负责流量上报，耗时的四阶段检测由独立 `prismdns-service-audit.service` 执行。面板或网络瞬时不可达时任务会正常退出并等待下一轮；重装时若本地 DNS 已停止但 `/etc/resolv.conf` 仍指向回环地址，安装器会临时恢复引导 DNS 后继续。
+`prismdns.sh 1.5.29` 在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、专用 dnsmasq 和 DNS 守卫。增强层持久化服务到用户所选 Proxy IPv4 的映射，生成 `127.0.0.1:5353` 与可选 `[::1]:5353` 的路由；守卫每 10 秒检查配置和 DNS 监听，并通过 Prism 自有 nftables cgroup 规则接管受管代理进程的外部 DNS 请求。已选服务只返回指定 IPv4 并抑制 AAAA，未选服务保持直连。配置变化和 30 分钟路由健康缓存刷新仍校验全部域名，每 300 秒抽测各服务代表域名；这些属于路由诊断，不参与媒体结果判定。
 
-目标机只检测该 IP 已选择的服务。每项服务核对全部路由域名精确解析到用户所选 Proxy IPv4、AAAA 抑制、TLS/SNI 握手、代表页面及 `check.unlock.media` 服务方项目。Gemini 会覆盖网页与移动端依赖，而不是只检查首页。媒体脚本明确报告服务不可用或必需 DNS/TLS 路径失败时显示失败；代表页面单独返回 HTTP 403/WAF 只作为诊断，不会覆盖媒体脚本的 PASS，因为站点 WAF 可能拒绝自动化探测但不代表 DNS/SNI 路由失效。脚本没有对应项目的服务明确显示“未覆盖”，不会因检测器没有输出而误报可用。任何实测结果都不会修改路由或自动跳转节点，用户需要切换线路时必须手动选择并保存。长时间审计会被守卫识别并去重，不会每 10 秒重复排队。节点页只把解锁机 Agent 自检保留为参考，目标机四阶段结果才是最终结论。
+`prism_transport.sh 2.5.1` 默认以授权源 IP 直连所选 Proxy 的 TCP 80/443，受限网络可显式选择 `--mode encrypted`。Proxy 每 5 秒同步授权名单，AUTH nftables 规则先校验，再以单次事务原子替换，不先单独删除旧授权表；仅限制 Prism 的 IPv4 DNS/SNI 和 IPv6 DNS 53，不拦截同机 IPv6 80/443。已选出口的 UDP/443 被拒绝，促使应用回落到 TCP/TLS；受管代理发往 Google 网段的 UDP/443 快速拒绝只促使 Google 直连回落，不改变其 DNS 或出口。
 
-`v1.5.28` 为每次服务审计携带配置请求时间戳；路线、Proxy IPv4 或手动重测发生变化后，旧线路延迟返回的审计会被面板拒收，不会覆盖当前线路结果。媒体脚本下载后先检查 Shell shebang 和 `bash -n`，拒绝把错误页当脚本执行；单独的 HTTP 403/WAF 或没有 2xx/3xx 页面响应不会推翻脚本已确认的 PASS。完整 `check.unlock.media -M 4` 最长运行 120 秒，后续 DNS/TLS 域名探测最多 8 路并发、单次 HTTPS 最长 8 秒，整轮审计有 240 秒总预算；systemd 上限为 5 分钟。浏览器 API 请求有 20 秒上限，实测等待最多 5.5 分钟；若第三方检测未完成会显示“检测未完成”，不会转圈或被误报成可用。
+路由健康心跳、transport 同步和每分钟流量上报独立运行。安装只强制验证 DNS 是否映射到所选 Proxy，不等待完整媒体脚本；重装遇到本地 DNS 停止但 `/etc/resolv.conf` 仍指向回环时，会临时恢复引导 DNS 后继续。运行时最新服务目录排除已停止运营的 Crackle、Salto、GYAO。任何诊断或媒体结果都不会自动修改用户保存的路由。
 
-该逻辑不写死任何现有 IP、域名或节点 ID。以后从面板新增的解锁机和被解锁机，只要执行页面首次生成的客户端命令，就会默认获得相同的 IPv4 优先、AAAA 抑制、共享域名联动、只读实测、5 秒授权、缓存清理、流量统计和健康上报能力。无 `flock` 的精简系统会自动使用原子目录锁降级。
+## 官方媒体脚本实时任务
 
-`1.4.5` 回归使用运行时最新有效服务目录，并对每台目标机逐项验证 DNS、AAAA、TLS/SNI、代表页面和服务方结论。Gemini 检测覆盖登录态实际使用的账户能力、One Google、静态资源和应用 API 域名；即时检测不再只截取前 10 个域名，而是并发验证完整应用链后才显示通过。面板不会把解锁机自身自检结果伪装成目标机可用，不会因第三方检测波动自动切换节点，也不会把共享域名拆到互相覆盖的出口。Crackle、Salto、GYAO 已停止运营，不再进入有效服务目录。
+每台 Proxy/Client 随 transport 默认安装 `/usr/local/bin/prism-media-check`，由 `prism-media-check.timer` / `prism-media-check.service` 在空闲时每 5 秒 claim 待处理任务，独立于 transport 和 traffic。以后新增的机器执行本版安装命令也默认继承，无需单独部署 worker，不写死现有 IP、域名或节点 ID。安装 worker 会停用旧 `prismdns-service-audit.timer` 并停止旧审计服务，旧 full / 四阶段检测不再作为最终媒体结论；独立 DNS/路由诊断继续保留。
+
+worker 下载官方 `check.unlock.media` 脚本后检查 Shell shebang、排除 HTML 并执行 `bash -n` 校验，然后完整运行以下等价命令（`check.unlock.media` 为下载后的本地脚本文件）：
+
+```bash
+bash check.unlock.media -M4 -R0 -Een
+```
+
+这相当于交互菜单 `0`，只检测跨国平台、仅 IPv4，使用英文官方 label；不运行其他地区菜单或 IPv6 项目。结果按官方 label 解析，`Yes` / `No`、地区、WAF 等原始值保持不变。完整表展示脚本实际输出，服务配置按对应 label 展示；没有对应项目的服务标为“未覆盖”。DNS A 映射、AAAA 抑制、TLS/SNI 和代表页面只作独立路由诊断，无论成功或失败都不覆盖媒体结果。Agent 自检也只作参考。
+
+worker 每秒检查新输出，有输出即逐批上报，界面每 1 秒刷新已收到的结果；不等待整轮脚本完成。脚本执行没有 30 秒硬截止，也不再沿用旧的短时整轮等待上限；15 分钟仅作异常安全兜底，超限、下载/校验失败、脚本异常退出或没有有效 IPv4 平台结果均明确标记 `failed` 并给出原因。90 秒无心跳会显示 worker 失联并把任务标为失败。任务 `completed` 只表示脚本正常完成，不表示每个平台均为 `Yes`。
+
+面板将任务 ID、状态、逐批结果、进度和历史持久化到 `dataDir/media-checks.json`，默认 `/var/lib/prism-enhancer/media-checks.json`。关闭窗口不会取消后台任务，重新打开可继续读取；这不表示已失败的进程会自动从中断位置续跑。自动刷新周期为 6 小时，也支持手动重测和配置代更新后重测。路由、Proxy IPv4 或重测请求变化时更新 `generation`；旧代迟到上报会被拒收，防止旧线路覆盖当前结果。
+
+这里展示的是**官方脚本检测结果，不是实际付费播放、账号登录或所有应用功能通过的保证**，也不承诺已测试登录态账户权益。
+
+升级会清理超过 24 小时的旧 `/run/prismdns-media-check.*` 遗留文件，避免旧检测填满临时内存盘而阻止 systemd 加载配置。路由守卫会核验本地 DNS 的实际监听状态；即使规则内容未变化，缺失 IPv4/IPv6 回环监听也会重启专用解析器恢复。Agent 的旧 Controller 地址会在成功取得当前 bootstrap 后同步，以上修复对后续新增和升级机器同样生效。
+
+## 已有节点升级
+
+**仅替换 enhancer 二进制不会自动刷新远端节点。** 面板升级与节点脚本升级应分别完成：
+
+1. 面板使用本版 `v1.5.29/enhanced_install.sh`；保留整个 Enhancer `dataDir`，包括 `media-checks.json` 的进度和历史。
+2. 每台既有 Proxy 重新执行“节点管理”生成的本版 `agent_install.sh` 命令，更新兼容 Agent、transport `2.5.1` 和媒体 worker。
+3. 每台既有 Client 重新执行“IP 配置”生成的本版专属命令；已有有效本机配置时，也可用本版脚本刷新 runtime、transport 与 worker：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/prismdns.sh | sudo bash -s -- --refresh-runtime
+```
+
+`prism_transport.sh --sync` 只同步已安装的传输配置，不会下载新版 runtime/transport 或补装 worker。刷新后在每台节点检查 `systemctl is-enabled prism-media-check.timer`、`systemctl status prism-media-check.timer`，并在面板手动重测，确认逐批结果和任务心跳可读；oneshot service 空闲时不常驻是正常现象。
+
+面板地址迁移时，更新后的 transport 优先使用显式 `--master`；旧地址不可达时可从运行中 Agent 的 `--master` 恢复新地址，经响应校验后持久化到 transport 配置，worker 随后读取该配置。完整步骤见 [迁移教程](MIGRATION_ZH.md)。worker 跟随 transport / Agent 卸载，timer、service 和可执行文件一并移除，见 [卸载说明](UNINSTALL_ZH.md)。
 
 ## 发布、图标与全新安装
 
@@ -86,28 +118,26 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs
 如需在曾安装过 Prism 的主机上明确清空 Prism 数据并重新初始化，执行以下命令：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh \\
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \\
   | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
 ```
 
 该模式只清理 `/opt/prism/data.db`、`/opt/prism/.env`、初始密码文件和 `/var/lib/prism-enhancer/`，不会删除或修改 Docker、XrayR、V2bX、MTProxy 等其他业务。需要保留旧面板时，必须按 `MIGRATION_ZH.md` 显式备份和恢复；安装脚本不会自动带入旧数据。
 
-## 解锁检测与账户安全
-
-“节点管理”中的“运行解锁检测”现在只触发已绑定目标 IP 的 IPv4 媒体审计，不再把旧的解锁机自检接口当作最终结果。目标 IP 安装 `prismdns.sh` 后，会在路由变化及定期周期内执行 `bash <(curl -L -s check.unlock.media) -M 4`，再逐一核对全部路由域名、AAAA 抑制、TLS/SNI 握手和代表页面，把结果上报到“IP 配置”。服务配置页优先展示目标机四阶段结论；审计只写报告，不修改路由。
+## 账户安全
 
 点击页面右上角当前用户名可打开“账户安全”。系统先通过 Controller 验证旧用户名和旧密码，再原子更新 SQLite 用户记录并清理旧会话；更新成功后必须使用新账户重新登录。
 
 ## 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh | sudo bash
 ```
 
 可通过环境变量调整端口：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \
   | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
 ```
 

@@ -53,6 +53,10 @@ func main() {
 	app.nodeLabels = nodeLabels
 	app.branding = branding
 	app.transport = transport
+	app.mediaChecks, err = NewMediaCheckStore(filepath.Join(*dataDir, "media-checks.json"))
+	if err != nil {
+		log.Fatalf("initialize media checks: %v", err)
+	}
 	app.icons = newServiceIconCache(filepath.Join(*dataDir, "icon-cache"))
 	catalogSnapshot := catalog.Snapshot(context.Background(), false)
 	go func(services []Service) {

@@ -22,7 +22,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.28"
+const uiVersion = "1.5.29"
 
 type App struct {
 	catalog      *CatalogManager
@@ -32,6 +32,7 @@ type App struct {
 	branding     *BrandingStore
 	preferences  *CatalogPreferenceStore
 	transport    *TransportStore
+	mediaChecks  *MediaCheckStore
 	upstream     *url.URL
 	proxy        *httputil.ReverseProxy
 	client       *http.Client
@@ -87,6 +88,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		controllerDB: databasePath,
 	}
 	app.transport, _ = NewTransportStore("")
+	app.mediaChecks, _ = NewMediaCheckStore("")
 	proxy.ModifyResponse = app.modifyProxyResponse
 	return app, nil
 }
@@ -153,6 +155,9 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/transport/client", app.handleClientTransport)
 	mux.HandleFunc("/enhancer/api/traffic/report", app.handleTrafficReport)
 	mux.HandleFunc("/enhancer/api/audit/report", app.handleServiceAuditReport)
+	mux.HandleFunc("/enhancer/api/media-checks", app.handleMediaChecks)
+	mux.HandleFunc("/enhancer/api/media-checks/worker", app.handleMediaCheckWorker)
+	mux.HandleFunc("/enhancer/api/media-checks/", app.handleMediaCheck)
 	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)
 	mux.HandleFunc("/enhancer/rules/", app.handleRuleSet)
 	mux.HandleFunc("/enhancer/icons/", app.handleServiceIcon)

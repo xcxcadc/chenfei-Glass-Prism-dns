@@ -2,7 +2,8 @@
 
 set -Eeuo pipefail
 
-VERSION="2.5.0"
+VERSION="2.5.1"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.29}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -22,6 +23,7 @@ CLIENT_EGRESS_HTTPS_PORT=19444
 EGRESS_REPO="${PRISM_EGRESS_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 ROLE=""
 MASTER=""
+MASTER_OVERRIDE=""
 CREDENTIAL=""
 ACTION="install"
 TRANSPORT_MODE="${PRISM_TRANSPORT_MODE:-direct}"
@@ -38,14 +40,15 @@ parse_args() {
     case "$1" in
       --proxy) ROLE="proxy"; shift ;;
       --client) ROLE="client"; shift ;;
-      --master) MASTER="${2:-}"; shift 2 ;;
+      --master) MASTER="${2:-}"; MASTER_OVERRIDE="$MASTER"; shift 2 ;;
       --secret|--token) CREDENTIAL="${2:-}"; shift 2 ;;
       --mode) TRANSPORT_MODE="${2:-}"; shift 2 ;;
       --sync) ACTION="sync"; shift ;;
+      --refresh-runtime) ACTION="refresh-runtime"; shift ;;
       --uninstall) ACTION="uninstall"; shift ;;
       --status) ACTION="status"; shift ;;
       --help|-h)
-        echo "Usage: prism_transport.sh (--proxy --secret SECRET | --client --token TOKEN) --master URL [--mode direct|encrypted] [--sync|--uninstall|--status]"
+        echo "Usage: prism_transport.sh (--proxy --secret SECRET | --client --token TOKEN) --master URL [--mode direct|encrypted] [--sync|--refresh-runtime|--uninstall|--status]"
         exit 0
         ;;
       *) fail "unknown argument: $1" ;;
@@ -58,6 +61,7 @@ load_environment() {
     # shellcheck disable=SC1090
     source "$ENV_FILE"
   fi
+  [[ -z "$MASTER_OVERRIDE" ]] || MASTER="$MASTER_OVERRIDE"
   MASTER="${MASTER%/}"
   [[ "$TRANSPORT_MODE" == "direct" || "$TRANSPORT_MODE" == "encrypted" ]] || fail "invalid transport mode: $TRANSPORT_MODE"
 }
@@ -259,12 +263,54 @@ proxy_egress_ready() {
       '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'
 }
 
-post_json() {
-  local endpoint="$1" body="$2"
-  curl -fsSL --connect-timeout 8 --max-time 20 \
+agent_master_endpoint() {
+  local pid argument previous=""
+  pid=$(systemctl show prism-agent.service -p MainPID --value 2>/dev/null) || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ && -r "/proc/$pid/cmdline" ]] || return 1
+  while IFS= read -r -d '' argument; do
+    if [[ "$previous" == "--master" ]]; then
+      printf '%s\n' "${argument%/}"
+      return 0
+    fi
+    case "$argument" in
+      --master=*) printf '%s\n' "${argument#--master=}"; return 0 ;;
+    esac
+    previous="$argument"
+  done <"/proc/$pid/cmdline"
+  return 1
+}
+
+transport_response_valid() {
+  jq -e --arg role "$ROLE" '.role == $role and (.peers | type == "array")' >/dev/null
+}
+
+post_transport_json() {
+  local master="$1" endpoint="$2" body="$3"
+  curl -fsS --connect-timeout 8 --max-time 20 \
     -H 'Content-Type: application/json' \
-    --data-binary "$body" \
-    "$MASTER$endpoint"
+    --data-binary @- "$master$endpoint" <<<"$body"
+}
+
+post_json() {
+  local endpoint="$1" body="$2" response candidate
+  if response=$(post_transport_json "$MASTER" "$endpoint" "$body") &&
+    transport_response_valid <<<"$response"; then
+    [[ -z "$MASTER_OVERRIDE" ]] || save_environment
+    printf '%s\n' "$response"
+    return 0
+  fi
+  candidate=$(agent_master_endpoint) || return 1
+  candidate="${candidate%/}"
+  [[ "$candidate" =~ ^https?://[^[:space:]@]+$ && "$candidate" != "$MASTER" ]] || return 1
+  if response=$(post_transport_json "$candidate" "$endpoint" "$body") &&
+    transport_response_valid <<<"$response"; then
+    MASTER="$candidate"
+    save_environment
+    log "transport controller recovered from the active Agent configuration" >&2
+    printf '%s\n' "$response"
+    return 0
+  fi
+  return 1
 }
 
 proxy_registration() {
@@ -358,6 +404,9 @@ apply_proxy_authorization() {
   join_csv() { local IFS=,; printf '%s' "$*"; }
   temporary=$(mktemp)
   {
+    if nft list table inet prism_authorization >/dev/null 2>&1; then
+      echo 'delete table inet prism_authorization'
+    fi
     echo 'table inet prism_authorization {'
     printf '  set clients4 { type ipv4_addr; flags timeout; timeout 30s;'
     ((${#clients4[@]} > 0)) && printf ' elements = { %s };' "$(join_csv "${clients4[@]}")"
@@ -375,7 +424,7 @@ apply_proxy_authorization() {
     echo '  }'
     echo '}'
   } >"$temporary"
-  nft delete table inet prism_authorization >/dev/null 2>&1 || true
+  nft -c -f "$temporary"
   nft -f "$temporary"
   rm -f "$temporary"
 }
@@ -760,6 +809,7 @@ Persistent=true
 WantedBy=timers.target
 EOF
   fi
+  find /run -maxdepth 1 -type f -name 'prismdns-media-check.*' -mmin +1440 -delete 2>/dev/null || true
   systemctl daemon-reload
   systemctl enable prism-transport.timer >/dev/null
   systemctl restart prism-transport.timer
@@ -782,12 +832,49 @@ install_transport() {
   [[ "$ROLE" == "proxy" ]] && install_proxy_egress
   install_timer
   sync_transport
+  install_media_worker
   log "Prism SNI transport v$VERSION installed for role $ROLE (mode: $TRANSPORT_MODE)"
+}
+
+refresh_transport_runtime() {
+  [[ -s "$ENV_FILE" ]] || fail "transport configuration is missing"
+  load_environment
+  [[ "$ROLE" == "client" ]] || fail "client runtime refresh requires an existing client transport"
+  [[ "$MASTER" =~ ^https?://[^[:space:]]+$ && -n "$CREDENTIAL" ]] || fail "invalid transport configuration"
+  if [[ -n "$MASTER_OVERRIDE" ]]; then
+    save_environment
+  fi
+  mkdir -p "$INSTALL_DIR"
+  if [[ "$(readlink -f "$0")" != "$INSTALL_PATH" ]]; then
+    install -m 755 "$0" "$INSTALL_PATH"
+  fi
+  install_timer
+  install_media_worker
+  log "client transport runtime refreshed without Agent reinstall or immediate transport sync"
+}
+
+install_media_worker() {
+  local installer="${PRISM_MEDIA_INSTALLER_FILE:-}" temporary=""
+  if [[ -z "$installer" ]]; then
+    temporary=$(mktemp /run/prism-media-installer.XXXXXX)
+    installer="$temporary"
+    if ! curl -fsSL --connect-timeout 8 --max-time 30 \
+      "https://raw.githubusercontent.com/$EGRESS_REPO/refs/tags/$SCRIPT_REF/prism_media.sh" -o "$installer"; then
+      rm -f "$temporary"
+      fail "could not download the IPv4 media check worker"
+    fi
+  fi
+  bash -n "$installer" || fail "invalid IPv4 media check installer"
+  bash "$installer" --install
+  [[ -z "$temporary" ]] || rm -f "$temporary"
 }
 
 uninstall_transport() {
   local service_id proxy_ip
   load_environment
+  if [[ -x /usr/local/bin/prism-media-check ]]; then
+    /usr/local/bin/prism-media-check --uninstall
+  fi
   if [[ "$ROLE" == "client" && -n "$MASTER" && -n "$CREDENTIAL" && -s "$SSH_KEY_FILE.pub" ]]; then
     client_registration '[]' >/dev/null 2>&1 || true
   fi
@@ -838,6 +925,7 @@ main() {
   flock -w 30 9 || fail "another transport synchronization is still running"
   case "$ACTION" in
     sync) sync_transport ;;
+    refresh-runtime) refresh_transport_runtime ;;
     uninstall) uninstall_transport ;;
     status) show_status ;;
     install) install_transport ;;

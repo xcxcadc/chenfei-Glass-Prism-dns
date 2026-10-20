@@ -5,6 +5,9 @@ source <(sed -n '/^validate_provider_summary() {$/,/^}$/p' prismdns.sh)
 source <(sed -n '/^http_status_is_response() {$/,/^}$/p' prismdns.sh)
 source <(sed -n '/^http_status_is_page_success() {$/,/^}$/p' prismdns.sh)
 source <(sed -n '/^  download_media_check_script() {$/,/^  }$/p' prismdns.sh | sed 's/^  //')
+source <(sed -n '/^  media_results_for_label() {$/,/^  }$/p' prismdns.sh | sed 's/^  //')
+source <(sed -n '/^  media_result_is_positive() {$/,/^  }$/p' prismdns.sh | sed 's/^  //')
+source <(sed -n '/^  media_summary_for_probe() {$/,/^  }$/p' prismdns.sh | sed 's/^  //')
 
 curl() {
   local output="" url=""
@@ -69,5 +72,30 @@ fi
 
 https_page_success=0
 assert_summary 'PASS' 'PASS' false 1 1 1 1
+
+assert_media_status() {
+  local expected="$1" probe="$2" actual
+  actual=$(media_summary_for_probe "$probe")
+  if [[ "$actual" != "$expected"* ]]; then
+    printf 'expected media status %s, got %s\n' "$expected" "$actual" >&2
+    exit 1
+  fi
+}
+
+media_error='script exceeded the 120s audit limit'
+plain=$'ChatGPT: Yes\nNetflix: Yes (HK)\nDisney+: Yes (HK)\nDAZN: Yes (JO)\nGrok: Network Connection\nGemini: Ye'
+assert_media_status 'PASS' '{"media_required":["ChatGPT"]}'
+assert_media_status 'PASS' '{"media_required":["Netflix"]}'
+assert_media_status 'PASS' '{"media_required":["Disney+"]}'
+assert_media_status 'PASS' '{"media_required":["DAZN"]}'
+assert_media_status 'FAIL' '{"media_required":["Grok"]}'
+assert_media_status 'NOT TESTED' '{"media_required":["Gemini"]}'
+assert_media_status 'NOT TESTED' '{"media_required":["ChatGPT","Gemini"]}'
+assert_media_status 'PASS' '{"media_any":["Netflix","Gemini"]}'
+
+media_error=''
+assert_media_status 'NOT COVERED' '{"media_required":["Gemini"]}'
+plain=$'ChatGPT: Network Connection\n'
+assert_media_status 'FAIL' '{"media_required":["ChatGPT"]}'
 
 printf 'Prism DNS audit classification tests passed.\n'

@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.28"
+VERSION="1.5.29"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 BACKUP_RETENTION="${PRISM_DNS_BACKUP_RETENTION:-12}"
@@ -161,18 +161,25 @@ bootstrap() {
 }
 
 install_client_transport() {
-  local installer_url="$1" installer="/tmp/prism_transport.sh"
+  local installer_url="$1" mode="${2:-install}" installer="${PRISM_TRANSPORT_INSTALLER_FILE:-}" temporary=""
   info "安装 Prism SNI 解锁传输..."
-  if [[ -n "${PRISM_TRANSPORT_INSTALLER_FILE:-}" ]]; then
-    installer="$PRISM_TRANSPORT_INSTALLER_FILE"
-  else
-    curl -fsSL "$installer_url" -o "$installer"
+  if [[ -z "$installer" ]]; then
+    [[ "$installer_url" =~ ^https://[^[:space:]]+$ ]] || fail "面板未返回有效的 HTTPS 传输脚本地址。"
+    temporary=$(mktemp /run/prism-transport-installer.XXXXXX)
+    installer="$temporary"
+    curl -fsSL --connect-timeout 8 --max-time 30 "$installer_url" -o "$installer" || fail "无法获取传输脚本。"
   fi
-  chmod +x "$installer"
-  bash "$installer" --client --master "$MASTER" --token "$TOKEN"
+  [[ -s "$installer" ]] && bash -n "$installer" || fail "传输脚本为空或语法错误。"
+  if [[ "$mode" == refresh ]]; then
+    bash "$installer" --refresh-runtime --master "$MASTER"
+  else
+    bash "$installer" --client --master "$MASTER" --token "$TOKEN"
+  fi
+  [[ -z "$temporary" ]] || rm -f "$temporary"
 }
 
 install_traffic_reporter() {
+  local mode="${1:-install}"
   require_root
   mkdir -p /usr/local/lib/prismdns
   cat > /usr/local/lib/prismdns/report-heartbeat.sh <<'EOF'
@@ -278,7 +285,7 @@ BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
 MEDIA_CHECK_URL="http://check.unlock.media"
 MEDIA_CHECK_FALLBACK_URL="https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh"
 MEDIA_CHECK_TIMEOUT=120
-AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v5-http-status-aware"
+AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v6-partial-results"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
 HEALTH_CACHE_INTERVAL=1800
 [[ -f "$CONFIG_FILE" ]] || exit 0
@@ -580,7 +587,7 @@ run_service_audit() {
       value="${trimmed:${#label}+1}"
       value="${value#"${value%%[![:space:]]*}"}"
       [[ -n "$value" ]] && printf '%s\n' "$value"
-    done <<<"$plain"
+    done < <(printf '%s' "$plain")
   }
   media_result_is_positive() {
     local value="${1,,}"
@@ -596,10 +603,6 @@ run_service_audit() {
     local -a required_labels any_labels
     mapfile -t required_labels < <(jq -r '.media_required[]? | select(length > 0)' <<<"$1")
     mapfile -t any_labels < <(jq -r '.media_any[]? | select(length > 0)' <<<"$1")
-    if [[ -n "$media_error" ]]; then
-      printf 'NOT TESTED (check.unlock.media IPv4 check unavailable: %s)\n' "$media_error"
-      return
-    fi
     if ((${#required_labels[@]} == 0 && ${#any_labels[@]} == 0)); then
       printf 'NOT COVERED (check.unlock.media has no matching service check)\n'
       return
@@ -654,7 +657,9 @@ run_service_audit() {
       fi
     fi
 
-    if [[ -n "$missing_labels" ]]; then
+    if [[ -n "$missing_labels" && -n "$media_error" ]]; then
+      printf 'NOT TESTED (check.unlock.media IPv4 check incomplete: %s; missing %s; %s)\n' "$media_error" "$missing_labels" "$details"
+    elif [[ -n "$missing_labels" ]]; then
       printf 'NOT COVERED (check.unlock.media IPv4 labels not returned: %s; %s)\n' "$missing_labels" "$details"
     elif ((required_failed > 0 || (${#any_labels[@]} > 0 && any_passed == 0))); then
       printf 'FAIL (check.unlock.media IPv4 required %d/%d; alternatives %d/%d; %s)\n' \
@@ -695,7 +700,13 @@ run_service_audit() {
   else
     chmod 700 "$media_script"
     if command -v timeout >/dev/null 2>&1; then
-      media_output=$(printf '\n' | timeout -k 5 "$MEDIA_CHECK_TIMEOUT" bash "$media_script" -M 4 2>&1) || media_status=$?
+      media_output=$(
+        printf '\n' | timeout -k 5 "$MEDIA_CHECK_TIMEOUT" bash "$media_script" -M 4 2>&1
+        media_exit_status=$?
+        printf '\037'
+        exit "$media_exit_status"
+      ) || media_status=$?
+      media_output="${media_output%$'\037'}"
     else
       media_error="timeout utility is unavailable; unbounded audit was skipped"
     fi
@@ -710,7 +721,8 @@ run_service_audit() {
     fi
   fi
   rm -f "$media_script"
-  plain=$(sed $'s/\033\\[[0-9;]*[mK]//g' <<<"$media_output" | tr -d '\r')
+  plain=$(printf '%s' "$media_output" | sed $'s/\033\\[[0-9;]*[mK]//g' | tr '\r' '\n'; printf '\037')
+  plain="${plain%$'\037'}"
   printf '%s\n' "$plain" > "$AUDIT_OUTPUT_FILE"
   results='{}'
   while IFS= read -r probe; do
@@ -863,7 +875,7 @@ run_service_audit() {
   fi
 }
 
-if [[ "${PRISM_SKIP_SERVICE_AUDIT:-0}" != "1" ]] &&
+if [[ ! -x /usr/local/bin/prism-media-check ]] && [[ "${PRISM_SKIP_SERVICE_AUDIT:-0}" != "1" ]] &&
   { [[ "${PRISM_RUN_SERVICE_AUDIT:-0}" == "1" ]] || ! command -v systemctl >/dev/null 2>&1; } &&
   $DNS_READY && $SYSTEM_DNS_READY && $ROUTES_READY; then
   AUDIT_HASH=$({
@@ -893,7 +905,7 @@ HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
 BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
-  AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v5-http-status-aware"
+  AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v6-partial-results"
 HEALTH_CHECK_FILE="/var/lib/prismdns/route-health.timestamp"
 HEALTH_CHECK_INTERVAL=300
 DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
@@ -1245,7 +1257,7 @@ render_local_routes() {
   if command -v systemctl >/dev/null 2>&1; then
     systemctl is-enabled --quiet "$LOCAL_DNS_SERVICE" 2>/dev/null ||
       systemctl enable "$LOCAL_DNS_SERVICE" >/dev/null 2>&1 || true
-    if $changed || ! systemctl is-active --quiet "$LOCAL_DNS_SERVICE"; then
+    if $changed || ! local_dns_ready; then
       dnsmasq --test --conf-file="$DNSMASQ_CONFIG" >/dev/null
       systemctl restart "$LOCAL_DNS_SERVICE"
     fi
@@ -1258,7 +1270,7 @@ remove_deterministic_dns() {
   systemctl daemon-reload >/dev/null 2>&1 || true
 }
 ensure_agent_mode() {
-  local unit="" smart changed=false
+  local unit="" smart expected_master existing_master changed=false
   for candidate in /etc/systemd/system/prism-agent.service /lib/systemd/system/prism-agent.service; do
     if [[ -s "$candidate" ]]; then
       unit="$candidate"
@@ -1266,6 +1278,12 @@ ensure_agent_mode() {
     fi
   done
   [[ -n "$unit" ]] || return 0
+  expected_master=$(jq -r '.master // empty' <<<"$BOOTSTRAP")
+  existing_master=$(sed -nE 's/^ExecStart=.*--master[=[:space:]]+([^[:space:]]+).*$/\1/p' "$unit")
+  if [[ "$expected_master" =~ ^https?://[a-zA-Z0-9._:-]+/?$ && -n "$existing_master" && "$existing_master" != "$expected_master" ]]; then
+    sed -i -E "/^ExecStart=/ s#(--master(=|[[:space:]]+))[^[:space:]]+#\\1${expected_master}#" "$unit"
+    changed=true
+  fi
   smart=$(jq -r '.smart // true' <<<"$BOOTSTRAP")
   if [[ "$smart" == "true" ]] && ! grep -Eq '^ExecStart=.*(^|[[:space:]])--smart([[:space:]]|$)' "$unit"; then
     sed -i -E '/^ExecStart=/ s/$/ --smart/' "$unit"
@@ -1304,6 +1322,7 @@ AUDIT_HASH=$({
 } | sha256sum | awk '{print $1}')
 LAST_AUDIT_HASH=$(cat "$AUDIT_HASH_FILE" 2>/dev/null || true)
 trigger_service_audit() {
+  [[ ! -x /usr/local/bin/prism-media-check ]] || return 0
   [[ "$AUDIT_HASH" != "$LAST_AUDIT_HASH" ]] || return 0
   command -v systemctl >/dev/null 2>&1 || return 0
   systemctl is-active --quiet prismdns-service-audit.service && return 0
@@ -1457,8 +1476,10 @@ EOF
   else
     warn "系统没有 systemd 或 cron，无法启用定时流量上报。"
   fi
-  /usr/local/lib/prismdns/sync-routes.sh || warn "首次路由同步守卫初始化失败，定时任务会稍后重试。"
-  PRISM_SKIP_SERVICE_AUDIT=1 /usr/local/lib/prismdns/report-traffic.sh || warn "首次流量上报失败，定时任务会稍后重试。"
+  if [[ "$mode" != refresh ]]; then
+    /usr/local/lib/prismdns/sync-routes.sh || warn "首次路由同步守卫初始化失败，定时任务会稍后重试。"
+    PRISM_SKIP_SERVICE_AUDIT=1 /usr/local/lib/prismdns/report-traffic.sh || warn "首次流量上报失败，定时任务会稍后重试。"
+  fi
   ok "每 IP 解锁链路流量统计已启用（本机 Prism DNS 的 UDP/TCP 53，加上目标服务器与已选解锁机之间 TCP 80/443；每分钟上报）。"
 }
 
@@ -1795,11 +1816,31 @@ one_click() {
 }
 
 refresh_runtime() {
+  local response transport_installer
   require_root
   ensure_dependencies
   load_config
   validate_master
-  install_traffic_reporter
+  response=$(curl -fsSL --connect-timeout 8 --max-time 20 "$MASTER/enhancer/api/bootstrap/$TOKEN") || fail "无法验证现有配置令牌，运行时未更新。"
+  transport_installer=$(jq -r '.transport_installer // empty' <<<"$response")
+  [[ -n "$transport_installer" || -n "${PRISM_TRANSPORT_INSTALLER_FILE:-}" ]] || fail "面板未返回传输脚本，运行时未更新。"
+  [[ -s "${PRISM_TRANSPORT_ENV_FILE:-/etc/prismdns/transport.env}" ]] || fail "传输环境缺失，请先安装节点；未重装 Agent。"
+  install_client_transport "$transport_installer" refresh
+  install_traffic_reporter refresh
+}
+
+install_media_worker() {
+  local installer="${PRISM_MEDIA_INSTALLER_FILE:-}" temporary=""
+  if [[ -z "$installer" ]]; then
+    temporary=$(mktemp /run/prism-media-refresh.XXXXXX)
+    installer="$temporary"
+    curl -fsSL --connect-timeout 8 --max-time 30 \
+      "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v${VERSION}/prism_media.sh" \
+      -o "$installer" || fail "无法获取媒体 worker。"
+  fi
+  bash -n "$installer" || fail "媒体 worker 语法检查失败。"
+  bash "$installer" --install
+  [[ -z "$temporary" ]] || rm -f "$temporary"
 }
 
 show_menu() {
