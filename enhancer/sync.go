@@ -176,9 +176,12 @@ func (app *App) effectiveProxyPeers(record ipConfigRecord) map[string][]string {
 }
 
 func effectiveProxyPeers(record ipConfigRecord) map[string][]string {
-	result := cloneProxyPeers(record.ProxyPeers)
+	result := ipv4ProxyPeers(record.ProxyPeers)
 	if len(result) > 0 {
 		return result
+	}
+	if len(record.ProxyPeers) > 0 {
+		return nil
 	}
 	proxyIDs := make(map[string]struct{})
 	for _, proxyID := range record.Routes {
@@ -189,8 +192,8 @@ func effectiveProxyPeers(record ipConfigRecord) map[string][]string {
 	}
 	peers := make([]string, 0, len(record.TrafficPeers))
 	for _, peer := range record.TrafficPeers {
-		if parsed := net.ParseIP(strings.TrimSpace(peer)); parsed != nil {
-			peers = append(peers, parsed.String())
+		if parsed := net.ParseIP(strings.TrimSpace(peer)); parsed != nil && parsed.To4() != nil {
+			peers = append(peers, parsed.To4().String())
 		}
 	}
 	if len(peers) == 0 {
@@ -200,4 +203,28 @@ func effectiveProxyPeers(record ipConfigRecord) map[string][]string {
 		return map[string][]string{proxyID: peers}
 	}
 	return nil
+}
+
+func ipv4ProxyPeers(source map[string][]string) map[string][]string {
+	if len(source) == 0 {
+		return nil
+	}
+	result := make(map[string][]string)
+	for proxyID, peers := range source {
+		for _, peer := range peers {
+			parsed := net.ParseIP(strings.TrimSpace(peer))
+			if parsed != nil && parsed.To4() != nil {
+				result[proxyID] = append(result[proxyID], parsed.To4().String())
+			}
+		}
+		if len(result[proxyID]) == 0 {
+			delete(result, proxyID)
+		} else {
+			result[proxyID] = validIPPeers(result[proxyID])
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }

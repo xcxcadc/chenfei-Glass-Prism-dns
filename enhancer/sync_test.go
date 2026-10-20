@@ -68,8 +68,8 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 		t.Fatalf("persistent rule missing: %+v", payload.Rules)
 	}
 	ips, _ := rule["ips"].([]any)
-	if len(ips) != 2 || ips[0] != "198.51.100.20" || ips[1] != "2001:db8::20" {
-		t.Fatalf("managed rules must preserve both proxy address families: %+v", rule)
+	if len(ips) != 1 || ips[0] != "198.51.100.20" {
+		t.Fatalf("managed unlock rules must use only the proxy IPv4 address: %+v", rule)
 	}
 	if _, exists := payload.Rules["https://panel/enhancer/rules/stale.list:stale.example"]; exists {
 		t.Fatal("stale enhancer rule was not removed")
@@ -112,17 +112,27 @@ func TestAgentSyncIgnoresUnknownNodeSecret(t *testing.T) {
 	}
 }
 
-func TestEffectiveProxyPeersMigratesSingleProxyConfig(t *testing.T) {
+func TestEffectiveProxyPeersMigratesSingleProxyConfigWithIPv4Priority(t *testing.T) {
 	record := ipConfigRecord{IPConfig: IPConfig{
 		Routes:       map[string]string{"service-a": "proxy-1", "service-b": "proxy-1"},
 		TrafficPeers: []string{"198.51.100.20", "2001:db8::20"},
 	}}
 	peers := effectiveProxyPeers(record)
-	if len(peers) != 1 || len(peers["proxy-1"]) != 2 || peers["proxy-1"][0] != "198.51.100.20" || peers["proxy-1"][1] != "2001:db8::20" {
-		t.Fatalf("legacy single-proxy config was not migrated: %+v", peers)
+	if len(peers) != 1 || len(peers["proxy-1"]) != 1 || peers["proxy-1"][0] != "198.51.100.20" {
+		t.Fatalf("legacy single-proxy config did not prefer its IPv4 peer: %+v", peers)
 	}
 	record.Routes["service-b"] = "proxy-2"
 	if peers := effectiveProxyPeers(record); peers != nil {
 		t.Fatalf("ambiguous legacy multi-proxy config should not be guessed: %+v", peers)
+	}
+}
+
+func TestEffectiveProxyPeersRejectsIPv6OnlyUnlockPeer(t *testing.T) {
+	record := ipConfigRecord{
+		IPConfig:   IPConfig{Routes: map[string]string{"service-a": "proxy-1"}},
+		ProxyPeers: map[string][]string{"proxy-1": {"2001:db8::20"}},
+	}
+	if peers := effectiveProxyPeers(record); len(peers) != 0 {
+		t.Fatalf("IPv6-only unlock peer must not be selected: %+v", peers)
 	}
 }

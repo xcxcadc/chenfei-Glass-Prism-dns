@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.27"
+VERSION="1.5.28"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 BACKUP_RETENTION="${PRISM_DNS_BACKUP_RETENTION:-12}"
@@ -231,7 +231,7 @@ if awk '$1 == "nameserver" && ($2 == "127.0.0.1" || $2 == "::1") {found=1} END {
 else
   MESSAGE="${MESSAGE:+$MESSAGE; }System DNS is not using Prism"
 fi
-HEALTH_KEY=$(jq -Sc '{mode:"agent-smart-dual-stack-v1",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))}' "$BOOTSTRAP_FILE" | sha256sum | awk '{print $1}')
+HEALTH_KEY=$(jq -Sc '{mode:"agent-smart-ipv4-route-v2",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))}' "$BOOTSTRAP_FILE" | sha256sum | awk '{print $1}')
 HEALTHY=0
 EXPECTED=0
 if [[ -s "$HEALTH_FILE" ]] &&
@@ -277,8 +277,8 @@ AUDIT_INTERVAL=21600
 BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
 MEDIA_CHECK_URL="http://check.unlock.media"
 MEDIA_CHECK_FALLBACK_URL="https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh"
-MEDIA_CHECK_TIMEOUT=900
-AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v3"
+MEDIA_CHECK_TIMEOUT=120
+AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v5-http-status-aware"
 HEALTH_CACHE_FILE="/var/lib/prismdns/route-health-report.json"
 HEALTH_CACHE_INTERVAL=1800
 [[ -f "$CONFIG_FILE" ]] || exit 0
@@ -341,6 +341,7 @@ DNS_BACKEND=$(dns_backend)
 if ! BOOTSTRAP=$(curl -fsSL --connect-timeout 8 --max-time 15 "$MASTER/enhancer/api/bootstrap/$TOKEN"); then
   exit 0
 fi
+AUDIT_REQUESTED_AT=$(jq -r '.service_audit_requested_at // empty' <<<"$BOOTSTRAP")
 BOOTSTRAP_TMP=$(mktemp "$STATE_DIR/bootstrap.json.XXXXXX")
 printf '%s\n' "$BOOTSTRAP" >"$BOOTSTRAP_TMP"
 chmod 600 "$BOOTSTRAP_TMP"
@@ -476,7 +477,7 @@ dns_guard_ok() {
   [[ "$required" != "1" || "$ready" == "1" ]]
 }
 ROUTE_HEALTH_KEY=$(jq -Sc '
-  {mode:"agent-smart-dual-stack-v1",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))}
+  {mode:"agent-smart-ipv4-route-v2",probes:([.health_probes[]? | {service_id,domain,probe_domains,route_domains,domain_keywords,route_cidrs,traffic_peers}] | sort_by(.service_id))}
 ' <<<"$BOOTSTRAP" | sha256sum | awk '{print $1}')
 NOW=$(date +%s)
 USE_HEALTH_CACHE=false
@@ -528,11 +529,42 @@ reset_traffic_counters() {
   nft reset counter inet prism_transport rx >/dev/null 2>&1 || true
 }
 
+wait_for_audit_worker_slot() {
+  while (( $(jobs -rp | wc -l) >= 8 )); do
+    wait || true
+  done
+}
+
+validate_provider_summary() {
+  local provider_summary="$1" probe_budget_exhausted="$2" route_total="$3" route_pass="$4"
+  local required_https_pass="$5" required_https_total="$6"
+  if $probe_budget_exhausted; then
+    provider_summary="NOT TESTED (total route audit exceeded its 240s time budget)"
+  fi
+  if ! $probe_budget_exhausted && [[ "$provider_summary" =~ ^(PASS|NOT\ TESTED|NOT\ COVERED) ]] && {
+    ((route_total == 0)) ||
+    ((route_pass != route_total)) ||
+    ((required_https_pass != required_https_total));
+  }; then
+    provider_summary="FAIL (target DNS route or required TLS/SNI validation failed)"
+  fi
+  printf '%s\n' "$provider_summary"
+}
+
+http_status_is_response() {
+  [[ "${1:-}" =~ ^[1-5][0-9][0-9]$ ]]
+}
+
+http_status_is_page_success() {
+  [[ "${1:-}" =~ ^[23][0-9][0-9]$ ]]
+}
+
 run_service_audit() {
   local audit_hash="$1" now="$2" media_output="" plain="" results probe service_id service_name result provider_summary matched_peer answer peer media_status=0
   local media_error="" media_script="" probe_domain route_domain http_code resolve_peer
-  local route_total route_pass https_total https_pass https_success required_https_total required_https_pass optional_https_total optional_https_pass optional_failure_csv
+  local route_total route_pass https_total https_pass https_page_success required_https_total required_https_pass optional_https_total optional_https_pass optional_failure_csv
   local probe_attempt tls_attempt_pass page_ok diagnostic_summary
+  local audit_deadline=$((SECONDS + 240)) probe_budget_exhausted=false route_index probe_index route_check_dir tls_check_dir report_status
   local -a probe_domains route_domains probe_peers optional_failures
   is_optional_probe_domain() {
     [[ "$service_name" == "Gemini" && "$1" == "play.google.com" ]]
@@ -565,7 +597,7 @@ run_service_audit() {
     mapfile -t required_labels < <(jq -r '.media_required[]? | select(length > 0)' <<<"$1")
     mapfile -t any_labels < <(jq -r '.media_any[]? | select(length > 0)' <<<"$1")
     if [[ -n "$media_error" ]]; then
-      printf 'FAIL (check.unlock.media IPv4 check unavailable: %s)\n' "$media_error"
+      printf 'NOT TESTED (check.unlock.media IPv4 check unavailable: %s)\n' "$media_error"
       return
     fi
     if ((${#required_labels[@]} == 0 && ${#any_labels[@]} == 0)); then
@@ -635,13 +667,24 @@ run_service_audit() {
     fi
   }
   download_media_check_script() {
-    local url
+    local url candidate
     : >"$media_script"
     for url in "$MEDIA_CHECK_URL" "$MEDIA_CHECK_FALLBACK_URL"; do
-      if curl -4 -fsSL --connect-timeout 10 --max-time 45 "$url" | sed 's/\r$//' >"$media_script" && [[ -s "$media_script" ]]; then
-        return 0
+      candidate="${media_script}.download"
+      rm -f "$candidate"
+      if curl -4 -fsSL --connect-timeout 8 --max-time 30 "$url" -o "$candidate" && [[ -s "$candidate" ]]; then
+        sed 's/\r$//' "$candidate" >"$media_script" || true
+        if [[ -s "$media_script" ]] &&
+          head -n 1 "$media_script" | grep -Eq '^#!.*(ba)?sh([[:space:]]|$)' &&
+          ! grep -Eiq '^[[:space:]]*(<!doctype[[:space:]]+html|<html([[:space:]>]|$))' "$media_script" &&
+          bash -n "$media_script" >/dev/null 2>&1; then
+          rm -f "$candidate"
+          return 0
+        fi
       fi
+      rm -f "$candidate"
     done
+    : >"$media_script"
     return 1
   }
   media_script=$(mktemp /run/prismdns-media-check.XXXXXX)
@@ -652,12 +695,16 @@ run_service_audit() {
   else
     chmod 700 "$media_script"
     if command -v timeout >/dev/null 2>&1; then
-      media_output=$(printf '\n' | timeout "$MEDIA_CHECK_TIMEOUT" bash "$media_script" -M 4 2>&1) || media_status=$?
+      media_output=$(printf '\n' | timeout -k 5 "$MEDIA_CHECK_TIMEOUT" bash "$media_script" -M 4 2>&1) || media_status=$?
     else
-      media_output=$(printf '\n' | bash "$media_script" -M 4 2>&1) || media_status=$?
+      media_error="timeout utility is unavailable; unbounded audit was skipped"
     fi
     if ((media_status != 0)); then
-      media_error="script exited with status $media_status"
+      if ((media_status == 124 || media_status == 137)); then
+        media_error="script exceeded the ${MEDIA_CHECK_TIMEOUT}s audit limit"
+      else
+        media_error="script exited with status $media_status"
+      fi
     elif [[ -z "$media_output" ]]; then
       media_error="script returned no output"
     fi
@@ -676,21 +723,37 @@ run_service_audit() {
     mapfile -t probe_peers < <(jq -r '.traffic_peers[]?' <<<"$probe" | sort -u)
     route_total=${#route_domains[@]}
     route_pass=0
-    for route_domain in "${route_domains[@]}"; do
-      if route_ready "$route_domain" "${probe_peers[@]}"; then
-        route_pass=$((route_pass + 1))
+    route_check_dir=$(mktemp -d /run/prismdns-audit-routes.XXXXXX)
+    for route_index in "${!route_domains[@]}"; do
+      if ((SECONDS + 30 >= audit_deadline)); then
+        probe_budget_exhausted=true
+        printf '0\n' >"$route_check_dir/$route_index"
+        continue
       fi
+      wait_for_audit_worker_slot
+      (
+        if route_ready "${route_domains[$route_index]}" "${probe_peers[@]}"; then
+          printf '1\n' >"$route_check_dir/$route_index"
+        else
+          printf '0\n' >"$route_check_dir/$route_index"
+        fi
+      ) &
     done
+    wait || true
+    for route_index in "${!route_domains[@]}"; do
+      [[ "$(cat "$route_check_dir/$route_index" 2>/dev/null || true)" == "1" ]] && route_pass=$((route_pass + 1))
+    done
+    rm -rf -- "$route_check_dir"
     https_total=${#probe_domains[@]}
     https_pass=0
-    https_success=0
+    https_page_success=0
     required_https_total=0
     required_https_pass=0
     optional_https_total=0
     optional_https_pass=0
     optional_failures=()
-    for probe_domain in "${probe_domains[@]}"; do
-      matched_peer=""
+    probe_tls_domain() {
+      local probe_domain="$1" matched_peer="" answer peer resolve_peer http_code tls_attempt_pass=0 page_ok=false probe_attempt
       while IFS= read -r answer; do
         for peer in "${probe_peers[@]}"; do
           if [[ "$answer" == "$peer" ]]; then
@@ -702,23 +765,40 @@ run_service_audit() {
         dig @127.0.0.1 "$probe_domain" A +short +time=2 +tries=1
         dig @127.0.0.1 "$probe_domain" AAAA +short +time=2 +tries=1
       } 2>/dev/null | sed '/^$/d' | sort -u)
-      [[ -n "$matched_peer" ]] || continue
-      resolve_peer="$matched_peer"
-      [[ "$resolve_peer" == *:* ]] && resolve_peer="[$resolve_peer]"
+      if [[ -n "$matched_peer" ]]; then
+        resolve_peer="$matched_peer"
+        [[ "$resolve_peer" == *:* ]] && resolve_peer="[$resolve_peer]"
+        for probe_attempt in 1 2 3; do
+          http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' \
+            --resolve "$probe_domain:443:$resolve_peer" --connect-timeout 4 --max-time 8 "https://$probe_domain/" || true)
+          if http_status_is_response "$http_code"; then
+            tls_attempt_pass=$((tls_attempt_pass + 1))
+          fi
+          if http_status_is_page_success "$http_code"; then
+            page_ok=true
+          fi
+          ((tls_attempt_pass >= 2)) && break
+        done
+      fi
+      printf '%s %s\n' "$tls_attempt_pass" "$page_ok"
+    }
+    tls_check_dir=$(mktemp -d /run/prismdns-audit-tls.XXXXXX)
+    for probe_index in "${!probe_domains[@]}"; do
+      if ((SECONDS + 30 >= audit_deadline)); then
+        probe_budget_exhausted=true
+        printf '0 false\n' >"$tls_check_dir/$probe_index"
+        continue
+      fi
+      wait_for_audit_worker_slot
+      probe_tls_domain "${probe_domains[$probe_index]}" >"$tls_check_dir/$probe_index" 2>/dev/null &
+    done
+    wait || true
+    for probe_index in "${!probe_domains[@]}"; do
+      probe_domain="${probe_domains[$probe_index]}"
       tls_attempt_pass=0
       page_ok=false
-      for probe_attempt in 1 2 3; do
-        http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
-          -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' \
-          --resolve "$probe_domain:443:$resolve_peer" --connect-timeout 6 --max-time 25 "https://$probe_domain/" || true)
-        if [[ "$http_code" =~ ^[1-5][0-9][0-9]$ ]]; then
-          tls_attempt_pass=$((tls_attempt_pass + 1))
-        fi
-        if [[ "$http_code" =~ ^[1-4][0-9][0-9]$ ]]; then
-          page_ok=true
-        fi
-        ((tls_attempt_pass >= 2)) && break
-      done
+      read -r tls_attempt_pass page_ok <"$tls_check_dir/$probe_index" 2>/dev/null || true
       if ((tls_attempt_pass >= 2)); then
         https_pass=$((https_pass + 1))
       fi
@@ -736,9 +816,10 @@ run_service_audit() {
         fi
       fi
       if $page_ok; then
-        https_success=$((https_success + 1))
+        https_page_success=$((https_page_success + 1))
       fi
     done
+    rm -rf -- "$tls_check_dir"
     if ((${#optional_failures[@]} > 0)); then
       old_ifs="$IFS"
       IFS=,
@@ -747,7 +828,7 @@ run_service_audit() {
     else
       optional_failure_csv=""
     fi
-    diagnostic_summary="DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; HTTP response ${https_success}/${https_total}"
+    diagnostic_summary="DNS ${route_pass}/${route_total}; TLS/SNI ${https_pass}/${https_total}; HTTP 2xx/3xx ${https_page_success}/${https_total}"
     if ((route_total == 0)); then
       diagnostic_summary="${diagnostic_summary}; no DNS route domains were configured"
     elif ((route_pass != route_total)); then
@@ -757,28 +838,28 @@ run_service_audit() {
       diagnostic_summary="${diagnostic_summary}; no TLS/SNI probe domains were configured"
     elif ((required_https_pass != required_https_total)); then
       diagnostic_summary="${diagnostic_summary}; required TLS/SNI probe mismatch"
-    elif ((https_success == 0)); then
-      diagnostic_summary="${diagnostic_summary}; representative endpoint did not return an HTTP response"
+    elif ((https_page_success == 0)); then
+      diagnostic_summary="${diagnostic_summary}; no representative page returned 2xx/3xx (WAF and other HTTP statuses do not override the media check)"
     fi
     if [[ -n "$optional_failure_csv" ]]; then
       diagnostic_summary="${diagnostic_summary}; optional dependency unavailable: $optional_failure_csv"
     fi
-    if [[ "$provider_summary" =~ ^PASS ]] && {
-      ((route_total == 0)) ||
-      ((route_pass != route_total)) ||
-      ((required_https_pass != required_https_total)) ||
-      ((https_total > 0 && https_success == 0));
-    }; then
-      provider_summary="FAIL (provider reported positive, but the target path failed)"
-    fi
+    provider_summary=$(validate_provider_summary "$provider_summary" "$probe_budget_exhausted" \
+      "$route_total" "$route_pass" "$required_https_pass" "$required_https_total")
     result="${provider_summary:-FAIL (check.unlock.media returned no result)}; diagnostics: ${diagnostic_summary}"
     results=$(jq -c --arg id "$service_id" --arg result "$result" '. + {($id):$result}' <<<"$results")
   done < <(jq -c '.health_probes[]?' <<<"$BOOTSTRAP")
   if [[ "$(jq 'length' <<<"$results")" -gt 0 ]]; then
-    jq -nc --arg token "$TOKEN" --argjson results "$results" '{token:$token,scope:"unlock_services",results:$results}' |
-      curl -fsSL --connect-timeout 8 --max-time 20 -H 'Content-Type: application/json' -d @- "$MASTER/enhancer/api/audit/report" >/dev/null || return 0
-    printf '%s\n' "$audit_hash" > "$AUDIT_HASH_FILE"
-    printf '%s\n' "$now" > "$AUDIT_TIME_FILE"
+    report_status=$(jq -nc --arg token "$TOKEN" --arg requested_at "${AUDIT_REQUESTED_AT:-}" --argjson results "$results" '{token:$token,scope:"unlock_services",service_audit_requested_at:$requested_at,results:$results}' |
+      curl -sS --connect-timeout 8 --max-time 20 -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' -d @- "$MASTER/enhancer/api/audit/report") || report_status="000"
+    if [[ "$report_status" =~ ^2[0-9][0-9]$ ]]; then
+      printf '%s\n' "$audit_hash" > "$AUDIT_HASH_FILE"
+      printf '%s\n' "$now" > "$AUDIT_TIME_FILE"
+    elif [[ "$report_status" =~ ^4[0-9][0-9]$ ]]; then
+      printf 'Service audit report rejected with HTTP %s; throttling until config changes or the next scheduled audit.\n' "$report_status" >&2
+      printf '%s\n' "$audit_hash" > "$AUDIT_HASH_FILE"
+      printf '%s\n' "$now" > "$AUDIT_TIME_FILE"
+    fi
   fi
 }
 
@@ -812,7 +893,7 @@ HASH_FILE="/var/lib/prismdns/route-config.sha256"
 RESTART_FILE="/var/lib/prismdns/route-restart.timestamp"
 AUDIT_HASH_FILE="/var/lib/prismdns/service-audit.sha256"
 BOOTSTRAP_FILE="/var/lib/prismdns/bootstrap.json"
-  AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v3"
+  AUDIT_VERSION="check-unlock-media-ipv4-browser-path-v5-http-status-aware"
 HEALTH_CHECK_FILE="/var/lib/prismdns/route-health.timestamp"
 HEALTH_CHECK_INTERVAL=300
 DNSMASQ_CONFIG="/etc/prismdns/dnsmasq.conf"
@@ -1363,7 +1444,7 @@ After=network-online.target prism-agent.service
 
 [Service]
 Type=oneshot
-TimeoutStartSec=15min
+TimeoutStartSec=5min
 Environment=PRISM_RUN_SERVICE_AUDIT=1
 ExecStart=/usr/local/lib/prismdns/report-traffic.sh
 EOF

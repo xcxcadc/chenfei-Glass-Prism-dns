@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -256,7 +257,7 @@ func TestBuiltInServiceDeleteRequiresAuthenticationAndCleansRoutes(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ipStore.UpdateServiceAudit(config.EnrollmentToken, map[string]string{service.ID: "YES"}); err != nil {
+	if _, err := ipStore.UpdateServiceAudit(config.EnrollmentToken, map[string]string{service.ID: "YES"}, config.ServiceAuditRequestedAt.Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
 

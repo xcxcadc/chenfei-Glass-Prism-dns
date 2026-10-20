@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"database/sql"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -113,6 +116,44 @@ func TestFirstNodeIPv4NeverSelectsIPv6(t *testing.T) {
 	node.Address = "[2001:db8::21]:22"
 	if result := firstNodeIPv4(node); result != "" {
 		t.Fatalf("IPv6-only proxy must not be registered for unlock traffic: %q", result)
+	}
+}
+
+func TestClientEgressServicesUsesPersistedProxyIPv4WithoutFreshHeartbeat(t *testing.T) {
+	customStore, err := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := customStore.Upsert(Service{Name: "Test Service", Domains: []string{"test.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := NewCatalogManager("http://127.0.0.1:1/catalog", &http.Client{}, customStore)
+	transport, err := NewTransportStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &App{catalog: catalog, transport: transport}
+	transport.proxies["proxy-a"] = proxyTransportRecord{
+		NodeID: "proxy-a", Endpoint: "198.51.100.30", UpdatedAt: time.Now().Add(-2 * transportFreshness),
+	}
+	record := ipConfigRecord{
+		IPConfig: IPConfig{Routes: map[string]string{service.ID: "proxy-a"}},
+		ProxyPeers: map[string][]string{
+			"proxy-a": {"2001:db8::20", "198.51.100.20"},
+		},
+	}
+
+	services := app.clientEgressServices(context.Background(), record)
+	if len(services) != 1 || services[0].ProxyIP != "198.51.100.20" {
+		t.Fatalf("client egress policy must use its saved IPv4 even when transport heartbeat is absent: %+v", services)
+	}
+	transport.proxies["proxy-a"] = proxyTransportRecord{
+		NodeID: "proxy-a", Endpoint: "198.51.100.30", UpdatedAt: time.Now(),
+	}
+	services = app.clientEgressServices(context.Background(), record)
+	if len(services) != 1 || services[0].ProxyIP != "198.51.100.30" {
+		t.Fatalf("fresh proxy registration must take precedence over the persisted fallback: %+v", services)
 	}
 }
 

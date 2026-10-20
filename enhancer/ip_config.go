@@ -39,9 +39,10 @@ type trafficReportRequest struct {
 }
 
 type serviceAuditRequest struct {
-	Token   string            `json:"token"`
-	Scope   string            `json:"scope"`
-	Results map[string]string `json:"results"`
+	Token       string            `json:"token"`
+	Scope       string            `json:"scope"`
+	RequestedAt string            `json:"service_audit_requested_at"`
+	Results     map[string]string `json:"results"`
 }
 
 type routeApplication struct {
@@ -118,9 +119,12 @@ func (app *App) handleServiceAuditReport(writer http.ResponseWriter, request *ht
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "无效的服务审计上报"})
 		return
 	}
-	config, err := app.ipStore.UpdateServiceAudit(payload.Token, payload.Results)
+	config, err := app.ipStore.UpdateServiceAudit(payload.Token, payload.Results, payload.RequestedAt)
 	if errors.Is(err, os.ErrNotExist) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "无效的配置令牌"})
+		return
+	} else if errors.Is(err, ErrStaleServiceAudit) {
+		writeJSON(writer, http.StatusConflict, map[string]string{"error": "检测结果对应旧线路配置，已忽略；请重新检测"})
 		return
 	} else if err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -844,9 +848,9 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		if !exists {
 			return routeApplication{}, fmt.Errorf("解锁机不存在: %s", proxyID)
 		}
-		peers := nodePublicIPs(proxyNode)
+		peers := nodePublicIPv4s(proxyNode)
 		if len(peers) == 0 {
-			return routeApplication{}, fmt.Errorf("解锁机没有可用公网 IP: %s", proxyID)
+			return routeApplication{}, fmt.Errorf("解锁机没有可用公网 IPv4，DNS 解锁路由无法建立: %s", proxyID)
 		}
 		proxyPeers[proxyID] = append([]string(nil), peers...)
 		for _, peer := range peers {
@@ -927,6 +931,17 @@ func nodePublicIPs(node map[string]any) []string {
 		result = append(result, value)
 	}
 	sort.Strings(result)
+	return result
+}
+
+func nodePublicIPv4s(node map[string]any) []string {
+	var result []string
+	for _, peer := range nodePublicIPs(node) {
+		parsed := net.ParseIP(peer)
+		if parsed != nil && parsed.To4() != nil {
+			result = append(result, parsed.To4().String())
+		}
+	}
 	return result
 }
 

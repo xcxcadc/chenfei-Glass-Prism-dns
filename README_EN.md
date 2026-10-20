@@ -1,6 +1,8 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel and release scripts `1.5.27`, and SNI transport `2.5.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel and release scripts `1.5.28`, and SNI transport `2.5.0`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases).
+
+Service audits are bound to the requested route generation so late results from a previous proxy cannot overwrite the current route. The full media check is capped at 120 seconds, DNS/TLS probes run with at most eight workers, and the UI reports an explicit incomplete state instead of waiting indefinitely.
 
 Prism-Gateway is a lightweight, non-intrusive DNS-based traffic routing management panel. It supports streaming unlock and smart AI services unlock detection. Features a beautiful Liquid Glass-inspired UI.
 
@@ -37,7 +39,7 @@ The upstream demo at [prism.ciii.club](https://prism.ciii.club) only demonstrate
 - **Audits Never Change Routes** - Target audits update reports only; WAF responses, timeouts, and third-party detector instability never switch the proxy selected by the user
 - **Five-Second Allowlist** - Proxies refresh managed target IPv4 addresses every five seconds, restrict IPv4 DNS 53 plus SNI 80/443, reject IPv6 DNS 53 only, and do not intercept IPv6 80/443 so co-hosted MTProxy or other IPv6 services keep working
 - **Two-Layer Unlock Audit** - Proxy-side Agent checks remain reference-only; each target runs the IPv4 `check.unlock.media` media script plus DNS/TLS/SNI path checks
-- **Target Compatibility First** - Every selected service validates exact A mapping, AAAA suppression, TLS/SNI handshakes, and a representative page/provider check; explicit `NO`, `Banned`, WAF, or unstable provider results fail clearly
+- **Target Compatibility First** - Every selected service validates exact A mapping, AAAA suppression, TLS/SNI handshakes, and the provider check; an HTTP 403/WAF page response is diagnostic and cannot alone override a `check.unlock.media` pass
 - **IP Configuration Workflow** - Add a target IP, choose services and proxy agents, then create DNS nodes and overrides automatically
 - **Automatic Route Application** - The enhancer persists per-node routes and generates dedicated dnsmasq rules; a 10-second guard atomically applies saved changes and checks the DNS listener, while a 300-second sample checks one representative domain per selected service
 - **Restricted-Network Transport** - Targets synchronize and probe encrypted TCP SNI transport every 60 seconds; SSH still uses 15-second keepalives with three missed checks before failure, and a false-positive TCP path only rebuilds that tunnel
@@ -101,7 +103,7 @@ flowchart LR
 
 Automatically detect unlock status for the following services:
 
-Node Management keeps proxy Agent self-checks as reference only. IP Configs runs the IPv4 command `bash <(curl -L -s check.unlock.media) -M 4` on the actual target server and stores the raw result per selected service, alongside full DNS/TLS/SNI path checks. Services missing from the script are reported as not covered rather than passed. Target audits run after route changes and refresh periodically without changing the selected proxy.
+Node Management keeps proxy Agent self-checks as reference only. IP Configs runs the IPv4 `check.unlock.media` check on the actual target server and stores the raw result per selected service, alongside full DNS/TLS/SNI path checks. An HTTP 403/WAF from the representative page probe is diagnostic and does not by itself override a media-script pass. Services missing from the script are reported as not covered rather than passed. Target audits run after route changes and refresh periodically without changing the selected proxy.
 
 **Streaming Services**
 - Netflix, Disney+, HBO Max, Amazon Prime Video
@@ -122,13 +124,13 @@ Node Management keeps proxy Agent self-checks as reference only. IP Configs runs
 ### One-Click Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh | sudo bash
 ```
 
 Custom ports:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh \
   | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
 ```
 
@@ -147,7 +149,7 @@ The repository contains only program code, installer scripts, and frontend asset
 To explicitly perform a sanitized fresh install on a host that previously ran Prism, first confirm that its old panel data is no longer needed, then run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/enhanced_install.sh \\
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/enhanced_install.sh \\
   | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
 ```
 
@@ -176,7 +178,7 @@ cd /opt/prism && ./prism-controller --host 0.0.0.0 --port 8080
 Install Agent on node servers:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
+curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
 ```
 
 ### IP Client Tool
@@ -184,10 +186,10 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/
 First add the target IP in the Web UI's IP Configs view, select services and proxy agents, and save. The UI generates a dedicated command containing the panel URL and enrollment token. The generic interactive tool is also available:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.27/prismdns.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.28/prismdns.sh | sudo bash
 ```
 
-The dedicated command is only needed for a target's first installation. Later additions, removals, and proxy changes apply automatically after a panel save. The installer backs up conflicting legacy `dnsmasq`/`sniproxy` services, then installs a Prism-specific dnsmasq listening only on `127.0.0.1:5353`; it never modifies MTProxy, XrayR, or V2bX. The enhancer dynamically renders exact IPv4 and AAAA-suppression rules from panel data, and nftables redirects local port 53 to this dedicated resolver. Agent remains responsible for synchronization, authorization, and reports, but no longer controls the effective DNS route. Stable installs download upstream Agent `v1.2.1`, verify its SHA-256, and lock the executable so the `v1.3` passive circuit breaker cannot silently restore public DNS after WAF responses, refused connections, or batch audits; reinstall and uninstall operations unlock it automatically. Every target receives a generic guard that checks configuration and the DNS listener every 10 seconds and samples one representative domain per service every 300 seconds. Configuration changes, the 30-minute health-cache refresh, and service audits still verify every routed domain. Installation-time validation now only blocks on wrong DNS mapping to the chosen unlock peer; the full HTTPS provider checks stay in the background auditor so transient third-party timeouts do not wedge bootstrap. Route changes atomically replace dnsmasq rules and restart the dedicated local resolver first; Agent is restarted only as a recovery fallback. Restricted-network targets use encrypted TCP SNI transport, while UDP/443 to selected unlock peers is rejected so QUIC-capable applications fall back to TCP/TLS. Every selected service passes through exact A mapping, AAAA suppression, three TLS/SNI handshakes, and representative page/provider validation. Explicit `NO`, `Banned`, WAF, or unstable provider results are reported as failures, but never rewrite the user's route or roll back system DNS. Proxies refresh the allowlist every five seconds. The minute timer reports monotonic dedicated nftables counters, and the panel accumulates sample deltas. The dedicated audit service runs expensive four-stage checks and starts a new counter epoch afterward so audit traffic is excluded. Clearing panel traffic preserves the current sample baseline, preventing historical bytes from being added again.
+The dedicated command is only needed for a target's first installation. Later additions, removals, and proxy changes apply automatically after a panel save. The installer backs up conflicting legacy `dnsmasq`/`sniproxy` services, then installs a Prism-specific dnsmasq listening only on `127.0.0.1:5353`; it never modifies MTProxy, XrayR, or V2bX. The enhancer dynamically renders exact IPv4 and AAAA-suppression rules from panel data, and nftables redirects local port 53 to this dedicated resolver. Agent remains responsible for synchronization, authorization, and reports, but no longer controls the effective DNS route. Stable installs download upstream Agent `v1.2.1`, verify its SHA-256, and lock the executable so the `v1.3` passive circuit breaker cannot silently restore public DNS after WAF responses, refused connections, or batch audits; reinstall and uninstall operations unlock it automatically. Every target receives a generic guard that checks configuration and the DNS listener every 10 seconds and samples one representative domain per service every 300 seconds. Configuration changes, the 30-minute health-cache refresh, and service audits still verify every routed domain. Installation-time validation now only blocks on wrong DNS mapping to the chosen unlock peer; the full HTTPS provider checks stay in the background auditor so transient third-party timeouts do not wedge bootstrap. Route changes atomically replace dnsmasq rules and restart the dedicated local resolver first; Agent is restarted only as a recovery fallback. Restricted-network targets use encrypted TCP SNI transport, while UDP/443 to selected unlock peers is rejected so QUIC-capable applications fall back to TCP/TLS. Every selected service validates exact A mapping, AAAA suppression, TLS/SNI, and provider status. An HTTP 403/WAF from a representative page probe is diagnostic and cannot alone override a provider-script pass; explicit provider failures and required DNS/TLS route failures remain visible without rewriting the user's route or rolling back system DNS. Proxies refresh the allowlist every five seconds. The minute timer reports monotonic dedicated nftables counters, and the panel accumulates sample deltas. The dedicated audit service runs expensive four-stage checks and starts a new counter epoch afterward so audit traffic is excluded. Clearing panel traffic preserves the current sample baseline, preventing historical bytes from being added again.
 
 IPv4 preference, AAAA suppression, overlapping-domain linking, TLS/SNI audits, five-second authorization, route guarding, traffic accounting, and automatic apply are generated from panel data with no fixed host addresses, so future proxy and target machines inherit the same behavior by default. Audit results never trigger route switching; changing an exit always requires an explicit save in the panel.
 

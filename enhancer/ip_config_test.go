@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
@@ -69,7 +70,7 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &config); err != nil {
 		t.Fatal(err)
 	}
-	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || config.ServiceAuditRequestedAt == nil || override["proxy_node_id"] != "2" || len(config.TrafficPeers) != 2 || config.TrafficPeers[0] != "198.51.100.20" || config.TrafficPeers[1] != "2001:db8::20" {
+	if config.DNSNodeID != "7" || config.EnrollmentToken == "" || config.ServiceAuditRequestedAt == nil || override["proxy_node_id"] != "2" || len(config.TrafficPeers) != 1 || config.TrafficPeers[0] != "198.51.100.20" {
 		t.Fatalf("configuration was not orchestrated: config=%+v override=%+v", config, override)
 	}
 	if createdRule["target_type"] != "group" || createdRule["target_val"] != "__prism_enhancer_direct__" {
@@ -107,8 +108,8 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	if !strings.Contains(bootstrapResponse.Body.String(), `check.unlock.media`) || !strings.Contains(bootstrapResponse.Body.String(), `"media_tests":["Netflix"]`) {
 		t.Fatalf("bootstrap did not include check.unlock.media checks: %s", bootstrapResponse.Body.String())
 	}
-	if !strings.Contains(bootstrapResponse.Body.String(), `"traffic_peers":["198.51.100.20","2001:db8::20"]`) {
-		t.Fatalf("bootstrap did not preserve both proxy address families: %s", bootstrapResponse.Body.String())
+	if !strings.Contains(bootstrapResponse.Body.String(), `"traffic_peers":["198.51.100.20"]`) {
+		t.Fatalf("bootstrap did not enforce the selected proxy IPv4 route: %s", bootstrapResponse.Body.String())
 	}
 	if !strings.Contains(bootstrapResponse.Body.String(), `"service_audit_requested_at"`) {
 		t.Fatalf("bootstrap did not include the service audit request: %s", bootstrapResponse.Body.String())
@@ -123,6 +124,10 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	app.Handler().ServeHTTP(triggerResponse, triggerRequest)
 	if triggerResponse.Code != http.StatusAccepted {
 		t.Fatalf("service audit trigger failed: %d %s", triggerResponse.Code, triggerResponse.Body.String())
+	}
+	var auditRequestConfig IPConfig
+	if err := json.Unmarshal(triggerResponse.Body.Bytes(), &auditRequestConfig); err != nil || auditRequestConfig.ServiceAuditRequestedAt == nil {
+		t.Fatalf("audit trigger did not return its generation timestamp: config=%+v err=%v", auditRequestConfig, err)
 	}
 
 	for _, report := range []string{
@@ -144,8 +149,17 @@ func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 		t.Fatalf("client health was not stored: %+v", stored)
 	}
 
-	auditRequest := httptest.NewRequest(http.MethodPost, "/enhancer/api/audit/report", strings.NewReader(
+	staleAuditRequest := httptest.NewRequest(http.MethodPost, "/enhancer/api/audit/report", strings.NewReader(
 		`{"token":"`+config.EnrollmentToken+`","scope":"unlock_services","results":{"`+serviceID+`":"YES (Region: SG) [Via DNS]"}}`,
+	))
+	staleAuditResponse := httptest.NewRecorder()
+	app.Handler().ServeHTTP(staleAuditResponse, staleAuditRequest)
+	if staleAuditResponse.Code != http.StatusConflict {
+		t.Fatalf("audit report without its request generation should be rejected: %d %s", staleAuditResponse.Code, staleAuditResponse.Body.String())
+	}
+
+	auditRequest := httptest.NewRequest(http.MethodPost, "/enhancer/api/audit/report", strings.NewReader(
+		`{"token":"`+config.EnrollmentToken+`","scope":"unlock_services","service_audit_requested_at":"`+auditRequestConfig.ServiceAuditRequestedAt.Format(time.RFC3339Nano)+`","results":{"`+serviceID+`":"YES (Region: SG) [Via DNS]"}}`,
 	))
 	auditResponse := httptest.NewRecorder()
 	app.Handler().ServeHTTP(auditResponse, auditRequest)
@@ -283,8 +297,8 @@ func TestApplyIPRoutesLinksOverlappingDomainsBeforeControllerDelivery(t *testing
 			t.Fatalf("controller override %s used conflicting proxy %s", path, proxyID)
 		}
 	}
-	if len(application.TrafficPeers) != 2 || application.TrafficPeers[0] != "198.51.100.20" || application.TrafficPeers[1] != "2001:db8::20" {
-		t.Fatalf("linked route did not preserve both proxy address families: %+v", application.TrafficPeers)
+	if len(application.TrafficPeers) != 1 || application.TrafficPeers[0] != "198.51.100.20" {
+		t.Fatalf("linked route did not restrict unlock peers to IPv4: %+v", application.TrafficPeers)
 	}
 }
 

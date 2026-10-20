@@ -79,7 +79,7 @@ const state = {
   branding: {site_name:"", browser_title:"", site_tagline:""}
 };
 
-const prismSourceRef = "v1.5.27";
+const prismSourceRef = "v1.5.28";
 
 function prismRawURL(file) {
   return `https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/${prismSourceRef}/${file}`;
@@ -534,6 +534,9 @@ function updateBackgroundIndicator() {
 function auditResultState(result) {
   const value = String(result || "").trim();
   if (!value) return {kind:"", label:t("auditPending"), detail:""};
+  if (/^NOT TESTED\b/i.test(value)) {
+    return {kind:"warn", label:state.lang === "zh" ? "检测未完成" : "Not tested", detail:value};
+  }
   if (/^NOT COVERED\b/i.test(value)) {
     return {kind:"warn", label:t("auditNotCovered"), detail:value};
   }
@@ -628,25 +631,35 @@ async function api(path, options = {}) {
   const headers = {...(options.headers || {})};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-  const response = await fetch(path, {...options, headers});
-  if (response.status === 401) {
-    logout(false);
-    throw new Error(state.lang === "zh" ? "登录已失效" : "Session expired");
-  }
-  if (response.status === 204) return null;
-  const type = response.headers.get("content-type") || "";
-  const raw = await response.text();
-  let data = raw;
-  if (type.includes("application/json")) {
-    try {
-      data = raw ? JSON.parse(raw) : null;
-    } catch {
-      if (response.ok) throw new Error(state.lang === "zh" ? "服务端返回了无效 JSON，请刷新后重试。" : "The server returned invalid JSON. Refresh and retry.");
-      data = raw;
+  const {timeoutMs = 20000, ...fetchOptions} = options;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(path, {...fetchOptions, headers, signal:controller.signal});
+    if (response.status === 401) {
+      logout(false);
+      throw new Error(state.lang === "zh" ? "登录已失效" : "Session expired");
     }
+    if (response.status === 204) return null;
+    const type = response.headers.get("content-type") || "";
+    const raw = await response.text();
+    let data = raw;
+    if (type.includes("application/json")) {
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        if (response.ok) throw new Error(state.lang === "zh" ? "服务端返回了无效 JSON，请刷新后重试。" : "The server returned invalid JSON. Refresh and retry.");
+        data = raw;
+      }
+    }
+    if (!response.ok) throw new Error(cleanErrorMessage(data?.error || data || `${response.status}`));
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error(state.lang === "zh" ? "请求超时，请检查面板连接后重试" : "Request timed out. Check the panel connection and retry.");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  if (!response.ok) throw new Error(cleanErrorMessage(data?.error || data || `${response.status}`));
-  return data;
 }
 
 async function loadBranding() {
@@ -1413,8 +1426,10 @@ function serviceDomainFormHTML(service) {
 function testResultsHTML(results) {
   return `<div class="test-results">${results.map(result => {
     const detail = result.detail || result.error || (result.addresses || []).join(", ");
-    const label = result.detail ? (result.success ? t("supported") : t("unavailable")) : (result.success ? `TLS ${result.tls_ms}ms` : "FAIL");
-    return `<div class="test-row"><span title="${escapeHTML(detail)}">${escapeHTML(result.domain)} · ${escapeHTML(detail)}</span><strong style="color:${result.success ? "var(--good)" : "var(--bad)"}">${label}</strong></div>`;
+    const audit = result.detail ? auditResultState(result.detail) : null;
+    const label = audit ? (audit.kind === "good" ? t("supported") : audit.kind === "warn" ? (state.lang === "zh" ? "检测未完成" : "Not tested") : t("unavailable")) : (result.success ? `TLS ${result.tls_ms}ms` : "FAIL");
+    const color = audit?.kind === "good" || (!audit && result.success) ? "var(--good)" : audit?.kind === "warn" ? "var(--warn)" : "var(--bad)";
+    return `<div class="test-row"><span title="${escapeHTML(detail)}">${escapeHTML(result.domain)} · ${escapeHTML(detail)}</span><strong style="color:${color}">${label}</strong></div>`;
   }).join("")}</div>`;
 }
 
@@ -1857,17 +1872,35 @@ async function testService() {
     if (!configs.length) {
       throw new Error(state.lang === "zh" ? "请先在 IP 配置中把此服务绑定到当前解锁机，并安装目标机 Agent" : "Bind this service to the selected proxy in IP configuration and install the target Agent first");
     }
-    const results = [];
-    for (const config of configs) {
+    const requestedAt = new Map();
+    await Promise.all(configs.map(async config => {
       const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(config.id)}/audit`, {method:"POST"});
-      const requestedAt = new Date(requested.service_audit_requested_at || Date.now()).getTime();
-      const latest = await waitForTargetServiceAudit(config.id, service.id, requestedAt);
-      const detail = serviceResult(latest, service);
-      results.push({domain:`${config.ip} · ${t("actualAudit")} · check.unlock.media`, detail, success:auditResultState(detail).kind === "good"});
+      requestedAt.set(config.id, new Date(requested.service_audit_requested_at || Date.now()).getTime());
+    }));
+    const pending = new Set(configs.map(config => config.id));
+    const started = Date.now();
+    while (pending.size && Date.now() - started < 330000) {
+      await delay(2500);
+      const latestConfigs = await api("/enhancer/api/ip-configs");
+      state.ipConfigs = Array.isArray(latestConfigs) ? latestConfigs : state.ipConfigs;
+      for (const config of configs) {
+        if (!pending.has(config.id)) continue;
+        const latest = state.ipConfigs.find(item => item.id === config.id);
+        const auditedAt = new Date(latest?.service_audited_at || 0).getTime();
+        if (latest && auditedAt >= requestedAt.get(config.id) && serviceResult(latest, service)) pending.delete(config.id);
+      }
     }
-    state.ipConfigs = await api("/enhancer/api/ip-configs");
+    const results = configs.map(config => {
+      const latest = state.ipConfigs.find(item => item.id === config.id);
+      const detail = latest && !pending.has(config.id)
+        ? serviceResult(latest, service)
+        : "NOT TESTED (target audit did not finish within 5 minutes)";
+      return {domain:`${config.ip} · ${t("actualAudit")} · check.unlock.media`, detail, success:auditResultState(detail).kind === "good"};
+    });
     state.testResults = results;
-    toast(t("testDone"), "good"); renderModal();
+    if (pending.size) toast(state.lang === "zh" ? `检测超时，${pending.size} 个目标未完成` : `${pending.size} target audits timed out`, "error");
+    else toast(t("testDone"), "good");
+    renderModal();
   } catch (error) {
     toast(cleanErrorMessage(error.message), "error");
     button.disabled = false;
@@ -2009,7 +2042,7 @@ async function triggerIPServiceAudit(serviceId) {
 async function waitForTargetServiceAudit(configID, serviceID, requestedAt, onUpdate) {
   const started = Date.now();
   let latest = state.ipConfigs.find(config => config.id === configID) || null;
-  while (Date.now() - started < 600000) {
+  while (Date.now() - started < 330000) {
     await delay(2500);
     const configs = await api("/enhancer/api/ip-configs");
     state.ipConfigs = Array.isArray(configs) ? configs : state.ipConfigs;
@@ -2020,7 +2053,7 @@ async function waitForTargetServiceAudit(configID, serviceID, requestedAt, onUpd
     const service = state.catalog.find(item => nodeID(item.id) === nodeID(serviceID));
     if (auditedAt >= requestedAt && serviceResult(latest, service)) return latest;
   }
-  throw new Error(state.lang === "zh" ? "目标机尚未返回实测结果，请检查 Agent 在线状态" : "The target did not return an audit result");
+  throw new Error(state.lang === "zh" ? "目标机未在 5 分钟内返回检测结果，请检查 Agent、出口 80/443 连通性和审计日志" : "No target audit result within 5 minutes. Check the Agent, proxy ports 80/443, and audit logs.");
 }
 
 async function deleteIPConfig() {
@@ -2145,13 +2178,13 @@ async function refreshNodeUnlock(id, trigger = false) {
   if (!configs.length) throw new Error(state.lang === "zh" ? "该解锁机尚未绑定任何目标 IP" : "No managed target IP uses this proxy");
   const requestedAt = new Map();
   if (trigger) {
-    for (const config of configs) {
+    await Promise.all(configs.map(async config => {
       const requested = await api(`/enhancer/api/ip-configs/${encodeURIComponent(config.id)}/audit`, {method:"POST"});
       requestedAt.set(config.id, new Date(requested.service_audit_requested_at || Date.now()).getTime());
-    }
+    }));
   }
   const started = Date.now();
-  while (Date.now() - started < 600000) {
+  while (Date.now() - started < 330000) {
     await delay(2500);
     const configsLatest = await api("/enhancer/api/ip-configs");
     state.ipConfigs = Array.isArray(configsLatest) ? configsLatest : state.ipConfigs;
@@ -2163,7 +2196,7 @@ async function refreshNodeUnlock(id, trigger = false) {
     });
     if (complete) return state.nodes.find(node => nodeID(node.id) === nodeID(id));
   }
-  throw new Error(state.lang === "zh" ? "目标机未在 10 分钟内返回媒体实测结果，请检查 Agent 在线状态" : "Managed targets did not return media audit results within 10 minutes");
+  throw new Error(state.lang === "zh" ? "目标机未在 5 分钟内返回检测结果，请检查 Agent、出口 80/443 连通性和审计日志" : "No target audit result within 5 minutes. Check the Agent, proxy ports 80/443, and audit logs.");
 }
 
 async function triggerNodeCheck(id) {

@@ -22,7 +22,7 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.27"
+const uiVersion = "1.5.28"
 
 type App struct {
 	catalog      *CatalogManager

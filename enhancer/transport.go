@@ -381,7 +381,14 @@ func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []trans
 func (app *App) clientEgressServices(ctx context.Context, record ipConfigRecord) []transportEgressService {
 	serviceProxies := make(map[string]string, len(record.Routes))
 	for serviceID, proxyID := range record.Routes {
-		if proxyIP := app.transport.ProxyEndpoint(proxyID); proxyIP != "" {
+		proxyIP := ""
+		if app.transport != nil {
+			proxyIP = app.transport.ProxyEndpoint(proxyID)
+		}
+		if proxyIP == "" {
+			proxyIP = firstIPv4Peer(record.ProxyPeers[proxyID])
+		}
+		if parsed := net.ParseIP(proxyIP); parsed != nil && parsed.To4() != nil {
 			serviceProxies[serviceID] = proxyIP
 		}
 	}
@@ -408,6 +415,16 @@ func (app *App) clientEgressServices(ctx context.Context, record ipConfigRecord)
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].ServiceID < result[right].ServiceID })
 	return result
+}
+
+func firstIPv4Peer(peers []string) string {
+	for _, peer := range peers {
+		parsed := net.ParseIP(strings.TrimSpace(peer))
+		if parsed != nil && parsed.To4() != nil {
+			return parsed.To4().String()
+		}
+	}
+	return ""
 }
 
 func (app *App) handleClientTransport(writer http.ResponseWriter, request *http.Request) {

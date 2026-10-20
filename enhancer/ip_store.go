@@ -70,6 +70,8 @@ type IPConfigStore struct {
 	configs map[string]ipConfigRecord
 }
 
+var ErrStaleServiceAudit = errors.New("stale service audit")
+
 func NewIPConfigStore(path string) (*IPConfigStore, error) {
 	store := &IPConfigStore{path: path, configs: make(map[string]ipConfigRecord)}
 	if err := store.load(); err != nil {
@@ -178,7 +180,12 @@ func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...m
 		config.CreatedAt = existing.CreatedAt
 		record.LastRXBytes = existing.LastRXBytes
 		record.LastTXBytes = existing.LastTXBytes
-		if stringMapEqual(existing.Routes, config.Routes) {
+		record.ProxyPeers = cloneProxyPeers(existing.ProxyPeers)
+		if len(proxyPeers) > 0 {
+			record.ProxyPeers = validProxyPeers(proxyPeers[0])
+		}
+		peersUnchanged := len(proxyPeers) == 0 || proxyPeersEqual(existing.ProxyPeers, record.ProxyPeers)
+		if stringMapEqual(existing.Routes, config.Routes) && peersUnchanged {
 			config.ServiceResults = existing.ServiceResults
 			config.ServiceAuditedAt = existing.ServiceAuditedAt
 			config.ServiceAuditRequestedAt = existing.ServiceAuditRequestedAt
@@ -188,7 +195,6 @@ func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...m
 			auditRequestedAt := monotonicTimestamp(now, existing.ServiceAuditRequestedAt)
 			config.ServiceAuditRequestedAt = &auditRequestedAt
 		}
-		record.ProxyPeers = cloneProxyPeers(existing.ProxyPeers)
 	} else {
 		config.CreatedAt = now
 		config.ServiceAuditRequestedAt = &now
@@ -277,12 +283,24 @@ func (store *IPConfigStore) UpdateTraffic(token string, rxBytes, txBytes uint64)
 	return store.UpdateClientReport(token, rxBytes, txBytes, ClientHealth{})
 }
 
-func (store *IPConfigStore) UpdateServiceAudit(token string, results map[string]string) (IPConfig, error) {
+func (store *IPConfigStore) UpdateServiceAudit(token string, results map[string]string, requestTimestamps ...string) (IPConfig, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	for id, record := range store.configs {
 		if record.EnrollmentToken != token {
 			continue
+		}
+		if record.ServiceAuditRequestedAt != nil {
+			if len(requestTimestamps) == 0 || strings.TrimSpace(requestTimestamps[0]) == "" {
+				return IPConfig{}, ErrStaleServiceAudit
+			}
+			requestedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(requestTimestamps[0]))
+			if err != nil {
+				return IPConfig{}, fmt.Errorf("invalid service audit request timestamp: %w", err)
+			}
+			if record.ServiceAuditRequestedAt == nil || !record.ServiceAuditRequestedAt.Equal(requestedAt) {
+				return IPConfig{}, ErrStaleServiceAudit
+			}
 		}
 		filtered := make(map[string]string)
 		for serviceID, result := range results {

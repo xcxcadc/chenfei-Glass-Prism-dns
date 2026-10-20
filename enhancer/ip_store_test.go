@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
@@ -52,7 +54,7 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 	if !updated.DNSReady || !updated.SystemDNSReady || !updated.RoutesReady || updated.HealthyRoutes != 1 || updated.DNSBackend != "prism-static" || updated.HealthUpdatedAt == nil {
 		t.Fatalf("client health was not persisted: %+v", updated)
 	}
-	audited, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{"netflix": "YES (Region: SG) [Via DNS]", "other": "YES"})
+	audited, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{"netflix": "YES (Region: SG) [Via DNS]", "other": "YES"}, requested.ServiceAuditRequestedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +181,7 @@ func TestIPConfigStoreRemovesDeletedServiceRoutesResultsAndPeers(t *testing.T) {
 	if _, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{
 		"legacy-service": "YES",
 		"kept-service":   "YES",
-	}); err != nil {
+	}, config.ServiceAuditRequestedAt.Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -206,6 +208,63 @@ func TestIPConfigStoreRemovesDeletedServiceRoutesResultsAndPeers(t *testing.T) {
 	}
 	if updated.ServiceAuditedAt != nil {
 		t.Fatal("route removal should invalidate the aggregate audit timestamp")
+	}
+}
+
+func TestIPConfigStoreRejectsAuditFromPreviousRouteRequest(t *testing.T) {
+	store, err := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := store.Save(IPConfig{
+		IP: "203.0.113.50", DNSNodeID: "dns-a", NodeName: "Target", Routes: map[string]string{"service-a": "proxy-a"},
+	}, "secret", map[string][]string{"proxy-a": {"198.51.100.10"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstRequest, err := store.RequestServiceAudit(config.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.RequestServiceAudit(config.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{"service-a": "PASS missing generation"}); !errors.Is(err, ErrStaleServiceAudit) {
+		t.Fatalf("audit without its request generation should be rejected, got %v", err)
+	}
+	if _, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{"service-a": "PASS old route"}, firstRequest.ServiceAuditRequestedAt.Format(time.RFC3339Nano)); !errors.Is(err, ErrStaleServiceAudit) {
+		t.Fatalf("previous route audit should be rejected, got %v", err)
+	}
+	current, ok := store.Get(config.ID)
+	if !ok || len(current.ServiceResults) != 0 || current.ServiceAuditedAt != nil {
+		t.Fatalf("stale audit modified current route results: %+v", current)
+	}
+}
+
+func TestIPConfigStoreInvalidatesAuditWhenProxyEndpointChanges(t *testing.T) {
+	store, err := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := store.Save(IPConfig{
+		IP: "203.0.113.51", DNSNodeID: "dns-a", NodeName: "Target", Routes: map[string]string{"service-a": "proxy-a"},
+	}, "secret", map[string][]string{"proxy-a": {"198.51.100.10"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateServiceAudit(config.EnrollmentToken, map[string]string{"service-a": "PASS old endpoint"}, config.ServiceAuditRequestedAt.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := store.Save(IPConfig{
+		ID: config.ID, IP: config.IP, DNSNodeID: config.DNSNodeID, NodeName: config.NodeName,
+		Routes: map[string]string{"service-a": "proxy-a"},
+	}, "secret", map[string][]string{"proxy-a": {"198.51.100.11"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.ServiceResults) != 0 || updated.ServiceAuditedAt != nil || !updated.ServiceAuditRequestedAt.After(*config.ServiceAuditRequestedAt) {
+		t.Fatalf("proxy endpoint change must invalidate the old audit: %+v", updated)
 	}
 }
 
