@@ -48,7 +48,7 @@
 需要重新打开命令时，可在该 IP 行点击“客户端脚本”。通用交互入口如下：
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/prismdns.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/prismdns.sh | sudo bash
 ```
 
 ## IP 配置备份与授权令牌
@@ -65,11 +65,11 @@ wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs
 
 ## 路由自动应用
 
-本次面板与发布脚本版本为 `1.5.29`，固定脚本标签为 `v1.5.29`，SNI transport 为 `2.5.1`，兼容 Agent 默认使用上游 `v1.2.1`；三者独立编号，不能混写为 Agent `v1.3`。安装、升级和卸载命令均使用本版标签，详见 [版本矩阵](VERSION_MATRIX_ZH.md)。
+本次面板与发布脚本版本为 `1.5.30`，固定脚本标签为 `v1.5.30`，SNI transport 为 `2.5.2`，兼容 Agent 默认使用上游 `v1.2.1`；三者独立编号，不能混写为 Agent `v1.3`。安装、升级和卸载命令均使用本版标签，详见 [版本矩阵](VERSION_MATRIX_ZH.md)。
 
-`prismdns.sh 1.5.29` 在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、专用 dnsmasq 和 DNS 守卫。增强层持久化服务到用户所选 Proxy IPv4 的映射，生成 `127.0.0.1:5353` 与可选 `[::1]:5353` 的路由；守卫每 10 秒检查配置和 DNS 监听，并通过 Prism 自有 nftables cgroup 规则接管受管代理进程的外部 DNS 请求。已选服务只返回指定 IPv4 并抑制 AAAA，未选服务保持直连。配置变化和 30 分钟路由健康缓存刷新仍校验全部域名，每 300 秒抽测各服务代表域名；这些属于路由诊断，不参与媒体结果判定。
+`prismdns.sh 1.5.30` 在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、专用 dnsmasq 和 DNS 守卫。增强层持久化服务到用户所选 Proxy IPv4 的映射，生成 `127.0.0.1:5353` 与可选 `[::1]:5353` 的路由；守卫每 10 秒检查配置和 DNS 监听，并通过 Prism 自有 nftables cgroup 规则接管受管代理进程的外部 DNS 请求。已选服务只返回指定 IPv4 并抑制 AAAA，未选服务保持直连。配置变化和 30 分钟路由健康缓存刷新仍校验全部域名，每 300 秒抽测各服务代表域名；这些属于路由诊断，不参与媒体结果判定。
 
-`prism_transport.sh 2.5.1` 默认以授权源 IP 直连所选 Proxy 的 TCP 80/443，受限网络可显式选择 `--mode encrypted`。Proxy 每 5 秒同步授权名单，AUTH nftables 规则先校验，再以单次事务原子替换，不先单独删除旧授权表；仅限制 Prism 的 IPv4 DNS/SNI 和 IPv6 DNS 53，不拦截同机 IPv6 80/443。已选出口的 UDP/443 被拒绝，促使应用回落到 TCP/TLS；受管代理发往 Google 网段的 UDP/443 快速拒绝只促使 Google 直连回落，不改变其 DNS 或出口。
+`prism_transport.sh 2.5.2` 默认以授权源 IP 直连所选 Proxy 的 TCP 80/443，受限网络可显式选择 `--mode encrypted`。Proxy 每 5 秒同步授权名单，AUTH nftables 规则先校验，再以单次事务原子替换，不先单独删除旧授权表；仅限制 Prism 的 IPv4 DNS/SNI 和 IPv6 DNS 53，不拦截同机 IPv6 80/443。已选出口的 UDP/443 被拒绝，促使应用回落到 TCP/TLS；受管代理发往 Google 网段的 UDP/443 快速拒绝只促使 Google 直连回落，不改变其 DNS 或出口。
 
 路由健康心跳、transport 同步和每分钟流量上报独立运行。安装只强制验证 DNS 是否映射到所选 Proxy，不等待完整媒体脚本；重装遇到本地 DNS 停止但 `/etc/resolv.conf` 仍指向回环时，会临时恢复引导 DNS 后继续。运行时最新服务目录排除已停止运营的 Crackle、Salto、GYAO。任何诊断或媒体结果都不会自动修改用户保存的路由。
 
@@ -97,12 +97,12 @@ worker 每秒检查新输出，有输出即逐批上报，界面每 1 秒刷新�
 
 **仅替换 enhancer 二进制不会自动刷新远端节点。** 面板升级与节点脚本升级应分别完成：
 
-1. 面板使用本版 `v1.5.29/enhanced_install.sh`；保留整个 Enhancer `dataDir`，包括 `media-checks.json` 的进度和历史。
-2. 每台既有 Proxy 重新执行“节点管理”生成的本版 `agent_install.sh` 命令，更新兼容 Agent、transport `2.5.1` 和媒体 worker。
+1. 面板使用本版 `v1.5.30/enhanced_install.sh`；保留整个 Enhancer `dataDir`，包括 `media-checks.json` 的进度和历史。
+2. 每台既有 Proxy 重新执行“节点管理”生成的本版 `agent_install.sh` 命令，更新兼容 Agent、transport `2.5.2` 和媒体 worker。
 3. 每台既有 Client 重新执行“IP 配置”生成的本版专属命令；已有有效本机配置时，也可用本版脚本刷新 runtime、transport 与 worker：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/prismdns.sh | sudo bash -s -- --refresh-runtime
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/prismdns.sh | sudo bash -s -- --refresh-runtime
 ```
 
 `prism_transport.sh --sync` 只同步已安装的传输配置，不会下载新版 runtime/transport 或补装 worker。刷新后在每台节点检查 `systemctl is-enabled prism-media-check.timer`、`systemctl status prism-media-check.timer`，并在面板手动重测，确认逐批结果和任务心跳可读；oneshot service 空闲时不常驻是正常现象。
@@ -118,7 +118,7 @@ curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/ref
 如需在曾安装过 Prism 的主机上明确清空 Prism 数据并重新初始化，执行以下命令：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \\
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/enhanced_install.sh \\
   | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
 ```
 
@@ -131,13 +131,13 @@ curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/ref
 ## 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/enhanced_install.sh | sudo bash
 ```
 
 可通过环境变量调整端口：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/enhanced_install.sh \
   | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
 ```
 

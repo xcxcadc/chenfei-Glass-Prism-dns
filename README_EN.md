@@ -1,6 +1,6 @@
 # chenfei Glass Prism DNS
 
-This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel and release scripts `1.5.29`, and SNI transport `2.5.1`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases).
+This is the enhanced fork at [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns). It adds a Simplified Chinese UI, custom service domains and categories, per-service proxy selection, IP configuration, unlock-link traffic accounting, account security, panel and release scripts `1.5.30`, and SNI transport `2.5.2`. See [ENHANCED_ZH.md](ENHANCED_ZH.md) and the [latest release](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases).
 
 Every Proxy/Client receives an independent official media-script worker. It runs the complete IPv4 menu `0` check, streams results as they arrive, and rejects reports from an old route generation. Official script results do not guarantee paid playback or account login.
 
@@ -128,19 +128,19 @@ HBO Max, Hulu, Copilot, and other catalog services can have routing rules, but m
 ### One-Click Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/enhanced_install.sh | sudo bash
 ```
 
 Custom ports:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/enhanced_install.sh \
   | sudo PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash
 ```
 
 The script installs or upgrades the upstream Controller and this fork's enhancer, backing up `data.db` before upgrades.
 
-Panel/scripts `1.5.29`, transport `2.5.1`, and the default upstream compatibility Agent `v1.2.1` have independent version numbers; Agent `v1.3` is not the default. See the [version matrix](VERSION_MATRIX_ZH.md).
+Panel/scripts `1.5.30`, transport `2.5.2`, and the default upstream compatibility Agent `v1.2.1` have independent version numbers; Agent `v1.3` is not the default. See the [version matrix](VERSION_MATRIX_ZH.md).
 
 After installation:
 - Web UI: `http://YOUR_IP:PORT`
@@ -155,7 +155,7 @@ The repository contains only program code, installer scripts, and frontend asset
 To explicitly perform a sanitized fresh install on a host that previously ran Prism, first confirm that its old panel data is no longer needed, then run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \\
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/enhanced_install.sh \\
   | sudo env PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash
 ```
 
@@ -184,7 +184,7 @@ cd /opt/prism && ./prism-controller --host 0.0.0.0 --port 8080
 Install Agent on node servers:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
+curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/agent_install.sh | bash -s -- --master <Controller_URL> --secret <Node_Secret>
 ```
 
 ### IP Client Tool
@@ -192,21 +192,21 @@ curl -sL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/
 First add the target IP in the Web UI's IP Configs view, select services and proxy agents, and save. The UI generates a dedicated command containing the panel URL and enrollment token. The generic interactive tool is also available:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/prismdns.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/prismdns.sh | sudo bash
 ```
 
 Use the dedicated command for first installation and node upgrades. Routine additions, removals, and proxy changes apply after a panel save. The installer backs up conflicting legacy `dnsmasq`/`sniproxy` services, installs dedicated dnsmasq on `127.0.0.1:5353`, and redirects local DNS requests to its generated IPv4 and AAAA-suppression rules. Stable installs verify and pin upstream Agent `v1.2.1`; reinstall and uninstall unlock it automatically. The guard checks configuration and DNS every 10 seconds, samples representative domains every 300 seconds, and checks all routed domains on changes and the 30-minute route-health refresh. Installation blocks only on incorrect DNS mapping, while media jobs run independently. Route updates restart the dedicated resolver first; Agent restarts are a recovery fallback.
 
-Transport `2.5.1` defaults to authorized direct TCP SNI egress; restricted networks can explicitly select encrypted mode. UDP/443 to selected proxies is rejected to encourage TCP/TLS fallback. Proxy AUTH nftables rules are validated and replaced atomically in one transaction every five seconds, protecting Prism IPv4 DNS/SNI and IPv6 DNS 53 while leaving IPv6 80/443 available. Minute-based traffic reports do not wait for media checks, and clearing traffic preserves the sample baseline. Installing the media worker disables the old audit timer and stops its service.
+Transport `2.5.2` defaults to authorized direct TCP SNI egress; restricted networks can explicitly select encrypted mode. UDP/443 to selected proxies is rejected to encourage TCP/TLS fallback. Proxy AUTH nftables rules are validated and replaced atomically in one transaction every five seconds, protecting Prism IPv4 DNS/SNI and IPv6 DNS 53 while leaving IPv6 80/443 available. Minute-based traffic reports do not wait for media checks, and clearing traffic preserves the sample baseline. Installing the media worker disables the old audit timer and stops its service.
 
-IPv4 preference, AAAA suppression, overlapping-domain linking, independent route diagnostics, five-second authorization, traffic accounting, automatic apply, and the media worker are defaults for all future Proxy/Client installations, with no fixed host addresses. The worker is installed with transport and removed with transport/Agent, including its executable, timer, and service. All installation and uninstall entry points use `v1.5.29`; see [uninstall instructions](UNINSTALL_ZH.md).
+IPv4 preference, AAAA suppression, overlapping-domain linking, independent route diagnostics, five-second authorization, traffic accounting, automatic apply, and the media worker are defaults for all future Proxy/Client installations, with no fixed host addresses. The worker is installed with transport and removed with transport/Agent, including its executable, timer, and service. All installation and uninstall entry points use `v1.5.30`; see [uninstall instructions](UNINSTALL_ZH.md).
 
 ### Upgrade Existing Nodes
 
-**Replacing only the enhancer binary does not refresh remote nodes.** Rerun each Proxy's `v1.5.29` Agent installation command and each Client's current dedicated IP Configs command to refresh runtime, transport `2.5.1`, and the media worker. Clients with valid saved configuration can instead run the current runtime refresh script:
+**Replacing only the enhancer binary does not refresh remote nodes.** Rerun each Proxy's `v1.5.30` Agent installation command and each Client's current dedicated IP Configs command to refresh runtime, transport `2.5.2`, and the media worker. Clients with valid saved configuration can instead run the current runtime refresh script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/prismdns.sh | sudo bash -s -- --refresh-runtime
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/prismdns.sh | sudo bash -s -- --refresh-runtime
 ```
 
 The installed `prism_transport.sh --sync` synchronizes configuration only; it does not download newer runtime/transport scripts or install a missing worker. Check `systemctl is-enabled prism-media-check.timer` on each node, then trigger a panel retest and verify live results. An idle oneshot service need not remain active.

@@ -108,6 +108,48 @@ func TestMediaCheckHTTPAuthenticationAndGeneration(t *testing.T) {
 	if response := invoke(http.MethodPost, "/enhancer/api/media-checks/worker", worker, ""); response.Code != 404 {
 		t.Fatal("proxy could overwrite client result")
 	}
+	response = invoke(http.MethodPost, "/enhancer/api/media-checks", map[string]string{"node_id": "proxy-a"}, "Bearer admin")
+	if response.Code != http.StatusAccepted {
+		t.Fatal("proxy task creation failed", response.Code)
+	}
+	var pending MediaCheckJob
+	json.Unmarshal(response.Body.Bytes(), &pending)
+	stale := app.mediaChecks.jobs[pending.ID]
+	stale.UpdatedAt = time.Now().Add(-2 * time.Minute)
+	app.mediaChecks.jobs[pending.ID] = stale
+	worker["action"] = "claim"
+	response = invoke(http.MethodPost, "/enhancer/api/media-checks/worker", worker, "")
+	var claimed struct {
+		Job *MediaCheckJob `json:"job"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &claimed); err != nil || response.Code != http.StatusOK || claimed.Job == nil {
+		t.Fatal("newly installed worker did not recover unclaimed expired task", response.Code, response.Body.String())
+	}
+	if claimed.Job.ID == pending.ID || claimed.Job.Status != "running" || claimed.Job.StartedAt == nil {
+		t.Fatal("recovered task was not safely fenced from expired reports", claimed.Job)
+	}
+	expired, _ := app.mediaChecks.Get(pending.ID)
+	if expired.Status != "failed" || expired.Error != mediaWorkerTimeoutError {
+		t.Fatal("expired task history was lost", expired)
+	}
+	recovered := *claimed.Job
+	response = invoke(http.MethodPost, "/enhancer/api/media-checks/worker", worker, "")
+	json.Unmarshal(response.Body.Bytes(), &claimed)
+	if response.Code != http.StatusOK || claimed.Job != nil {
+		t.Fatal("worker claimed the same recovered task twice", response.Body.String())
+	}
+	worker["action"], worker["job_id"], worker["status"], worker["sequence"] = "report", recovered.ID, "failed", 1
+	worker["error"] = "Official media script download failed"
+	delete(worker, "results")
+	if response := invoke(http.MethodPost, "/enhancer/api/media-checks/worker", worker, ""); response.Code != http.StatusOK {
+		t.Fatal("worker failure report was rejected", response.Body.String())
+	}
+	worker["action"] = "claim"
+	response = invoke(http.MethodPost, "/enhancer/api/media-checks/worker", worker, "")
+	json.Unmarshal(response.Body.Bytes(), &claimed)
+	if response.Code != http.StatusOK || claimed.Job != nil {
+		t.Fatal("script failure caused an automatic retry loop", response.Body.String())
+	}
 }
 
 func TestMediaCheckRestartPreservesPartialResults(t *testing.T) {

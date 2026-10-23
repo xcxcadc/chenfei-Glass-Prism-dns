@@ -26,6 +26,7 @@ const translations = {
     manageCategories: "分类管理", categoryHint: "服务分类只影响整理和筛选，不会修改域名、路由或客户端配置。", newCategory: "新建分类", categoryName: "分类名称", categoryCreated: "分类已创建", categoryDeleted: "分类已删除", editCategory: "分类", serviceCategory: "调整服务分类", restoreCategory: "恢复原分类", originalCategory: "原始分类", useCategory: "使用", builtInCategory: "内置", customCategory: "自定义", categoryInUse: "该分类仍有服务，请先移动这些服务", categoryDeleteConfirm: "删除这个空分类？",
     unlockResults: "完整媒体检测任务", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "官方 check.unlock.media 脚本 0（跨国平台）完整 IPv4 实测，每秒读取任务，输出返回即展示，直到任务结束，无固定时长截止。Global_UnlockTest 分两批输出，等待期间可能没有新增项目。原始 Yes / No / WAF 和地区原样展示；DNS/TLS 探针不作为媒体解锁结果。", checkAgain: "新建检测任务", waitingResults: "等待脚本下一批输出；完整检测仍在运行。",
     mediaNodeSelfCheck: "媒体自检（解锁机本机）",
+    mediaNotStarted: "未启动", mediaExecutionFailed: "执行失败", mediaUnverified: "服务可用性未确认", mediaFailureCause: "失败原因", mediaFailureUnknown: "服务端未返回失败原因", mediaFailureHint: "检测任务失败不代表所有服务不可用；请查看已返回的原始结果，或重试检测。",
     mediaMissingStatus: "任务记录丢失", mediaJobMissing: "服务端尚无此任务记录，已保留现有结果；正在查询最新任务，也可手动新建检测。",
     mediaQueued: "排队中", mediaRunning: "检测中", mediaCompleted: "已完成", mediaFailed: "任务失败", mediaSubmitting: "正在创建任务", mediaDisconnected: "面板连接中断，正在重连", mediaOffline: "执行机当前离线，请检查 Agent；任务状态以服务端返回为准。", mediaSearch: "筛选平台或原始结果", mediaFullResults: "脚本 0 完整跨国平台结果", mediaCoverage: "服务覆盖对照", mediaCoverageHint: "仅对照本任务实际返回的脚本标签；完成后没有对应标签的服务显示未覆盖。", mediaNotCovered: "未覆盖（脚本 0 未返回此服务标签）", mediaAwaiting: "等待对应脚本标签", mediaIncomplete: "未返回（任务失败，结果不完整）", mediaReceived: "已返回项目", mediaOther: "其他原始结果", mediaEmpty: "尚未返回平台结果", mediaNoMatches: "没有匹配的结果", mediaResume: "立即重连", mediaNodeHint: "在解锁机本机运行自检；被解锁机的实际 DNS 链路请从 IP 配置或服务实测查看。", mediaConfigHint: "在被解锁机运行，使用已保存配置的实际 DNS 链路；表单内尚未保存的路由不参与本次检测。", mediaCloseHint: "关闭后任务继续，重新点击检测入口可查看同一任务。", mediaView: "实测 / 查看任务", mediaStatus: "任务状态", mediaPlatform: "平台 / 原始标签", mediaRaw: "原始结果（含地区）", mediaNoJob: "创建失败，尚无任务 ID", mediaConfirmed: "脚本返回 Yes", mediaIssue: "脚本返回 No / WAF", mediaReview: "查看原始结果", mediaLatest: "最后更新", mediaRequested: "请求时间", mediaStarted: "开始时间", mediaFinished: "结束时间",
   },
@@ -56,6 +57,7 @@ const translations = {
     manageCategories: "Manage categories", categoryHint: "Categories only organize and filter services. Domains, routes, and client configuration remain unchanged.", newCategory: "New category", categoryName: "Category name", categoryCreated: "Category created", categoryDeleted: "Category deleted", editCategory: "Category", serviceCategory: "Change service category", restoreCategory: "Restore original", originalCategory: "Original category", useCategory: "Use", builtInCategory: "Built-in", customCategory: "Custom", categoryInUse: "This category still contains services. Move them first.", categoryDeleteConfirm: "Delete this empty category?",
     unlockResults: "Complete media check jobs", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "Full IPv4 results from official check.unlock.media script 0 (multinational platforms). Jobs are read every second; output appears as soon as it arrives, until the job ends, with no fixed duration limit. Global_UnlockTest outputs in two batches, so there may be no new items between batches. Original Yes / No / WAF values and regions are preserved. DNS/TLS probes are not media unlock results.", checkAgain: "Start new check", waitingResults: "Waiting for the next script output batch; the full check is still running.",
     mediaNodeSelfCheck: "Media self-check (on proxy)",
+    mediaNotStarted: "Not started", mediaExecutionFailed: "Execution failed", mediaUnverified: "Service availability unverified", mediaFailureCause: "Failure reason", mediaFailureUnknown: "The server did not provide a failure reason", mediaFailureHint: "A failed check does not mean all services are unavailable. Inspect the raw results received or retry the check.",
     mediaMissingStatus: "Job record missing", mediaJobMissing: "No job record is currently available on the server. Existing results are preserved while checking for the latest job. You can also start a new check manually.",
     mediaQueued: "Queued", mediaRunning: "Running", mediaCompleted: "Completed", mediaFailed: "Job failed", mediaSubmitting: "Creating job", mediaDisconnected: "Panel disconnected; reconnecting", mediaOffline: "The execution host is currently offline. Check its Agent; the server determines the job status.", mediaSearch: "Filter platforms or raw results", mediaFullResults: "Script 0: all multinational platform results", mediaCoverage: "Service coverage", mediaCoverageHint: "Matches only labels actually returned by this job. Services without a matching label after completion are not covered.", mediaNotCovered: "Not covered (no script 0 label returned)", mediaAwaiting: "Waiting for the matching script label", mediaIncomplete: "No result (failed job; incomplete output)", mediaReceived: "Results received", mediaOther: "Other raw results", mediaEmpty: "No platform results yet", mediaNoMatches: "No matching results", mediaResume: "Reconnect now", mediaNodeHint: "Self-check runs on the proxy itself. Use IP configuration or a service test to check the target's actual DNS path.", mediaConfigHint: "Runs on the target through the saved configuration's actual DNS path. Unsaved form routes are not used.", mediaCloseHint: "Closing keeps the job running. Open the same test entry to view it again.", mediaView: "Test / view job", mediaStatus: "Job status", mediaPlatform: "Platform / original label", mediaRaw: "Raw result (including region)", mediaNoJob: "Creation failed; no job ID", mediaConfirmed: "Script returned Yes", mediaIssue: "Script returned No / WAF", mediaReview: "Inspect raw result", mediaLatest: "Last update", mediaRequested: "Requested", mediaStarted: "Started", mediaFinished: "Finished",
   }
@@ -86,7 +88,7 @@ const state = {
   branding: {site_name:"", browser_title:"", site_tagline:""}
 };
 
-const prismSourceRef = "v1.5.28";
+const prismSourceRef = "__PRISM_SOURCE_REF__";
 
 function prismRawURL(file) {
   return `https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/${prismSourceRef}/${file}`;
@@ -1017,9 +1019,9 @@ function nodesHTML() {
   return `${header}<section class="node-grid">${state.nodes.map(node => {
     const online = isOnline(node);
     const proxyDetail = nodeMediaSummary(node);
-    const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail};
-    return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${status.kind}" title="${escapeHTML(status.detail)}">${escapeHTML(status.label)}</span></div>
-      <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("mediaNodeSelfCheck")}</span><strong ${node.role === "proxy" ? `data-media-node-id="${escapeHTML(nodeID(node.id))}"` : ""} title="${escapeHTML(status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
+    const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail, tooltip:nodeMediaDetail(node)};
+    return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${status.kind}" title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.label)}</span></div>
+      <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("mediaNodeSelfCheck")}</span><strong ${node.role === "proxy" ? `data-media-node-id="${escapeHTML(nodeID(node.id))}"` : ""} title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
        <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${nodeID(node.id)}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}${node.role === "proxy" ? `<button class="btn small node-test" data-node-id="${nodeID(node.id)}" title="${t("mediaNodeHint")}">${t("triggerUnlock")}</button>` : ""}<button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
@@ -2051,18 +2053,40 @@ async function copyInstallCommand() {
 }
 
 function mediaCheckFinished(job) { return job?.status === "completed" || job?.status === "failed"; }
+function mediaFailureReason(job) {
+  const raw = String(job?.error || "").trim();
+  if (!raw) return t("mediaFailureUnknown");
+  if (state.lang !== "zh") return raw;
+  const reasons = {
+    "Worker has not responded for 90 seconds; check its connection and timer":"媒体检测 Worker 超过 90 秒未响应，请检查执行机的连接和 media-worker 定时器。",
+    "Panel restarted during the check; run again":"检测期间面板已重启，请重新检测。",
+    "Configuration changed; a new check was queued":"配置已变更，新的检测任务已排队。",
+    "Official script returned no IPv4 platform results":"官方脚本未返回 IPv4 平台结果。"
+  };
+  return reasons[raw] ? `${reasons[raw]}（原始错误：${raw}）` : raw;
+}
 function nodeMediaSummary(node) {
   const record = state.mediaChecks.get(`node:${nodeID(node.id)}`);
-  if (!record?.job) return record?.error ? t("mediaDisconnected") : t("unknown");
-  const status = {queued:"mediaQueued", running:"mediaRunning", completed:"mediaCompleted", failed:"mediaFailed"}[record.job.status];
-  return `${t(record.missing ? "mediaMissingStatus" : status)} · ${t("mediaReceived")} ${Object.keys(record.job.results || {}).length}`;
+  if (!record?.job) return record?.error ? t("mediaDisconnected") : t("mediaNotStarted");
+  const job = record.job;
+  const count = Object.keys(job.results || {}).length;
+  const failed = job.status === "failed";
+  const status = failed ? (!job.started_at && !count ? "mediaNotStarted" : "mediaExecutionFailed") : {queued:"mediaQueued", running:"mediaRunning", completed:"mediaCompleted"}[job.status];
+  return `${t(record.missing ? "mediaMissingStatus" : status || "unknown")} · ${t("mediaReceived")} ${count}${failed && !count ? ` · ${t("mediaUnverified")}` : ""}`;
+}
+function nodeMediaDetail(node) {
+  const record = state.mediaChecks.get(`node:${nodeID(node.id)}`);
+  const details = [nodeMediaSummary(node)];
+  if (record?.job?.status === "failed") details.push(`${t("mediaFailureCause")}: ${mediaFailureReason(record.job)}`, t("mediaFailureHint"));
+  if (record?.error) details.push(record.error);
+  return details.join("\n");
 }
 function updateNodeMediaUI() {
   document.querySelectorAll("[data-media-node-id]").forEach(element => {
     const node = state.nodes.find(item => nodeID(item.id) === element.dataset.mediaNodeId);
     if (!node) return;
     element.textContent = nodeMediaSummary(node);
-    element.title = element.textContent;
+    element.title = nodeMediaDetail(node);
   });
 }
 function mediaLabelKey(label) { return String(label || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""); }
@@ -2271,7 +2295,7 @@ function updateMediaCheckUI() {
     offline.textContent = t("mediaOffline");
     const failure = card.querySelector(".media-job-error");
     failure.hidden = job?.status !== "failed" && !job?.error;
-    failure.textContent = job?.error ? `${t("mediaFailed")}: ${job.error}` : t("mediaFailed");
+    failure.textContent = job?.status === "failed" ? `${t("mediaFailed")}: ${mediaFailureReason(job)}\n${t("mediaFailureHint")}` : "";
     const connection = card.querySelector(".media-job-connection");
     connection.hidden = !record.error;
     connection.textContent = record.error ? record.missing ? record.error : `${t("mediaDisconnected")}: ${record.error}` : "";

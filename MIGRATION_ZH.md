@@ -1,6 +1,6 @@
 # Prism DNS 面板迁移与灾备
 
-本文适用于使用 `enhanced_install.sh` 安装的面板。当前面板/脚本为 `1.5.29`，transport 为 `2.5.1`，默认兼容 Agent 为上游 `v1.2.1`，版本不可混写。默认路径如下：
+本文适用于使用 `enhanced_install.sh` 安装的面板。当前面板/脚本为 `1.5.30`，transport 为 `2.5.2`，默认兼容 Agent 为上游 `v1.2.1`，版本不可混写。默认路径如下：
 
 | 数据 | 默认路径 | 内容 |
 |---|---|---|
@@ -63,13 +63,13 @@ var/lib/prism-enhancer/
 建议新旧面板使用相同域名和公开端口。这样只需把域名的 A/AAAA 记录切换到新服务器，现有解锁机与被解锁机不需要逐台修改面板地址。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/enhanced_install.sh | sudo bash
 ```
 
 如果旧服务器使用自定义端口，新服务器必须保持一致：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.29/enhanced_install.sh \
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.30/enhanced_install.sh \
   | sudo PRISM_PORT=8081 PRISM_CORE_PORT=18080 bash
 ```
 
@@ -134,7 +134,7 @@ journalctl -u prism-controller -u prism-enhancer --since "-10 min" --no-pager
 
 增强层首次启动会迁移旧路由数据：移除持久化 Proxy IPv6，将共享域名服务归一到同一 Proxy，清理旧版自动故障切换记录并保留用户选择的路由、节点 ID、目标 IP、令牌、累计流量和采样基线。媒体任务随 `media-checks.json` 保留；配置代变化后拒收旧 `generation` 的迟到结果，避免旧线路覆盖当前结果。旧 full / 四阶段检测不再作为最终媒体结论，DNS 与路由诊断独立保留。
 
-**仅更换 enhancer 二进制不会自动刷新远端节点。** 每台 Proxy 需重新执行本版 `v1.5.29` Agent 命令，每台 Client 需重新执行本版“IP 配置”专属命令；已有有效配置的 Client 也可执行本版 `prismdns.sh --refresh-runtime`，详见 [已有节点升级](ENHANCED_ZH.md#已有节点升级)。这会刷新 runtime、transport `2.5.1` 和 `/usr/local/bin/prism-media-check`；只运行旧 transport 的 `--sync` 不会升级脚本或补装 worker。专用 dnsmasq、动态路由和本地 53 重定向由面板数据重新生成，不需要从旧目标机复制。所有未来新 Proxy/Client 默认随 transport 安装 worker，并随 transport / Agent 卸载。
+**仅更换 enhancer 二进制不会自动刷新远端节点。** 每台 Proxy 需重新执行本版 `v1.5.30` Agent 命令，每台 Client 需重新执行本版“IP 配置”专属命令；已有有效配置的 Client 也可执行本版 `prismdns.sh --refresh-runtime`，详见 [已有节点升级](ENHANCED_ZH.md#已有节点升级)。这会刷新 runtime、transport `2.5.2` 和 `/usr/local/bin/prism-media-check`；只运行旧 transport 的 `--sync` 不会升级脚本或补装 worker。专用 dnsmasq、动态路由和本地 53 重定向由面板数据重新生成，不需要从旧目标机复制。所有未来新 Proxy/Client 默认随 transport 安装 worker，并随 transport / Agent 卸载。
 
 worker 的 `prism-media-check.timer` / `prism-media-check.service` 空闲时每 5 秒 claim 任务，独立于 transport/traffic。运行等价于 `bash check.unlock.media -M4 -R0 -Een` 的官方脚本：交互菜单 `0`、只测跨国平台、仅 IPv4。有输出即逐批上报，界面每秒刷新；完整运行，无 30 秒硬停，15 分钟仅作异常安全兜底并明确 `failed`，90 秒无心跳显示失联/失败。每 6 小时自动刷新，也支持手动重测和配置代更新，关窗重开可读任务。**官方脚本结果不保证实际付费播放、账号登录或所有应用功能通过。**
 
@@ -151,7 +151,7 @@ worker 的 `prism-media-check.timer` / `prism-media-check.service` 空闲时每 
 
 重新执行本版安装命令会更新兼容 Agent、面板地址、runtime、transport 和 worker。稳定安装器验证并锁定上游 Agent `v1.2.1`，不是 `v1.3`；安装和卸载会自动解除旧文件锁，不会读取、修改或重启 XrayR、MTProxy、V2bX、Docker 等其他业务。
 
-transport `2.5.1` 保留显式 `--master` 的优先级，避免旧 `/etc/prismdns/transport.env` 覆盖新地址。旧 transport/client master 地址失效时，更新后的 transport 可从运行中 Agent 的 `--master` 恢复新地址，校验响应后写回配置，worker 下一轮读取同一配置；这要求 Agent 已指向新面板、原密钥/令牌有效，旧脚本仍需先升级。必要时可在更新脚本后手动同步新地址：
+transport `2.5.2` 保留显式 `--master` 的优先级，避免旧 `/etc/prismdns/transport.env` 覆盖新地址。旧 transport/client master 地址失效时，更新后的 transport 可从运行中 Agent 的 `--master` 恢复新地址，校验响应后写回配置，worker 下一轮读取同一配置；这要求 Agent 已指向新面板、原密钥/令牌有效，旧脚本仍需先升级。必要时可在更新脚本后手动同步新地址：
 
 ```bash
 sudo /usr/local/lib/prismdns/prism_transport.sh --sync --master <新面板地址>

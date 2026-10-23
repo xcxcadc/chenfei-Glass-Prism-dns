@@ -5,7 +5,7 @@ set -e
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 REPO="${PRISM_AGENT_REPO:-mslxi/Liquid-Glass-Prism-dns}"
 PINNED_STABLE_TAG="${PRISM_AGENT_TAG:-v1.2.1}"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.29}"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.30}"
 BINARY_NAME="prism-agent"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"
@@ -141,6 +141,24 @@ uninstall_agent() {
     
     info "Uninstallation completed."
     exit 0
+}
+
+ensure_dependencies() {
+    command -v ss >/dev/null 2>&1 && return 0
+
+    step "Installing Agent listener dependencies..."
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iproute2
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y iproute
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y iproute
+    else
+        error "Missing ss; install iproute2 or iproute before installing the Agent."
+    fi
+
+    command -v ss >/dev/null 2>&1 || error "ss is still unavailable after dependency installation."
 }
 
 detect_system() {
@@ -525,6 +543,7 @@ main() {
     fi
 
     detect_system
+    ensure_dependencies
     download_binary
     configure_service
     prepare_legacy_conflicts

@@ -343,7 +343,8 @@ install_worker() {
   ensure_dependencies
   install -d -m 700 "$CACHE_DIR"
   if [[ "$(readlink -f "${BASH_SOURCE[0]}")" != "$(readlink -f "$INSTALL_PATH")" ]]; then
-    install -m 700 "${BASH_SOURCE[0]}" "$INSTALL_PATH"
+    install -m 700 "${BASH_SOURCE[0]}" "$INSTALL_PATH.new"
+    mv -f "$INSTALL_PATH.new" "$INSTALL_PATH"
   else
     chmod 700 "$INSTALL_PATH"
   fi

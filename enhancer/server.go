@@ -22,8 +22,6 @@ import (
 //go:embed web/*
 var embeddedWeb embed.FS
 
-const uiVersion = "1.5.29"
-
 type App struct {
 	catalog      *CatalogManager
 	store        *CustomServiceStore
@@ -39,6 +37,7 @@ type App struct {
 	icons        *serviceIconCache
 	web          fs.FS
 	indexHTML    []byte
+	appJS        []byte
 	controllerDB string
 }
 
@@ -55,6 +54,12 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 	if err != nil {
 		return nil, fmt.Errorf("read embedded index: %w", err)
 	}
+	appJS, err := fs.ReadFile(web, "app.js")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded app script: %w", err)
+	}
+	indexHTML = bytes.ReplaceAll(indexHTML, []byte("__PRISM_UI_VERSION__"), []byte(uiVersion))
+	appJS = bytes.ReplaceAll(appJS, []byte("__PRISM_SOURCE_REF__"), []byte(prismSourceRef))
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
 	proxy.FlushInterval = -1
 	originalDirector := proxy.Director
@@ -85,6 +90,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 		icons:        newServiceIconCache(),
 		web:          web,
 		indexHTML:    indexHTML,
+		appJS:        appJS,
 		controllerDB: databasePath,
 	}
 	app.transport, _ = NewTransportStore("")
@@ -161,9 +167,24 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)
 	mux.HandleFunc("/enhancer/rules/", app.handleRuleSet)
 	mux.HandleFunc("/enhancer/icons/", app.handleServiceIcon)
+	mux.HandleFunc("/assets/app.js", app.handleAppJS)
 	mux.Handle("/assets/", noStore(http.StripPrefix("/assets/", http.FileServer(http.FS(app.web)))))
 	mux.HandleFunc("/", app.handleRoot)
 	return securityHeaders(requestLogger(mux))
+}
+
+func (app *App) handleAppJS(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		methodNotAllowed(writer, http.MethodGet, http.MethodHead)
+		return
+	}
+	setNoCacheHeaders(writer)
+	writer.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	writer.Header().Set("Content-Length", fmt.Sprint(len(app.appJS)))
+	writer.WriteHeader(http.StatusOK)
+	if request.Method == http.MethodGet {
+		_, _ = writer.Write(app.appJS)
+	}
 }
 
 func (app *App) handleRoot(writer http.ResponseWriter, request *http.Request) {

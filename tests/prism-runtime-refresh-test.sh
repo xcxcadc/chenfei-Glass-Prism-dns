@@ -45,15 +45,12 @@ log() { :; }
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
 refresh_transport_runtime
-[[ "$events" == 'save install timer worker ' ]]
+[[ "$events" == 'save install worker timer ' ]]
 
 events=''
 ROLE=proxy
 load_environment() { ROLE=proxy; MASTER=https://panel.example.invalid; CREDENTIAL=fixture; }
-if (refresh_transport_runtime 2>/dev/null); then
-  printf 'proxy transport was accepted as a client runtime\n' >&2
-  exit 1
-fi
-[[ -z "$events" ]]
+refresh_transport_runtime
+[[ "$events" == 'save install worker timer ' ]]
 
 printf 'Prism runtime refresh tests passed.\n'

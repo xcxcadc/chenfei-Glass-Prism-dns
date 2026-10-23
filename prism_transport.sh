@@ -2,8 +2,8 @@
 
 set -Eeuo pipefail
 
-VERSION="2.5.1"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.29}"
+VERSION="2.5.2"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.30}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -77,7 +77,7 @@ detect_package_manager() {
 
 ensure_dependencies() {
   local ready=true
-  for command_name in curl jq ssh ssh-keygen ip nft; do
+  for command_name in curl jq ssh ssh-keygen ip nft flock setsid; do
     command -v "$command_name" >/dev/null 2>&1 || ready=false
   done
   if [[ "$ROLE" == "proxy" ]]; then
@@ -92,20 +92,20 @@ ensure_dependencies() {
     apt)
       apt-get update -qq
       if [[ "$ROLE" == "proxy" ]]; then
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq openssh-client openssh-server iproute2 nftables
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq openssh-client openssh-server iproute2 nftables util-linux
       else
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq openssh-client iproute2 nftables
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl jq openssh-client iproute2 nftables util-linux
       fi
       ;;
     dnf|yum)
-      "$manager" install -y curl jq openssh-clients iproute nftables
+      "$manager" install -y curl jq openssh-clients iproute nftables util-linux
       [[ "$ROLE" == "proxy" ]] && "$manager" install -y openssh-server
       ;;
     apk)
-      apk add --no-cache curl jq openssh-client iproute2 nftables
+      apk add --no-cache curl jq openssh-client iproute2 nftables util-linux
       [[ "$ROLE" == "proxy" ]] && apk add --no-cache openssh-server
       ;;
-    *) fail "unsupported package manager; install curl, jq, OpenSSH and iproute2 first" ;;
+    *) fail "unsupported package manager; install curl, jq, OpenSSH, iproute2 and util-linux first" ;;
   esac
 }
 
@@ -828,19 +828,20 @@ install_transport() {
     chmod 755 "$INSTALL_PATH"
   fi
   save_environment
+  install_media_worker
   [[ "$ROLE" == "client" ]] && ensure_client_keypair
   [[ "$ROLE" == "proxy" ]] && install_proxy_egress
   install_timer
   sync_transport
-  install_media_worker
   log "Prism SNI transport v$VERSION installed for role $ROLE (mode: $TRANSPORT_MODE)"
 }
 
 refresh_transport_runtime() {
   [[ -s "$ENV_FILE" ]] || fail "transport configuration is missing"
   load_environment
-  [[ "$ROLE" == "client" ]] || fail "client runtime refresh requires an existing client transport"
+  [[ "$ROLE" == "client" || "$ROLE" == "proxy" ]] || fail "runtime refresh requires an existing client or proxy transport"
   [[ "$MASTER" =~ ^https?://[^[:space:]]+$ && -n "$CREDENTIAL" ]] || fail "invalid transport configuration"
+  ensure_dependencies
   if [[ -n "$MASTER_OVERRIDE" ]]; then
     save_environment
   fi
@@ -848,9 +849,9 @@ refresh_transport_runtime() {
   if [[ "$(readlink -f "$0")" != "$INSTALL_PATH" ]]; then
     install -m 755 "$0" "$INSTALL_PATH"
   fi
-  install_timer
   install_media_worker
-  log "client transport runtime refreshed without Agent reinstall or immediate transport sync"
+  install_timer
+  log "$ROLE transport runtime refreshed without Agent reinstall or immediate transport sync"
 }
 
 install_media_worker() {
@@ -858,7 +859,7 @@ install_media_worker() {
   if [[ -z "$installer" ]]; then
     temporary=$(mktemp /run/prism-media-installer.XXXXXX)
     installer="$temporary"
-    if ! curl -fsSL --connect-timeout 8 --max-time 30 \
+    if ! curl -fsSL --retry 2 --connect-timeout 8 --max-time 30 \
       "https://raw.githubusercontent.com/$EGRESS_REPO/refs/tags/$SCRIPT_REF/prism_media.sh" -o "$installer"; then
       rm -f "$temporary"
       fail "could not download the IPv4 media check worker"
@@ -921,6 +922,13 @@ show_status() {
 main() {
   require_root
   parse_args "$@"
+  if ! command -v flock >/dev/null 2>&1; then
+    case "$ACTION" in
+      install) ensure_dependencies ;;
+      refresh-runtime) load_environment; ensure_dependencies ;;
+      *) fail "flock is missing; install util-linux and refresh the runtime" ;;
+    esac
+  fi
   exec 9>/run/prism-transport.lock
   flock -w 30 9 || fail "another transport synchronization is still running"
   case "$ACTION" in

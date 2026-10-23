@@ -38,6 +38,12 @@ type MediaCheckStore struct {
 
 var errMediaConflict = errors.New("media check is finished or report is out of order")
 
+const mediaWorkerTimeoutError = "Worker has not responded for 90 seconds; check its connection and timer"
+
+func mediaWorkerBecameAvailable(job MediaCheckJob) bool {
+	return job.Status == "failed" && job.StartedAt == nil && len(job.Results) == 0 && job.Error == mediaWorkerTimeoutError
+}
+
 func NewMediaCheckStore(path string) (*MediaCheckStore, error) {
 	store := &MediaCheckStore{path: path, jobs: make(map[string]MediaCheckJob)}
 	if path == "" {
@@ -86,7 +92,7 @@ func (store *MediaCheckStore) expireLocked() {
 	now := time.Now().UTC()
 	for id, job := range store.jobs {
 		if mediaJobActive(job) && now.Sub(job.UpdatedAt) > 90*time.Second {
-			job.Status, job.Error, job.FinishedAt = "failed", "Worker has not responded for 90 seconds; check its connection and timer", &now
+			job.Status, job.Error, job.FinishedAt = "failed", mediaWorkerTimeoutError, &now
 			store.jobs[id] = job
 		}
 		if !mediaJobActive(job) && now.Sub(job.UpdatedAt) > 48*time.Hour {
@@ -353,7 +359,7 @@ func (app *App) handleMediaCheckWorker(writer http.ResponseWriter, request *http
 	}
 	if payload.Action == "claim" {
 		latest, exists := app.mediaChecks.Latest(nodeID, configID)
-		if !exists || latest.Generation != generation || (!mediaJobActive(latest) && time.Since(latest.RequestedAt) > 6*time.Hour) {
+		if !exists || latest.Generation != generation || mediaWorkerBecameAvailable(latest) || (!mediaJobActive(latest) && time.Since(latest.RequestedAt) > 6*time.Hour) {
 			if _, err := app.mediaChecks.Create(nodeID, configID, generation); err != nil {
 				writeJSON(writer, 500, map[string]string{"error": err.Error()})
 				return
