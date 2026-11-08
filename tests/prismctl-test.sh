@@ -68,7 +68,7 @@ valid_mode encrypted; check "合法模式 encrypted" 0 "$?"
 
 # 帮助与版本、参数错误
 out=$(main help 2>&1); check_contains "帮助包含 install" "install" "$out"; check_contains "帮助包含 doctor" "doctor" "$out"
-out=$(main version 2>&1); check_contains "版本输出" "prismctl" "$out"
+out=$(main version 2>&1); check_contains "版本输出" "dns" "$out"
 out=$( (main --bogus-flag) 2>&1 ); rc=$?
 check_contains "未知命令/选项有提示" "未知" "$out"
 
