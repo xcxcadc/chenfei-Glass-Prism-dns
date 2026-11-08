@@ -26,7 +26,7 @@ func TestGooglePlayStoreBuiltInService(t *testing.T) {
 	if play == nil || youtube == nil {
 		t.Fatalf("missing services: play=%v youtube=%v", play, youtube)
 	}
-	for _, want := range []string{"play.google.com", "play.googleapis.com", "play-fe.googleapis.com", "android.clients.google.com"} {
+	for _, want := range []string{"play-fe.googleapis.com", "android.clients.google.com", "play.google.com"} {
 		if !contains(play.Domains, want) {
 			t.Errorf("Play Store missing %s: %v", want, play.Domains)
 		}

@@ -87,7 +87,7 @@ var (
 		"accounts.x.com",
 	}
 	grokDomainKeywords = []string{"twitter"}
-	grokCIDRs = []string{
+	grokCIDRs          = []string{
 		"192.133.76.0/22",
 		"199.59.148.0/22",
 		"199.96.56.0/21",
@@ -148,6 +148,11 @@ var (
 		"NZ:ThreeNow": {
 			"threenow.co.nz",
 		},
+		// YouTube：页面/接口域名用于地区判定；视频流与图片 CDN（googlevideo.com、
+		// ggpht.com、ytimg.com、gvt1.com、gvt2.com）也必须经解锁机，否则在对 SNI 做
+		// 过滤的机房网络里（已实测）视频直连会被丢弃，表现为“页面能开、
+		// 视频一直转圈”。此类网络必须使用加密传输模式（prism_transport.sh --mode
+		// encrypted），明文直连模式下这些 SNI 同样会被丢弃。
 		"YouTube": {
 			"accounts.youtube.com",
 			"ggpht.com",
@@ -155,20 +160,18 @@ var (
 			"gvt1.com",
 			"gvt2.com",
 			"i.ytimg.com",
+			"jnn-pa.googleapis.com",
 			"music.youtube.com",
+			"s.youtube.com",
 			"youtu.be",
 			"youtube-nocookie.com",
-			"ytimg.com",
-			"s.youtube.com",
-			"youtube.googleapis.com",
-			// 以下域名已联网核对并在被解锁机上验证可解析：
-			// 内嵌播放器、播放器初始化接口、儿童版、教育版与短链。
-			"jnn-pa.googleapis.com",
 			"youtube.com",
+			"youtube.googleapis.com",
 			"youtubeembeddedplayer.googleapis.com",
 			"youtubeeducation.com",
 			"youtubekids.com",
 			"yt.be",
+			"ytimg.com",
 		},
 		"Videomarket": {
 			"videomarket.jp",
@@ -194,22 +197,14 @@ var (
 	serviceDomainKeywordSupplements = map[string][]string{
 		"Grok": grokDomainKeywords,
 	}
-	// Google Play 商店及应用下载依赖的域名，已在被解锁机上验证可解析。
-	// 商店地区由 play-fe / android.clients 等接口依据出口 IP 判定，
-	// 因此这些域名必须同走一个解锁节点。
-	// 刻意不包含 gvt1.com / gvt2.com / ggpht.com：它们已属于 YouTube，
-	// 重复收录会让两个服务因域名重叠被强制绑定到同一节点。
+	// Google Play 商店域名。刻意不包含 play.googleapis.com / android.googleapis.com：
+	// 它们已属于 Gemini，重叠会让两个服务被强制绑定到同一节点；
+	// 也不包含 dl.google.com、play-lh、play-games（下载与图片 CDN，应直连）。
+	// play.google.com 在 SNI 过滤网络中需要加密传输模式才能经解锁机转发。
 	googlePlayStoreDomains = []string{
 		"android.clients.google.com",
-		"android.googleapis.com",
-		"dl.google.com",
-		"googleplay.com",
 		"play-fe.googleapis.com",
-		"play-games.googleusercontent.com",
-		"play-lh.googleusercontent.com",
-		"play.google",
 		"play.google.com",
-		"play.googleapis.com",
 		"playatoms-pa.googleapis.com",
 	}
 	serviceCIDRSupplements = map[string][]string{
@@ -311,12 +306,12 @@ func ensureBuiltInServices(services []Service) []Service {
 			Domains:  normalizeDomains(googlePlayStoreDomains),
 		},
 		{
-			ID:       stableServiceID("AI Platform", "Grok"),
-			Name:     "Grok",
-			Category: "AI Platform",
-			Domains:  normalizeDomains(grokDomains),
+			ID:             stableServiceID("AI Platform", "Grok"),
+			Name:           "Grok",
+			Category:       "AI Platform",
+			Domains:        normalizeDomains(grokDomains),
 			DomainKeywords: normalizeDomainKeywords(grokDomainKeywords),
-			CIDRs: normalizeCIDRs(grokCIDRs),
+			CIDRs:          normalizeCIDRs(grokCIDRs),
 		},
 	} {
 		present := false

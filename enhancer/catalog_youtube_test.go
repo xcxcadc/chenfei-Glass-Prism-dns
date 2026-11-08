@@ -20,7 +20,7 @@ func TestYouTubeSupplementsAreApplied(t *testing.T) {
 	if youtube == nil {
 		t.Fatalf("YouTube not found: %v", services)
 	}
-	for _, want := range []string{"youtube.com", "googlevideo.com", "ytimg.com", "ggpht.com", "youtubekids.com", "jnn-pa.googleapis.com", "yt.be"} {
+	for _, want := range []string{"youtube.com", "googlevideo.com", "ytimg.com", "ggpht.com", "youtubekids.com", "jnn-pa.googleapis.com", "yt.be", "youtube.googleapis.com"} {
 		if !contains(youtube.Domains, want) {
 			t.Errorf("YouTube is missing %s: %v", want, youtube.Domains)
 		}
