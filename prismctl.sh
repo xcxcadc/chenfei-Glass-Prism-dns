@@ -8,7 +8,7 @@
 #   3. 只处理 Prism 自有的服务、nft 表和 iptables 链，不触碰 V2bX、XrayR、Docker、nginx 等业务。
 set -Eeuo pipefail
 
-PRISMCTL_VERSION="1.5.34"
+PRISMCTL_VERSION="1.5.35"
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 SCRIPT_REF="${PRISM_SCRIPT_REF:-v${PRISMCTL_VERSION}}"
 ETC_DIR="${PRISMCTL_ETC_DIR:-/etc/prismdns}"
@@ -26,7 +26,8 @@ usage() {
   cat <<EOF
 prismctl ${PRISMCTL_VERSION} —— Prism DNS 综合控制脚本
 
-用法：prismctl <命令> [角色] [选项]
+用法：prismctl                直接运行进入数字菜单（1 安装解锁机 … 9 查看日志）
+      prismctl <命令> [角色] [选项]   子命令方式，便于脚本调用
 
 命令：
   install   <panel|proxy|client>   安装
@@ -34,6 +35,7 @@ prismctl ${PRISMCTL_VERSION} —— Prism DNS 综合控制脚本
   uninstall [panel|proxy|client]   卸载（省略角色时自动判断）
   mode      [direct|encrypted]     查看或切换传输模式
   status                           查看本机角色、版本、服务和传输状态
+  logs [名称]                      查看日志（agent egress client-egress dns route-sync transport tunnel traffic media controller enhancer all）；-n 行数 -f 跟踪 --errors 只看警告错误
   doctor                           诊断常见故障（防火墙、出口 IP、SNI 过滤等）
   self-install                     把 prismctl 安装到 ${BIN_PATH}
   self-update                      更新 prismctl 本身
@@ -46,7 +48,7 @@ prismctl ${PRISMCTL_VERSION} —— Prism DNS 综合控制脚本
   --ip ADDR          解锁机的真实公网 IPv4（install proxy，可选）
   --smart            解锁机启用智能检测（install proxy，可选）
   --mode MODE        direct 或 encrypted；默认沿用本机已有模式，新装为 direct
-  --ref REF          指定发布标签（如 v1.5.34），latest 表示 GitHub 最新发布
+  --ref REF          指定发布标签（如 v1.5.35），latest 表示 GitHub 最新发布
   --purge-data       卸载面板时一并删除面板数据
   --yes              跳过确认
 
@@ -436,20 +438,286 @@ cmd_self_install() {
   ok "已安装到 ${BIN_PATH}，之后可直接运行 prismctl。"
 }
 
+# ---------------------------------------------------------------- 日志
+# 名称|说明|systemd 单元（可含通配符）
+log_catalog() {
+  cat <<'LIST'
+agent|Agent（prism-agent，解锁机与被解锁机都有）|prism-agent.service
+egress|解锁机出口代理（prism-egress-proxy）|prism-egress-proxy.service
+client-egress|被解锁机 SNI 出口（prism-client-egress-proxy）|prism-client-egress-proxy.service
+dns|被解锁机本地 DNS（prismdns-local-dns）|prismdns-local-dns.service
+route-sync|被解锁机路由同步（面板改动在这里落地）|prismdns-route-sync.service
+transport|传输同步（隧道与出口策略）|prism-transport.service
+tunnel|加密隧道（encrypted 模式）|prism-transport-ssh-*.service
+traffic|流量上报|prismdns-traffic.service
+media|媒体检测 Worker|prism-media-check.service
+controller|面板控制器（prism-controller）|prism-controller.service
+enhancer|面板中文增强层（prism-enhancer）|prism-enhancer.service
+LIST
+}
+
+# 输出本机实际存在的日志项（名称|说明|单元）
+available_logs() {
+  local name label units unit found
+  while IFS="|" read -r name label units; do
+    found=false
+    for unit in $units; do
+      if [[ "$unit" == *"*"* ]]; then
+        if systemctl list-units --all --plain --no-legend "$unit" 2>/dev/null | grep -q .; then found=true; fi
+      elif unit_exists "$unit"; then
+        found=true
+      fi
+    done
+    if [[ "$found" == true ]]; then printf '%s|%s|%s\n' "$name" "$label" "$units"; fi
+  done < <(log_catalog)
+}
+
+show_log() { # 单元列表 行数 是否跟踪 是否只看错误
+  local units="$1" lines="$2" follow="$3" errors="$4" args=() unit
+  command -v journalctl >/dev/null 2>&1 || fail "本机没有 journalctl。"
+  for unit in $units; do args+=(-u "$unit"); done
+  args+=(-n "$lines" --no-pager -o short-iso)
+  if [[ "$errors" == true ]]; then args+=(-p warning); fi
+  if [[ "$follow" == true ]]; then
+    echo "（实时跟踪中，按 Ctrl-C 结束）"
+    journalctl "${args[@]}" -f
+  else
+    journalctl "${args[@]}"
+  fi
+}
+
+cmd_logs() {
+  local target="${1:-}" name label units
+  if [[ -z "$target" || "$target" == all ]]; then
+    units="prism-agent.service prism-egress-proxy.service prism-client-egress-proxy.service prismdns-local-dns.service prismdns-route-sync.service prism-transport.service prism-controller.service prism-enhancer.service"
+    show_log "$units" "${OPT_LINES:-100}" "${OPT_FOLLOW:-false}" "${OPT_ERRORS:-false}"
+    return 0
+  fi
+  while IFS="|" read -r name label units; do
+    if [[ "$name" == "$target" ]]; then
+      show_log "$units" "${OPT_LINES:-100}" "${OPT_FOLLOW:-false}" "${OPT_ERRORS:-false}"
+      return 0
+    fi
+  done < <(log_catalog)
+  fail "未知日志名称: ${target}。可用: agent egress client-egress dns route-sync transport tunnel traffic media controller enhancer all"
+}
+
+# ---------------------------------------------------------------- 交互菜单
+TTY_DEV="${PRISMCTL_TTY:-/dev/tty}"
+
+ask() { # 变量名 提示 [默认值] [secret]
+  local __var="$1" __prompt="$2" __default="${3:-}" __secret="${4:-}" __value=""
+  if [[ -n "$__default" ]]; then __prompt="${__prompt} [默认 ${__default}]"; fi
+  if [[ "$__secret" == secret ]]; then
+    read -r -s -p "${__prompt}: " __value <"$TTY_DEV" || true
+    echo
+  else
+    read -r -p "${__prompt}: " __value <"$TTY_DEV" || true
+  fi
+  printf -v "$__var" '%s' "${__value:-$__default}"
+}
+
+ask_mode() {
+  local choice
+  echo "  传输模式：1) direct 直连（默认）   2) encrypted 加密隧道（机房过滤 SNI、YouTube 视频转圈时选这个）"
+  ask choice "请选择 1/2" 1
+  case "$choice" in 2) OPT_MODE=encrypted ;; *) OPT_MODE=direct ;; esac
+}
+
+role_label() {
+  case "$1" in
+    panel) printf '面板' ;;
+    proxy) printf '解锁机' ;;
+    client) printf '被解锁机' ;;
+    agent) printf 'Agent（角色未知）' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+local_role_text() {
+  local roles role out=""
+  roles=$(detect_roles)
+  if [[ -z "$roles" ]]; then printf '未安装任何 Prism 组件'; return 0; fi
+  for role in $roles; do out+="$(role_label "$role") "; done
+  printf '%s' "$out"
+}
+
+print_menu() {
+  local roles mode
+  roles=$(local_role_text)
+  mode=$(env_value TRANSPORT_MODE)
+  echo
+  echo "================ Prism DNS 控制台 v${PRISMCTL_VERSION} ================"
+  echo "  本机角色：${roles}${mode:+   传输模式：${mode}}"
+  echo "  版本标签：${SCRIPT_REF}"
+  echo "------------------------------------------------------------"
+  echo "  【安装】"
+  echo "    1) 安装 解锁机    （提供解锁出口的服务器）"
+  echo "    2) 安装 被解锁机  （需要被解锁的服务器）"
+  echo "    3) 安装 面板"
+  echo "  【升级】"
+  echo "    4) 升级本机       （自动判断：面板 / 解锁机 / 被解锁机）"
+  echo "  【卸载】"
+  echo "    5) 卸载 解锁机"
+  echo "    6) 卸载 被解锁机"
+  echo "    7) 卸载 面板"
+  echo "  【运维】"
+  echo "    8) 查看状态"
+  echo "    9) 查看日志"
+  echo "   10) 故障诊断"
+  echo "   11) 切换传输模式   （direct / encrypted）"
+  echo "   12) 更新 prismctl 自身"
+  echo "    0) 退出"
+  echo "------------------------------------------------------------"
+}
+
+menu_logs() {
+  local entries=() names=() i=1 choice view n lines follow errors line name label units
+  mapfile -t entries < <(available_logs)
+  if [[ ${#entries[@]} -eq 0 ]]; then
+    echo "本机没有找到 Prism 服务日志。"
+    return 0
+  fi
+  echo "要查看哪个日志？"
+  for line in "${entries[@]}"; do
+    IFS="|" read -r name label units <<<"$line"
+    names+=("$name")
+    printf '  %2d) %s\n' "$i" "$label"
+    i=$((i + 1))
+  done
+  printf '  %2d) 全部 Prism 服务（合并）\n' "$i"
+  echo "   0) 返回"
+  ask choice "请输入编号"
+  if [[ -z "$choice" || "$choice" == 0 ]]; then return 0; fi
+  if ! [[ "$choice" =~ ^[0-9]+$ ]]; then echo "无效输入。"; return 0; fi
+  if [[ "$choice" -eq "$i" ]]; then
+    n=all
+  elif [[ "$choice" -ge 1 && "$choice" -lt "$i" ]]; then
+    n="${names[$((choice - 1))]}"
+  else
+    echo "无效编号。"
+    return 0
+  fi
+  echo "查看方式：1) 最近 100 行   2) 实时跟踪   3) 只看警告和错误   4) 自定义行数"
+  ask view "请选择" 1
+  lines=100 follow=false errors=false
+  case "$view" in
+    2) follow=true; lines=30 ;;
+    3) errors=true; lines=200 ;;
+    4) ask lines "显示最近多少行" 300; [[ "$lines" =~ ^[0-9]+$ ]] || lines=300 ;;
+  esac
+  OPT_LINES="$lines" OPT_FOLLOW="$follow" OPT_ERRORS="$errors"
+  ( trap - INT; cmd_logs "$n" ) || true
+}
+
+# 在子进程里执行，避免动作中的 fail/exit 把整个菜单带走；Ctrl-C 只中断当前动作。
+run_action() {
+  ( trap cleanup EXIT; trap - INT; "$@" ) || warn "该操作未成功完成（见上方信息）。"
+}
+
+menu_install_proxy() {
+  local smart
+  ask OPT_MASTER "面板地址（例如 https://panel.example.com）" "$(env_value MASTER)"
+  ask OPT_SECRET "解锁机节点密钥（在面板里获取）" "" secret
+  ask OPT_IP "解锁机真实公网 IPv4（回车=自动探测，NAT 或多 IP 请手填）"
+  ask_mode
+  ask smart "是否启用智能检测 --smart？(y/N)" N
+  if [[ "$smart" == y || "$smart" == Y ]]; then OPT_SMART=true; else OPT_SMART=false; fi
+  OPT_MASTER="${OPT_MASTER%/}"
+  cmd_install proxy
+}
+
+menu_install_client() {
+  ask OPT_MASTER "面板地址（例如 https://panel.example.com）" "$(env_value MASTER)"
+  ask OPT_TOKEN "被解锁机令牌（在面板「IP 配置」里获取）" "" secret
+  ask_mode
+  OPT_MASTER="${OPT_MASTER%/}"
+  cmd_install client
+}
+
+menu_upgrade() {
+  local ref
+  ask ref "升级到哪个版本？回车=${SCRIPT_REF}，输入 latest=GitHub 最新发布，或输入标签如 v1.5.35"
+  if [[ -n "$ref" ]]; then SCRIPT_REF=$(resolve_ref "$ref"); fi
+  echo "升级顺序提示：先面板，再解锁机，最后被解锁机。"
+  cmd_upgrade ""
+}
+
+menu_uninstall() { # 角色
+  local role="$1" roles go purge
+  roles=" $(detect_roles) "
+  if [[ "$roles" != *" $role "* ]]; then
+    warn "本机没有检测到「$(role_label "$role")」组件（检测到：$(local_role_text)）。"
+    ask go "仍要对「$(role_label "$role")」执行卸载吗？(y/N)" N
+    [[ "$go" == y || "$go" == Y ]] || return 0
+  fi
+  if [[ "$role" == panel ]]; then
+    ask purge "是否同时永久删除面板数据？(y/N，默认保留)" N
+    if [[ "$purge" == y || "$purge" == Y ]]; then OPT_PURGE=true; else OPT_PURGE=false; fi
+  fi
+  cmd_uninstall "$role"
+}
+
+menu_mode() {
+  local choice
+  cmd_mode ""
+  echo "  1) 切换到 direct 直连   2) 切换到 encrypted 加密隧道   0) 返回"
+  ask choice "请选择" 0
+  case "$choice" in
+    1) cmd_mode direct ;;
+    2) cmd_mode encrypted ;;
+  esac
+}
+
+pause_menu() {
+  local _
+  read -r -p "按回车返回菜单..." _ <"$TTY_DEV" || true
+}
+
+run_menu() {
+  [[ -r "$TTY_DEV" ]] || fail "没有可用的终端，无法显示菜单。请直接使用子命令，例如 prismctl status（prismctl help 查看全部）。"
+  trap ':' INT
+  local choice
+  while true; do
+    print_menu
+    ask choice "请输入编号"
+    OPT_MASTER="" OPT_SECRET="" OPT_TOKEN="" OPT_IP="" OPT_MODE="" OPT_SMART=false OPT_PURGE=false OPT_YES=false
+    OPT_LINES=100 OPT_FOLLOW=false OPT_ERRORS=false
+    case "$choice" in
+      1) run_action menu_install_proxy ;;
+      2) run_action menu_install_client ;;
+      3) run_action cmd_install panel ;;
+      4) run_action menu_upgrade ;;
+      5) run_action menu_uninstall proxy ;;
+      6) run_action menu_uninstall client ;;
+      7) run_action menu_uninstall panel ;;
+      8) run_action cmd_status ;;
+      9) menu_logs ;;
+      10) run_action cmd_doctor ;;
+      11) run_action menu_mode ;;
+      12) run_action cmd_self_install ;;
+      0|q|Q|exit) echo "已退出。"; return 0 ;;
+      "") continue ;;
+      *) echo "无效输入：${choice}，请输入 0-12。"; continue ;;
+    esac
+    pause_menu
+  done
+}
+
 # ---------------------------------------------------------------- 参数解析
 main() {
-  local command="${1:-help}"
+  OPT_MASTER="" OPT_SECRET="" OPT_TOKEN="" OPT_IP="" OPT_MODE="" OPT_SMART=false OPT_PURGE=false OPT_YES=false
+  OPT_LINES=100 OPT_FOLLOW=false OPT_ERRORS=false
+  local command="${1:-menu}"
   [[ $# -eq 0 ]] || shift
   case "$command" in
     help|-h|--help) usage; return 0 ;;
     version|-v|--version) echo "prismctl ${PRISMCTL_VERSION}"; return 0 ;;
-    install|upgrade|update|uninstall|remove|mode|status|doctor|self-install|self-update) ;;
+    menu|install|upgrade|update|uninstall|remove|mode|status|doctor|logs|log|self-install|self-update) ;;
     *) fail "未知命令: ${command}（运行 prismctl help 查看用法）" ;;
   esac
 
-  local positional=()
-  OPT_MASTER="" OPT_SECRET="" OPT_TOKEN="" OPT_IP="" OPT_MODE="" OPT_SMART=false OPT_PURGE=false OPT_YES=false
-  local ref_arg=""
+  local positional=() ref_arg=""
   while (($#)); do
     case "$1" in
       --master) [[ $# -ge 2 ]] || fail "--master 需要值"; OPT_MASTER="${2%/}"; shift 2 ;;
@@ -458,6 +726,9 @@ main() {
       --ip) [[ $# -ge 2 ]] || fail "--ip 需要值"; OPT_IP="$2"; shift 2 ;;
       --mode) [[ $# -ge 2 ]] || fail "--mode 需要值"; OPT_MODE="$2"; shift 2 ;;
       --ref) [[ $# -ge 2 ]] || fail "--ref 需要值"; ref_arg="$2"; shift 2 ;;
+      -n|--lines) [[ $# -ge 2 && "$2" =~ ^[0-9]+$ ]] || fail "--lines 需要数字"; OPT_LINES="$2"; shift 2 ;;
+      -f|--follow) OPT_FOLLOW=true; shift ;;
+      --errors) OPT_ERRORS=true; shift ;;
       --smart) OPT_SMART=true; shift ;;
       --purge-data) OPT_PURGE=true; shift ;;
       --yes|-y) OPT_YES=true; shift ;;
@@ -473,14 +744,15 @@ main() {
   SCRIPT_REF=$(resolve_ref "$SCRIPT_REF")
 
   case "$command" in
+    menu) run_menu ;;
     install) cmd_install "${positional[0]:-}" ;;
     upgrade|update) cmd_upgrade "${positional[0]:-}" ;;
     uninstall|remove) cmd_uninstall "${positional[0]:-}" ;;
     mode) cmd_mode "${positional[0]:-${OPT_MODE:-}}" ;;
     status) cmd_status ;;
     doctor) cmd_doctor ;;
+    logs|log) cmd_logs "${positional[0]:-}" ;;
     self-install|self-update) cmd_self_install ;;
-    *) fail "未知命令: ${command}（运行 prismctl help 查看用法）" ;;
   esac
 }
 
