@@ -113,8 +113,30 @@ EOF
     systemctl enable "$CONTROLLER_SERVICE" "$ENHANCER_SERVICE" >/dev/null
 }
 
+# 升级已有面板时沿用现有 systemd 单元里的端口与目录，避免把自定义端口（例如 nginx 反代到的
+# 58082）重写成默认值导致面板起不来。只有用户通过 PRISM_* 环境变量显式指定时才覆盖。
+detect_existing_config() {
+    command -v systemctl >/dev/null 2>&1 || return 0
+    local enhancer_line controller_line value
+    enhancer_line=$(systemctl cat "${ENHANCER_SERVICE}.service" 2>/dev/null | sed -n "s/^ExecStart=//p" | head -n 1 || true)
+    controller_line=$(systemctl cat "${CONTROLLER_SERVICE}.service" 2>/dev/null | sed -n "s/^ExecStart=//p" | head -n 1 || true)
+    if [ -z "${PRISM_PORT:-}" ] && [ -n "$enhancer_line" ]; then
+        value=$(printf "%s" "$enhancer_line" | sed -nE "s/.*--listen[= ][^ ]*:([0-9]+).*/\1/p")
+        [ -z "$value" ] || PUBLIC_PORT="$value"
+    fi
+    if [ -z "${PRISM_CORE_PORT:-}" ] && [ -n "$controller_line" ]; then
+        value=$(printf "%s" "$controller_line" | sed -nE "s/.*--port[= ]([0-9]+).*/\1/p")
+        [ -z "$value" ] || CORE_PORT="$value"
+    fi
+    if [ -z "${PRISM_ENHANCER_DATA_DIR:-}" ] && [ -n "$enhancer_line" ]; then
+        value=$(printf "%s" "$enhancer_line" | sed -nE "s/.*--data-dir[= ]([^ ]+).*/\1/p")
+        [ -z "$value" ] || DATA_DIR="$value"
+    fi
+}
+
 main() {
     require_root
+    detect_existing_config
     prepare_fresh_install
     validate_port "$PUBLIC_PORT"
     validate_port "$CORE_PORT"
@@ -159,4 +181,4 @@ main() {
     echo "自定义服务数据: ${DATA_DIR}/custom-services.json"
 }
 
-main "$@"
+[ -n "${PRISM_INSTALL_SOURCE_ONLY:-}" ] || main "$@"

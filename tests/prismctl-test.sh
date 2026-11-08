@@ -56,7 +56,7 @@ agent_has_flag smart && smart=yes || smart=no
 check "无 --smart 时识别为否" no "$smart"
 
 # 发布标签校验
-check "合法标签通过" v1.5.33 "$(resolve_ref v1.5.33)"
+check "合法标签通过" v1.5.34 "$(resolve_ref v1.5.34)"
 out=$( (resolve_ref 'v1;rm -rf /') 2>&1 ); rc=$?
 check "非法标签被拒绝" 1 "$rc"
 check_contains "非法标签有提示" "无效的发布标签" "$out"

@@ -8,7 +8,7 @@
 #   3. 只处理 Prism 自有的服务、nft 表和 iptables 链，不触碰 V2bX、XrayR、Docker、nginx 等业务。
 set -Eeuo pipefail
 
-PRISMCTL_VERSION="1.5.33"
+PRISMCTL_VERSION="1.5.34"
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 SCRIPT_REF="${PRISM_SCRIPT_REF:-v${PRISMCTL_VERSION}}"
 ETC_DIR="${PRISMCTL_ETC_DIR:-/etc/prismdns}"
@@ -46,7 +46,7 @@ prismctl ${PRISMCTL_VERSION} —— Prism DNS 综合控制脚本
   --ip ADDR          解锁机的真实公网 IPv4（install proxy，可选）
   --smart            解锁机启用智能检测（install proxy，可选）
   --mode MODE        direct 或 encrypted；默认沿用本机已有模式，新装为 direct
-  --ref REF          指定发布标签（如 v1.5.33），latest 表示 GitHub 最新发布
+  --ref REF          指定发布标签（如 v1.5.34），latest 表示 GitHub 最新发布
   --purge-data       卸载面板时一并删除面板数据
   --yes              跳过确认
 
@@ -210,18 +210,32 @@ cmd_upgrade() {
 }
 
 upgrade_panel() {
-  local script
+  local script stamp item rc=0 healthy=false _
   info "升级面板到 ${SCRIPT_REF}（面板数据目录会保留）..."
   script=$(fetch_script enhanced_install.sh)
-  # 升级前备份二进制与数据库，失败时可原样回滚（数据库也会由安装脚本再备份一份）。
-  local stamp binary
+  # 升级前备份二进制、数据库和 systemd 单元；升级后若面板没有恢复健康，自动按这份备份回滚。
   stamp=$(date +%Y%m%d-%H%M%S)
-  for binary in /opt/prism/prism-controller /opt/prism/prism-enhancer; do
-    [[ -f "$binary" ]] && cp -a "$binary" "${binary}.pre-prismctl-${stamp}"
+  for item in /opt/prism/prism-controller /opt/prism/prism-enhancer /opt/prism/data.db               /etc/systemd/system/prism-controller.service /etc/systemd/system/prism-enhancer.service; do
+    [[ -f "$item" ]] && cp -a "$item" "${item}.pre-prismctl-${stamp}"
   done
-  [[ -f /opt/prism/data.db ]] && cp -a /opt/prism/data.db "/opt/prism/data.db.pre-prismctl-${stamp}"
-  info "已备份到 /opt/prism/*.pre-prismctl-${stamp}"
-  PRISM_SCRIPT_REF="$SCRIPT_REF" bash "$script"
+  info "已备份到 *.pre-prismctl-${stamp}"
+  PRISM_SCRIPT_REF="$SCRIPT_REF" bash "$script" || rc=$?
+  if [[ $rc -eq 0 ]]; then
+    for _ in {1..20}; do
+      if unit_active prism-controller.service && unit_active prism-enhancer.service; then healthy=true; break; fi
+      sleep 1
+    done
+  fi
+  if [[ "$healthy" != true ]]; then
+    warn "升级后面板未恢复健康，正在按备份自动回滚..."
+    for item in /opt/prism/prism-controller /opt/prism/prism-enhancer /opt/prism/data.db                 /etc/systemd/system/prism-controller.service /etc/systemd/system/prism-enhancer.service; do
+      [[ -f "${item}.pre-prismctl-${stamp}" ]] && cp -a "${item}.pre-prismctl-${stamp}" "$item"
+    done
+    systemctl daemon-reload
+    systemctl restart prism-controller.service prism-enhancer.service || true
+    fail "面板升级失败，已回滚到升级前的状态（备份后缀 .pre-prismctl-${stamp}）。"
+  fi
+  ok "面板升级成功。"
 }
 
 upgrade_proxy() {
