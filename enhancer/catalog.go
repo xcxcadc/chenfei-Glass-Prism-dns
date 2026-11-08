@@ -161,6 +161,14 @@ var (
 			"ytimg.com",
 			"s.youtube.com",
 			"youtube.googleapis.com",
+			// 以下域名已联网核对并在被解锁机上验证可解析：
+			// 内嵌播放器、播放器初始化接口、儿童版、教育版与短链。
+			"jnn-pa.googleapis.com",
+			"youtube.com",
+			"youtubeembeddedplayer.googleapis.com",
+			"youtubeeducation.com",
+			"youtubekids.com",
+			"yt.be",
 		},
 		"Videomarket": {
 			"videomarket.jp",
@@ -185,6 +193,24 @@ var (
 	}
 	serviceDomainKeywordSupplements = map[string][]string{
 		"Grok": grokDomainKeywords,
+	}
+	// Google Play 商店及应用下载依赖的域名，已在被解锁机上验证可解析。
+	// 商店地区由 play-fe / android.clients 等接口依据出口 IP 判定，
+	// 因此这些域名必须同走一个解锁节点。
+	// 刻意不包含 gvt1.com / gvt2.com / ggpht.com：它们已属于 YouTube，
+	// 重复收录会让两个服务因域名重叠被强制绑定到同一节点。
+	googlePlayStoreDomains = []string{
+		"android.clients.google.com",
+		"android.googleapis.com",
+		"dl.google.com",
+		"googleplay.com",
+		"play-fe.googleapis.com",
+		"play-games.googleusercontent.com",
+		"play-lh.googleusercontent.com",
+		"play.google",
+		"play.google.com",
+		"play.googleapis.com",
+		"playatoms-pa.googleapis.com",
 	}
 	serviceCIDRSupplements = map[string][]string{
 		"Grok": grokCIDRs,
@@ -279,6 +305,12 @@ func ParseSmartDNS(reader io.Reader) ([]Service, error) {
 func ensureBuiltInServices(services []Service) []Service {
 	for _, service := range []Service{
 		{
+			ID:       stableServiceID("Global Platform", "Google Play Store"),
+			Name:     "Google Play Store",
+			Category: "Global Platform",
+			Domains:  normalizeDomains(googlePlayStoreDomains),
+		},
+		{
 			ID:       stableServiceID("AI Platform", "Grok"),
 			Name:     "Grok",
 			Category: "AI Platform",
@@ -307,10 +339,22 @@ func ensureBuiltInServices(services []Service) []Service {
 	return services
 }
 
+// regionQualifierPattern 匹配上游名称末尾的区域限定标记，例如 "/HK Only/"。
+// 该标记只说明规则面向哪类客户端，并不属于服务本身的名称；
+// 若不剥离，Claude / Gemini / Google AI Studio 会与别名表、补充域名表、
+// 探测域名表和审计标签全部匹配失败。
+var regionQualifierPattern = regexp.MustCompile(`(?i)\s*/\s*[a-z]{2,3}\s+only\s*/\s*$`)
+
+func stripRegionQualifier(name string) string {
+	return strings.TrimSpace(regionQualifierPattern.ReplaceAllString(name, ""))
+}
+
 func canonicalServiceName(name, category string) string {
+	name = stripRegionQualifier(name)
 	aliases := map[string]string{
 		"claude 2":                              "Claude",
 		"google aistudio":                       "Google AI Studio",
+		"google ai studio":                      "Google AI Studio",
 		"google gemini":                         "Gemini",
 		"microsoft copilot for image generates": "Microsoft Copilot Image Creator",
 		"openai":                                "ChatGPT / OpenAI",
@@ -412,6 +456,25 @@ func normalizeCustomDomains(domains []string) ([]string, error) {
 	}
 	sort.Strings(result)
 	return result, nil
+}
+
+// sanitizeStoredDomains 宽松地规范化已存储的域名：保留合法项，丢弃无效项。
+func sanitizeStoredDomains(domains []string) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(domains))
+	for _, value := range splitDomainValues(domains) {
+		domain := normalizeDomainPattern(value)
+		if domain == "" {
+			continue
+		}
+		if _, ok := seen[domain]; ok {
+			continue
+		}
+		seen[domain] = struct{}{}
+		result = append(result, domain)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func normalizeDomainKeywords(keywords []string) []string {
@@ -545,7 +608,13 @@ func validDomainName(domain string) bool {
 	if domain == "" || len(domain) > 253 {
 		return false
 	}
-	for _, label := range strings.Split(domain, ".") {
+	labels := strings.Split(domain, ".")
+	// 单标签（如 "bbc"、"colab"、"twitter"）在 dnsmasq 中只会匹配顶级域，
+	// 不会命中任何真实站点，只会污染规则与冲突检测，因此一律拒绝。
+	if len(labels) < 2 {
+		return false
+	}
+	for _, label := range labels {
 		if len(label) == 0 || len(label) > 63 || !asciiAlphaNumeric(label[0]) || !asciiAlphaNumeric(label[len(label)-1]) {
 			return false
 		}

@@ -503,6 +503,7 @@ func preferredProbeDomains(service Service) []string {
 		"VN:Galaxy Play":                  {"galaxyplay.vn"},
 		"VN:K+":                           {"www.kplus.vn"},
 		"Wavve":                           {"www.wavve.com"},
+		"Google Play Store": {"play.google.com", "play.googleapis.com"},
 		"YouTube":                         {"youtube.com", "redirector.googlevideo.com"},
 	}
 	serviceDomains := routingDomains(service.Domains)

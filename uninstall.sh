@@ -178,6 +178,21 @@ restore_legacy_service() {
   [[ -f "$backup/was-active" ]] && systemctl restart "$unit" >/dev/null 2>&1 || true
 }
 
+remove_prism_iptables_chains() {
+  local fw spec table chain
+  for fw in iptables ip6tables; do
+    command -v "$fw" >/dev/null 2>&1 || continue
+    for spec in "nat PRISMDNS_DNS_GUARD" "nat PRISMDNS_DNS_GUARD6" "filter PRISMDNS_GOOGLE_QUIC"; do
+      table=${spec% *}; chain=${spec#* }
+      while "$fw" -t "$table" -C OUTPUT -j "$chain" >/dev/null 2>&1; do
+        "$fw" -t "$table" -D OUTPUT -j "$chain" >/dev/null 2>&1 || break
+      done
+      "$fw" -t "$table" -F "$chain" >/dev/null 2>&1 || true
+      "$fw" -t "$table" -X "$chain" >/dev/null 2>&1 || true
+    done
+  done
+}
+
 remove_agent_runtime() {
   remove_transport_units
   remove_unit_file prism-agent-watchdog.timer
@@ -198,10 +213,12 @@ remove_agent_runtime() {
   if command -v nft >/dev/null 2>&1; then
     nft delete table inet prismdns_traffic >/dev/null 2>&1 || true
     nft delete table inet prismdns_local_dns >/dev/null 2>&1 || true
+    nft delete table inet prismdns_dns_guard >/dev/null 2>&1 || true
     nft delete table inet prism_transport >/dev/null 2>&1 || true
     nft delete table inet prism_client_egress >/dev/null 2>&1 || true
     nft delete table inet prism_authorization >/dev/null 2>&1 || true
   fi
+  remove_prism_iptables_chains
   systemctl daemon-reload
   systemctl reset-failed >/dev/null 2>&1 || true
 }

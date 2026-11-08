@@ -397,6 +397,7 @@ func preferredIconDomain(service Service) string {
 		"Viu":                             "viu.com",
 		"Wavve":                           "wavve.com",
 		"X":                               "x.com",
+		"Google Play Store": "play.google.com",
 		"YouTube":                         "youtube.com",
 		"Youku":                           "youku.com",
 	}

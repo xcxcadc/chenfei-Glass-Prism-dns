@@ -60,10 +60,16 @@ func TestEnsureBuiltInServicesAddsGrokOnce(t *testing.T) {
 
 func TestGrokCarriesXAIKeywordAndCIDRRules(t *testing.T) {
 	services := ensureBuiltInServices(nil)
-	if len(services) != 1 {
-		t.Fatalf("expected one built-in service, got %d", len(services))
+	var grok Service
+	found := false
+	for _, service := range services {
+		if service.Name == "Grok" {
+			grok, found = service, true
+		}
 	}
-	grok := services[0]
+	if !found {
+		t.Fatalf("built-in Grok service missing: %#v", services)
+	}
 	if !contains(grok.Domains, "twitter.com") || !contains(grok.Domains, "x.com") {
 		t.Fatalf("xAI domains missing: %#v", grok.Domains)
 	}

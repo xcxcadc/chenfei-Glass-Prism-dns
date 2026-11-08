@@ -416,11 +416,9 @@ func (store *CatalogPreferenceStore) load() error {
 		if strings.TrimSpace(serviceID) == "" {
 			return fmt.Errorf("decode catalog preferences: invalid service domains")
 		}
-		normalized, normalizeErr := normalizeCustomDomains(domains)
-		if normalizeErr != nil {
-			return fmt.Errorf("decode catalog preferences: invalid service domains")
-		}
-		store.domains[serviceID] = normalized
+		// 已落盘的域名可能含有旧版本放行的单标签等无效项；
+		// 加载时静默剔除，避免因历史脏数据导致整个服务无法启动。
+		store.domains[serviceID] = sanitizeStoredDomains(domains)
 	}
 	for serviceID, keywords := range preferences.ServiceKeywords {
 		if strings.TrimSpace(serviceID) == "" {

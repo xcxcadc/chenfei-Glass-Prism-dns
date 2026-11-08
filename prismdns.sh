@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.30"
+VERSION="1.5.31"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 BACKUP_RETENTION="${PRISM_DNS_BACKUP_RETENTION:-12}"
@@ -1020,6 +1020,14 @@ DNSMASQ_CONFIG_FILE
   if command -v systemctl >/dev/null 2>&1; then
     if systemctl is-active --quiet dnsmasq.service 2>/dev/null ||
        systemctl is-enabled --quiet dnsmasq.service 2>/dev/null; then
+      # 先备份并留下 was-active/was-enabled 标记，卸载时可由 uninstall.sh 原样恢复；
+      # 备份目录与 agent_install.sh 的冲突备份保持一致。
+      local conflict_backup
+      conflict_backup="/var/lib/prism-agent/conflict-backups/$(date +%Y%m%d-%H%M%S)-dnsmasq"
+      mkdir -p "$conflict_backup"
+      systemctl is-active --quiet dnsmasq.service 2>/dev/null && echo active >"$conflict_backup/was-active"
+      systemctl is-enabled --quiet dnsmasq.service 2>/dev/null && echo enabled >"$conflict_backup/was-enabled"
+      cp -a /etc/dnsmasq.conf /etc/dnsmasq.d "$conflict_backup/" 2>/dev/null || true
       systemctl disable --now dnsmasq.service >/dev/null 2>&1 || true
     fi
     unit_tmp=$(mktemp /etc/systemd/system/prismdns-local-dns.service.XXXXXX)
