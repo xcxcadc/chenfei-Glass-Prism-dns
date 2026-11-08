@@ -32,7 +32,7 @@ func newReleaseTestHandler(t *testing.T) http.Handler {
 }
 
 func TestReleaseAssetsUsePublishedTag(t *testing.T) {
-	if uiVersion != "1.5.32" || prismSourceRef != "v"+uiVersion {
+	if uiVersion != "1.5.33" || prismSourceRef != "v"+uiVersion {
 		t.Fatalf("release version mismatch: UI %q, source %q", uiVersion, prismSourceRef)
 	}
 	handler := newReleaseTestHandler(t)

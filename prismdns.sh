@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.32"
+VERSION="1.5.33"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 BACKUP_RETENTION="${PRISM_DNS_BACKUP_RETENTION:-12}"
@@ -1400,11 +1400,14 @@ if [[ -n "$LAST_HASH" && "$CURRENT_HASH" == "$LAST_HASH" ]] && basic_health_ok; 
     exit 0
   fi
 fi
+# 面板上新增/删除服务后需尽快生效：限流从 60 秒降到 10 秒，仅用于防止异常时反复重启；
+# 并主动触发一次传输同步，让出口代理的域名策略与隧道立即跟上，不必等下一个定时周期。
 LAST_RESTART=$(cat "$RESTART_FILE" 2>/dev/null || echo 0)
-if ((NOW - LAST_RESTART < 60)); then
+if ((NOW - LAST_RESTART < 10)); then
   exit 0
 fi
 printf '%s\n' "$NOW" > "$RESTART_FILE"
+systemctl start --no-block prism-transport.service >/dev/null 2>&1 || true
 systemctl restart prism-agent
 for _ in {1..30}; do
   if route_health_ok; then
