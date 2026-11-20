@@ -3,6 +3,7 @@ set -euo pipefail
 
 UPSTREAM_REPO="${PRISM_UPSTREAM_REPO:-mslxi/Liquid-Glass-Prism-dns}"
 ENHANCER_REPO="${PRISM_ENHANCER_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.37}"
 INSTALL_DIR="${PRISM_INSTALL_DIR:-/opt/prism}"
 DATA_DIR="${PRISM_ENHANCER_DATA_DIR:-/var/lib/prism-enhancer}"
 PUBLIC_PORT="${PRISM_PORT:-8080}"
@@ -56,6 +57,17 @@ download() {
     curl -fL --retry 3 --connect-timeout 15 -o "${target}.tmp" "$url"
     chmod 0755 "${target}.tmp"
     mv "${target}.tmp" "$target"
+}
+
+enhancer_release_url() {
+    local arch="$1"
+    if [[ "$SCRIPT_REF" == latest ]]; then
+        printf 'https://github.com/%s/releases/latest/download/prism-enhancer_linux_%s\n' "$ENHANCER_REPO" "$arch"
+    elif [[ "$SCRIPT_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        printf 'https://github.com/%s/releases/download/%s/prism-enhancer_linux_%s\n' "$ENHANCER_REPO" "$SCRIPT_REF" "$arch"
+    else
+        fail "无效的增强层发布版本: $SCRIPT_REF"
+    fi
 }
 
 init_controller() {
@@ -137,7 +149,6 @@ detect_existing_config() {
 main() {
     require_root
     detect_existing_config
-    prepare_fresh_install
     validate_port "$PUBLIC_PORT"
     validate_port "$CORE_PORT"
     [ "$PUBLIC_PORT" != "$CORE_PORT" ] || fail "公开端口和内部端口不能相同"
@@ -145,8 +156,9 @@ main() {
     local arch controller_url enhancer_url
     arch=$(detect_arch)
     controller_url="https://github.com/${UPSTREAM_REPO}/releases/latest/download/prism-controller-linux-${arch}"
-    enhancer_url="https://github.com/${ENHANCER_REPO}/releases/latest/download/prism-enhancer_linux_${arch}"
+    enhancer_url=$(enhancer_release_url "$arch")
 
+    prepare_fresh_install
     mkdir -p "$INSTALL_DIR" "$DATA_DIR"
     if [ -f "${INSTALL_DIR}/data.db" ]; then
         cp "${INSTALL_DIR}/data.db" "${INSTALL_DIR}/data.db.backup.$(date +%Y%m%d%H%M%S)"

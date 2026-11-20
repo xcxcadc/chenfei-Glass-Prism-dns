@@ -8,7 +8,7 @@
 #   3. 只处理 Prism 自有的服务、nft 表和 iptables 链，不触碰 V2bX、XrayR、Docker、nginx 等业务。
 set -Eeuo pipefail
 
-PRISMCTL_VERSION="1.5.36"
+PRISMCTL_VERSION="1.5.37"
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 SCRIPT_REF="${PRISM_SCRIPT_REF:-v${PRISMCTL_VERSION}}"
 ETC_DIR="${PRISMCTL_ETC_DIR:-/etc/prismdns}"
@@ -48,7 +48,7 @@ dns ${PRISMCTL_VERSION} —— Prism DNS 综合控制脚本
   --ip ADDR          解锁机的真实公网 IPv4（install proxy，可选）
   --smart            解锁机启用智能检测（install proxy，可选）
   --mode MODE        direct 或 encrypted；默认沿用本机已有模式，新装为 direct
-  --ref REF          指定发布标签（如 v1.5.36），latest 表示 GitHub 最新发布
+  --ref REF          指定发布标签（如 v1.5.37），latest 表示 GitHub 最新发布
   --purge-data       卸载面板时一并删除面板数据
   --yes              跳过确认
 
@@ -666,7 +666,7 @@ menu_install_client() {
 
 menu_upgrade() {
   local ref
-  ask ref "升级到哪个版本？回车=${SCRIPT_REF}，输入 latest=GitHub 最新发布，或输入标签如 v1.5.36"
+  ask ref "升级到哪个版本？回车=${SCRIPT_REF}，输入 latest=GitHub 最新发布，或输入标签如 v1.5.37"
   if [[ -n "$ref" ]]; then SCRIPT_REF=$(resolve_ref "$ref"); fi
   echo "升级顺序提示：先面板，再解锁机，最后被解锁机。"
   cmd_upgrade ""

@@ -35,4 +35,12 @@ run_case "显式 PRISM_CORE_PORT 与数据目录优先" 58082 19000 /tmp/x PRISM
 result=$(bash -c 'source ./enhanced_install.sh; systemctl() { return 1; }; detect_existing_config; echo "$PUBLIC_PORT $CORE_PORT"')
 check "全新安装保持默认端口" "8080 18080" "$result"
 
+result=$(PRISM_SCRIPT_REF=v1.5.37 bash -c 'source ./enhanced_install.sh; enhancer_release_url amd64')
+check "面板安装匹配指定发布标签" "https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/download/v1.5.37/prism-enhancer_linux_amd64" "$result"
+result=$(PRISM_SCRIPT_REF=latest PRISM_ENHANCER_REPO=owner/project bash -c 'source ./enhanced_install.sh; enhancer_release_url arm64')
+check "显式 latest 保持兼容" "https://github.com/owner/project/releases/latest/download/prism-enhancer_linux_arm64" "$result"
+if PRISM_SCRIPT_REF=main bash -c 'source ./enhanced_install.sh; enhancer_release_url amd64' >/dev/null 2>&1; then
+  check "拒绝使用分支名作为发布版本" "rejected" "accepted"
+fi
+
 if [[ $failures -eq 0 ]]; then echo "enhanced-install config tests passed"; else echo "$failures test(s) failed"; exit 1; fi

@@ -44,8 +44,9 @@ command() {
 ensure_dependencies() { record dependencies; touch "$temp_dir/flock-ready"; }
 flock() { [[ -f "$temp_dir/flock-ready" ]]; record lock; }
 install_transport() { record install; }
+install_optional_node_update_worker() { record node-update; }
 : >"$events"
 main
-[[ "$(paste -sd ' ' "$events")" == 'dependencies lock install' ]]
+[[ "$(paste -sd ' ' "$events")" == 'dependencies lock install node-update' ]]
 
 printf 'Prism transport installation order tests passed.\n'

@@ -152,6 +152,32 @@ func TestMediaCheckHTTPAuthenticationAndGeneration(t *testing.T) {
 	}
 }
 
+func TestMediaCheckReplacementWhenClockHasNotAdvanced(t *testing.T) {
+	store, err := NewMediaCheckStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous, err := store.Create("proxy-a", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous.RequestedAt = previous.RequestedAt.Add(time.Hour)
+	previous.UpdatedAt = previous.UpdatedAt.Add(-2 * time.Minute)
+	store.jobs[previous.ID] = previous
+
+	replacement, err := store.Create("proxy-a", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement.ID == previous.ID || !replacement.RequestedAt.After(previous.RequestedAt) {
+		t.Fatalf("replacement did not sort after expired job: previous=%s replacement=%s", previous.RequestedAt, replacement.RequestedAt)
+	}
+	claimed, err := store.Claim("proxy-a", "")
+	if err != nil || claimed == nil || claimed.ID != replacement.ID {
+		t.Fatalf("worker did not claim replacement job: job=%+v err=%v", claimed, err)
+	}
+}
+
 func TestMediaCheckRestartPreservesPartialResults(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "checks.json")
 	store, _ := NewMediaCheckStore(path)

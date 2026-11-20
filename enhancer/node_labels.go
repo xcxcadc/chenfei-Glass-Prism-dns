@@ -201,6 +201,7 @@ func (app *App) handleEnhancedNodes(writer http.ResponseWriter, request *http.Re
 		}
 		for _, node := range nodes {
 			app.nodeLabels.Overlay(node)
+			app.nodeUpdates.overlay(node)
 		}
 		writeJSON(writer, http.StatusOK, nodes)
 	case http.MethodPost:

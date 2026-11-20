@@ -126,7 +126,8 @@ func (store *MediaCheckStore) Create(nodeID, configID, generation string) (Media
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.expireLocked()
-	if existing, ok := store.latestLocked(nodeID, configID); ok && mediaJobActive(existing) && existing.Generation == generation {
+	existing, ok := store.latestLocked(nodeID, configID)
+	if ok && mediaJobActive(existing) && existing.Generation == generation {
 		return existing, nil
 	}
 	id, err := randomToken()
@@ -134,13 +135,17 @@ func (store *MediaCheckStore) Create(nodeID, configID, generation string) (Media
 		return MediaCheckJob{}, err
 	}
 	now := time.Now().UTC()
+	requestedAt := now
+	if ok {
+		requestedAt = monotonicTimestamp(now, &existing.RequestedAt)
+	}
 	for previousID, previous := range store.jobs {
 		if previous.NodeID == nodeID && previous.ConfigID == configID && mediaJobActive(previous) {
 			previous.Status, previous.Error, previous.FinishedAt = "failed", "Configuration changed; a new check was queued", &now
 			store.jobs[previousID] = previous
 		}
 	}
-	job := MediaCheckJob{ID: id, NodeID: nodeID, ConfigID: configID, Generation: generation, Status: "queued", Source: "check.unlock.media", Network: "ipv4", Region: "0", RequestedAt: now, UpdatedAt: now, Results: map[string]string{}}
+	job := MediaCheckJob{ID: id, NodeID: nodeID, ConfigID: configID, Generation: generation, Status: "queued", Source: "check.unlock.media", Network: "ipv4", Region: "0", RequestedAt: requestedAt, UpdatedAt: now, Results: map[string]string{}}
 	store.jobs[id] = job
 	return job, store.saveLocked()
 }

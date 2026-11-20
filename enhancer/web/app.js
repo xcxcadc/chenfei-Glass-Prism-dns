@@ -26,6 +26,13 @@ const translations = {
     manageCategories: "分类管理", categoryHint: "服务分类只影响整理和筛选，不会修改域名、路由或客户端配置。", newCategory: "新建分类", categoryName: "分类名称", categoryCreated: "分类已创建", categoryDeleted: "分类已删除", editCategory: "分类", serviceCategory: "调整服务分类", restoreCategory: "恢复原分类", originalCategory: "原始分类", useCategory: "使用", builtInCategory: "内置", customCategory: "自定义", categoryInUse: "该分类仍有服务，请先移动这些服务", categoryDeleteConfirm: "删除这个空分类？",
     unlockResults: "完整媒体检测任务", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "官方 check.unlock.media 脚本 0（跨国平台）完整 IPv4 实测，每秒读取任务，输出返回即展示，直到任务结束，无固定时长截止。Global_UnlockTest 分两批输出，等待期间可能没有新增项目。原始 Yes / No / WAF 和地区原样展示；DNS/TLS 探针不作为媒体解锁结果。", checkAgain: "新建检测任务", waitingResults: "等待脚本下一批输出；完整检测仍在运行。",
     mediaNodeSelfCheck: "媒体自检（解锁机本机）",
+    nodeVersions: "节点版本", nodeVersion: "Prism 版本", nodeTransportVersion: "传输组件版本", nodeAgentVersion: "Agent 版本",
+    nodeIPv4: "上报 IPv4", nodeLastSeen: "最近上报", nodeUpdate: "更新节点", nodeRelease: "可用版本",
+    nodeUpdateUnsupported: "此节点暂不支持面板更新。", nodeUpdateBootstrap: "需一次性引导：此节点尚未上报在线更新组件。", nodeUpdateWorkerOffline: "更新组件未近期上报。", nodeUpdateCurrent: "无需更新", nodeUpdateLoading: "正在查询可用版本…",
+    nodeUpdateUnavailable: "当前面板不支持在线更新。", nodeReleaseUnavailable: "暂时无法查询可用版本，稍后自动重试。",
+    nodeInventoryOffline: "节点刷新失败，正在显示上次取得的数据。", nodeUpdateSubmitting: "正在提交…",
+    nodeUpdateQueued: "更新已排队", nodeUpdateRunning: "正在更新", nodeUpdateSucceeded: "更新成功", nodeUpdateFailed: "更新失败",
+    nodeUpdateRequestedAt: "提交时间", nodeUpdateUpdatedAt: "最后更新", nodeUpdateConfirm: "确定更新此节点？该节点上的 Prism 服务可能会短暂重启。",
     mediaNotStarted: "未启动", mediaExecutionFailed: "执行失败", mediaUnverified: "服务可用性未确认", mediaFailureCause: "失败原因", mediaFailureUnknown: "服务端未返回失败原因", mediaFailureHint: "检测任务失败不代表所有服务不可用；请查看已返回的原始结果，或重试检测。",
     mediaMissingStatus: "任务记录丢失", mediaJobMissing: "服务端尚无此任务记录，已保留现有结果；正在查询最新任务，也可手动新建检测。",
     mediaQueued: "排队中", mediaRunning: "检测中", mediaCompleted: "已完成", mediaFailed: "任务失败", mediaSubmitting: "正在创建任务", mediaDisconnected: "面板连接中断，正在重连", mediaOffline: "执行机当前离线，请检查 Agent；任务状态以服务端返回为准。", mediaSearch: "筛选平台或原始结果", mediaFullResults: "脚本 0 完整跨国平台结果", mediaCoverage: "服务覆盖对照", mediaCoverageHint: "仅对照本任务实际返回的脚本标签；完成后没有对应标签的服务显示未覆盖。", mediaNotCovered: "未覆盖（脚本 0 未返回此服务标签）", mediaAwaiting: "等待对应脚本标签", mediaIncomplete: "未返回（任务失败，结果不完整）", mediaReceived: "已返回项目", mediaOther: "其他原始结果", mediaEmpty: "尚未返回平台结果", mediaNoMatches: "没有匹配的结果", mediaResume: "立即重连", mediaNodeHint: "在解锁机本机运行自检；被解锁机的实际 DNS 链路请从 IP 配置或服务实测查看。", mediaConfigHint: "在被解锁机运行，使用已保存配置的实际 DNS 链路；表单内尚未保存的路由不参与本次检测。", mediaCloseHint: "关闭后任务继续，重新点击检测入口可查看同一任务。", mediaView: "实测 / 查看任务", mediaStatus: "任务状态", mediaPlatform: "平台 / 原始标签", mediaRaw: "原始结果（含地区）", mediaNoJob: "创建失败，尚无任务 ID", mediaConfirmed: "脚本返回 Yes", mediaIssue: "脚本返回 No / WAF", mediaReview: "查看原始结果", mediaLatest: "最后更新", mediaRequested: "请求时间", mediaStarted: "开始时间", mediaFinished: "结束时间",
@@ -57,6 +64,13 @@ const translations = {
     manageCategories: "Manage categories", categoryHint: "Categories only organize and filter services. Domains, routes, and client configuration remain unchanged.", newCategory: "New category", categoryName: "Category name", categoryCreated: "Category created", categoryDeleted: "Category deleted", editCategory: "Category", serviceCategory: "Change service category", restoreCategory: "Restore original", originalCategory: "Original category", useCategory: "Use", builtInCategory: "Built-in", customCategory: "Custom", categoryInUse: "This category still contains services. Move them first.", categoryDeleteConfirm: "Delete this empty category?",
     unlockResults: "Complete media check jobs", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "Full IPv4 results from official check.unlock.media script 0 (multinational platforms). Jobs are read every second; output appears as soon as it arrives, until the job ends, with no fixed duration limit. Global_UnlockTest outputs in two batches, so there may be no new items between batches. Original Yes / No / WAF values and regions are preserved. DNS/TLS probes are not media unlock results.", checkAgain: "Start new check", waitingResults: "Waiting for the next script output batch; the full check is still running.",
     mediaNodeSelfCheck: "Media self-check (on proxy)",
+    nodeVersions: "Node versions", nodeVersion: "Prism version", nodeTransportVersion: "Transport version", nodeAgentVersion: "Agent version",
+    nodeIPv4: "Reported IPv4", nodeLastSeen: "Last check-in", nodeUpdate: "Update node", nodeRelease: "Available release",
+    nodeUpdateUnsupported: "This node does not support panel updates yet.", nodeUpdateBootstrap: "One-time bootstrap required: the node update worker has not checked in.", nodeUpdateWorkerOffline: "The update worker has not checked in recently.", nodeUpdateCurrent: "No update needed", nodeUpdateLoading: "Checking available release…",
+    nodeUpdateUnavailable: "The panel does not support node updates yet.", nodeReleaseUnavailable: "Could not check the available release. Retrying…",
+    nodeInventoryOffline: "Could not refresh nodes. Showing the last known inventory.", nodeUpdateSubmitting: "Submitting…",
+    nodeUpdateQueued: "Update queued", nodeUpdateRunning: "Updating", nodeUpdateSucceeded: "Update succeeded", nodeUpdateFailed: "Update failed",
+    nodeUpdateRequestedAt: "Requested", nodeUpdateUpdatedAt: "Last update", nodeUpdateConfirm: "Update this node now? Prism services on this node may restart briefly.",
     mediaNotStarted: "Not started", mediaExecutionFailed: "Execution failed", mediaUnverified: "Service availability unverified", mediaFailureCause: "Failure reason", mediaFailureUnknown: "The server did not provide a failure reason", mediaFailureHint: "A failed check does not mean all services are unavailable. Inspect the raw results received or retry the check.",
     mediaMissingStatus: "Job record missing", mediaJobMissing: "No job record is currently available on the server. Existing results are preserved while checking for the latest job. You can also start a new check manually.",
     mediaQueued: "Queued", mediaRunning: "Running", mediaCompleted: "Completed", mediaFailed: "Job failed", mediaSubmitting: "Creating job", mediaDisconnected: "Panel disconnected; reconnecting", mediaOffline: "The execution host is currently offline. Check its Agent; the server determines the job status.", mediaSearch: "Filter platforms or raw results", mediaFullResults: "Script 0: all multinational platform results", mediaCoverage: "Service coverage", mediaCoverageHint: "Matches only labels actually returned by this job. Services without a matching label after completion are not covered.", mediaNotCovered: "Not covered (no script 0 label returned)", mediaAwaiting: "Waiting for the matching script label", mediaIncomplete: "No result (failed job; incomplete output)", mediaReceived: "Results received", mediaOther: "Other raw results", mediaEmpty: "No platform results yet", mediaNoMatches: "No matching results", mediaResume: "Reconnect now", mediaNodeHint: "Self-check runs on the proxy itself. Use IP configuration or a service test to check the target's actual DNS path.", mediaConfigHint: "Runs on the target through the saved configuration's actual DNS path. Unsaved form routes are not used.", mediaCloseHint: "Closing keeps the job running. Open the same test entry to view it again.", mediaView: "Test / view job", mediaStatus: "Job status", mediaPlatform: "Platform / original label", mediaRaw: "Raw result (including region)", mediaNoJob: "Creation failed; no job ID", mediaConfirmed: "Script returned Yes", mediaIssue: "Script returned No / WAF", mediaReview: "Inspect raw result", mediaLatest: "Last update", mediaRequested: "Requested", mediaStarted: "Started", mediaFinished: "Finished",
@@ -85,7 +99,8 @@ const state = {
   overrides: {}, activeSelections: {}, search: "", category: "", statusFilter: "", nodeFilter: "", page: 1, pageSize: 20, selectedServiceIds: new Set(),
   loading: false, modal: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "",
   mediaChecks: new Map(), mediaCheckView: null, mediaCheckPositions: new Map(),
-  branding: {site_name:"", browser_title:"", site_tagline:""}
+  branding: {site_name:"", browser_title:"", site_tagline:""},
+  nodeRelease: {version:"", status:"loading"}, nodeInventoryOffline: false, nodeUpdatesSubmitting: new Set()
 };
 
 const prismSourceRef = "__PRISM_SOURCE_REF__";
@@ -605,8 +620,11 @@ async function api(path, options = {}) {
   const headers = {...(options.headers || {})};
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
-  const {timeoutMs = 20000, ...fetchOptions} = options;
+  const {timeoutMs = 20000, signal, ...fetchOptions} = options;
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, {once:true});
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(path, {...fetchOptions, headers, signal:controller.signal});
@@ -626,13 +644,14 @@ async function api(path, options = {}) {
         data = raw;
       }
     }
-    if (!response.ok) throw new Error(cleanErrorMessage(data?.error || data || `${response.status}`));
+    if (!response.ok) throw Object.assign(new Error(cleanErrorMessage(data?.error || data || `${response.status}`)), {status:response.status});
     return data;
   } catch (error) {
     if (error?.name === "AbortError") throw new Error(state.lang === "zh" ? "请求超时，请检查面板连接后重试" : "Request timed out. Check the panel connection and retry.");
     throw error;
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
 }
 
@@ -674,6 +693,8 @@ function logout(callAPI = true) {
   state.modal = null;
   renderModal();
   state.token = ""; state.user = {}; state.nodes = []; state.rules = []; state.ipConfigs = [];
+  state.nodeRelease = {version:"", status:"loading"}; state.nodeInventoryOffline = false;
+  state.nodeUpdatesSubmitting.clear(); nextNodeReleaseCheck = 0;
   localStorage.removeItem("prism_token"); localStorage.removeItem("prism_user");
   render();
 }
@@ -724,10 +745,62 @@ let searchRenderTimer;
 let searchComposing = false;
 let clockTimer;
 let statusPollTimer;
+let nodeInventoryTimer;
+let nodeInventoryRequest;
+let nextNodeReleaseCheck = 0;
+let lastNodeListHTML = "";
+
+function nodesVisible() { return Boolean(state.token && state.tab === "nodes" && !document.hidden); }
+
+function syncNodeInventoryPolling() {
+  if (!nodesVisible()) {
+    clearInterval(nodeInventoryTimer);
+    nodeInventoryTimer = undefined;
+    nodeInventoryRequest?.abort();
+    nodeInventoryRequest = undefined;
+  } else if (!nodeInventoryTimer) {
+    nextNodeReleaseCheck = 0;
+    nodeInventoryTimer = setInterval(pollNodeInventory, 5000);
+    pollNodeInventory();
+  }
+}
+
+async function pollNodeInventory() {
+  if (!nodesVisible() || nodeInventoryRequest) return;
+  const controller = new AbortController();
+  const options = {signal:controller.signal, cache:"no-store", timeoutMs:8000};
+  const snapshot = state.nodes;
+  nodeInventoryRequest = controller;
+  const nodes = api("/enhancer/api/nodes", options).then(result => {
+    if (controller.signal.aborted) return;
+    state.nodeInventoryOffline = !Array.isArray(result);
+    if (!state.nodeInventoryOffline && state.nodes === snapshot) state.nodes = result;
+  }).catch(() => {
+    if (!controller.signal.aborted) state.nodeInventoryOffline = true;
+  }).finally(() => {
+    if (!controller.signal.aborted) refreshNodeInventoryUI();
+  });
+  const release = Date.now() < nextNodeReleaseCheck ? null : api("/enhancer/api/node-release", options).then(result => {
+    if (controller.signal.aborted) return;
+    const version = typeof result?.version === "string" ? result.version : "";
+    state.nodeRelease = version ? {version, status:"ready"} : {version:"", status:"unsupported"};
+  }).catch(error => {
+    if (controller.signal.aborted) return;
+    state.nodeRelease = {version:"", status:[404, 405, 501].includes(error.status) ? "unsupported" : "unavailable"};
+  }).finally(() => {
+    if (controller.signal.aborted) return;
+    nextNodeReleaseCheck = Date.now() + (state.nodeRelease.status === "unavailable" ? 10000 : 30000);
+    refreshNodeInventoryUI();
+  });
+  await Promise.all([nodes, release]);
+  if (nodeInventoryRequest === controller) nodeInventoryRequest = undefined;
+}
+
 function scheduleLiveReload() {
   if (reloadTimer) return;
   reloadTimer = setTimeout(() => {
     reloadTimer = null;
+    if (state.tab === "nodes" && document.hidden) return;
     const active = document.activeElement;
     if (state.modal || state.mediaCheckView || active?.matches?.("input, textarea, select, [contenteditable=true]")) {
       state.backgroundPending = true;
@@ -760,12 +833,13 @@ function render() {
   document.documentElement.lang = state.lang === "zh" ? "zh-CN" : "en";
   document.title = browserTitle();
   const app = document.getElementById("app");
-  if (!state.token) { app.innerHTML = loginHTML(); bindLogin(); return; }
+  if (!state.token) { app.innerHTML = loginHTML(); bindLogin(); syncNodeInventoryPolling(); return; }
   app.innerHTML = shellHTML();
   bindShell();
   renderModal();
   restoreScrollPositions(state.tab);
   updateBackgroundIndicator();
+  syncNodeInventoryPolling();
 }
 
 function loginHTML() {
@@ -1015,15 +1089,123 @@ function routeNodeCardHTML(node, configuredServices) {
 
 function nodesHTML() {
   const header = contentHeaderHTML(state.lang === "zh" ? "节点管理" : "Nodes", state.lang === "zh" ? "统一管理解锁机和被解锁机；节点状态变化不会自动改写服务路由。" : "Manage proxy and target nodes. Status changes never rewrite service routes automatically.", `<button class="btn primary" id="add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button>`);
-  if (!state.nodes.length) return `${header}<div class="panel empty"><strong>${state.lang === "zh" ? "还没有节点" : "No nodes"}</strong><button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button></div>`;
-  return `${header}<section class="node-grid">${state.nodes.map(node => {
+  lastNodeListHTML = nodeListHTML();
+  return `${header}<p class="node-inventory-status" id="node-inventory-status" role="status">${escapeHTML(nodeInventoryStatus())}</p><div id="node-list">${lastNodeListHTML}</div>`;
+}
+
+function nodeInventoryStatus() {
+  if (state.nodeInventoryOffline) return t("nodeInventoryOffline");
+  if (state.nodeRelease.status === "ready") return `${t("nodeRelease")}: ${state.nodeRelease.version}`;
+  if (state.nodeRelease.status === "unsupported") return t("nodeUpdateUnavailable");
+  if (state.nodeRelease.status === "unavailable") return t("nodeReleaseUnavailable");
+  return t("nodeUpdateLoading");
+}
+
+function compareNodeVersions(current, target) {
+  const pattern = /^v?(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$/;
+  const currentParts = pattern.exec(current ?? "");
+  const targetParts = pattern.exec(target ?? "");
+  if (!currentParts || !targetParts) return null;
+  for (let part = 1; part < currentParts.length; part++) {
+    const difference = Number(currentParts[part]) - Number(targetParts[part]);
+    if (difference) return difference;
+  }
+  return 0;
+}
+
+const nodeUpdateStates = {
+  queued:["nodeUpdateQueued", "warn"], running:["nodeUpdateRunning", "warn"],
+  succeeded:["nodeUpdateSucceeded", "good"], failed:["nodeUpdateFailed", "bad"]
+};
+
+function nodeUpdateControl(node) {
+  const management = node.management;
+  const job = management?.update;
+  if (state.nodeUpdatesSubmitting.has(nodeID(node.id))) return {enabled:false, reason:t("nodeUpdateSubmitting")};
+  if (job?.status === "queued" || job?.status === "running") return {enabled:false, reason:t(nodeUpdateStates[job.status][0])};
+  if (state.nodeInventoryOffline || state.nodeRelease.status !== "ready") return {enabled:false, reason:nodeInventoryStatus()};
+  if (!management?.last_seen && !management?.update_supported) return {enabled:false, reason:t("nodeUpdateBootstrap")};
+  if (!management?.update_supported) return {enabled:false, reason:t("nodeUpdateWorkerOffline")};
+  const comparison = compareNodeVersions(management.version, state.nodeRelease.version);
+  if (comparison === null) return {enabled:false, reason:t("nodeUpdateUnsupported")};
+  if (comparison >= 0) return {enabled:false, reason:t("nodeUpdateCurrent")};
+  return {enabled:true, reason:`${t("nodeRelease")}: ${state.nodeRelease.version}`};
+}
+
+function nodeManagementHTML(node) {
+  const management = node.management;
+  const values = [["nodeVersion", management?.version], ["nodeTransportVersion", management?.transport_version],
+    ["nodeAgentVersion", management?.agent_version], ["nodeIPv4", management?.ipv4], ["nodeLastSeen", formatDate(management?.last_seen)]];
+  const control = nodeUpdateControl(node);
+  const job = management?.update;
+  const jobState = Object.hasOwn(nodeUpdateStates, job?.status) ? nodeUpdateStates[job.status] : null;
+  return `<div class="node-management"><span class="node-management-heading">${t("nodeVersions")}</span><dl class="node-inventory">${values.map(([label, value]) => `<div><dt>${t(label)}</dt><dd>${escapeHTML(value || "-")}</dd></div>`).join("")}</dl>
+    <div class="node-update"><button type="button" class="btn small node-update-trigger" data-node-id="${escapeHTML(nodeID(node.id))}" ${control.enabled ? "" : "disabled"} title="${escapeHTML(control.reason)}"><i class="bi bi-arrow-up-circle" aria-hidden="true"></i>${t("nodeUpdate")}</button>
+    ${jobState ? `<span class="badge ${jobState[1]}">${t(jobState[0])}${job.version ? ` · ${escapeHTML(job.version)}` : ""}</span>` : ""}
+    ${!control.enabled && (!jobState || control.reason !== t(jobState[0])) ? `<small>${escapeHTML(control.reason)}</small>` : ""}
+    ${jobState ? `<small>${t("nodeUpdateRequestedAt")}: ${escapeHTML(formatDate(job.requested_at))} · ${t("nodeUpdateUpdatedAt")}: ${escapeHTML(formatDate(job.updated_at))}</small>` : ""}</div></div>`;
+}
+
+function nodeListHTML() {
+  if (!state.nodes.length) return `<div class="panel empty"><strong>${state.nodeInventoryOffline ? t("nodeInventoryOffline") : state.lang === "zh" ? "还没有节点" : "No nodes"}</strong><button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button></div>`;
+  return `<section class="node-grid">${state.nodes.map(node => {
     const online = isOnline(node);
     const proxyDetail = nodeMediaSummary(node);
     const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail, tooltip:nodeMediaDetail(node)};
     return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${status.kind}" title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.label)}</span></div>
       <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("mediaNodeSelfCheck")}</span><strong ${node.role === "proxy" ? `data-media-node-id="${escapeHTML(nodeID(node.id))}"` : ""} title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
-       <div class="node-actions"><button class="btn small node-install" data-node-id="${nodeID(node.id)}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${nodeID(node.id)}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}${node.role === "proxy" ? `<button class="btn small node-test" data-node-id="${nodeID(node.id)}" title="${t("mediaNodeHint")}">${t("triggerUnlock")}</button>` : ""}<button class="btn small node-edit" data-node-id="${nodeID(node.id)}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${nodeID(node.id)}">${t("deleteNode")}</button></div></article>`;
+      ${nodeManagementHTML(node)}
+       <div class="node-actions"><button class="btn small node-install" data-node-id="${escapeHTML(nodeID(node.id))}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${escapeHTML(nodeID(node.id))}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}${node.role === "proxy" ? `<button class="btn small node-test" data-node-id="${escapeHTML(nodeID(node.id))}" title="${t("mediaNodeHint")}">${t("triggerUnlock")}</button>` : ""}<button class="btn small node-edit" data-node-id="${escapeHTML(nodeID(node.id))}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${escapeHTML(nodeID(node.id))}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
+}
+
+function refreshNodeInventoryUI() {
+  const list = document.getElementById("node-list");
+  if (!list) return;
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  captureScrollPositions();
+  const status = document.getElementById("node-inventory-status");
+  const label = nodeInventoryStatus();
+  if (status.textContent !== label) status.textContent = label;
+  const html = nodeListHTML();
+  if (html !== lastNodeListHTML) {
+    const active = list.contains(document.activeElement) ? document.activeElement : null;
+    lastNodeListHTML = html;
+    list.innerHTML = html;
+    if (active) Array.from(list.querySelectorAll("button:not(:disabled)")).find(button =>
+      button.id === active.id && button.className === active.className && button.dataset.nodeId === active.dataset.nodeId)?.focus({preventScroll:true});
+  }
+  restoreScrollPositions("nodes");
+  if (window.scrollX !== scrollX || window.scrollY !== scrollY) window.scrollTo(scrollX, scrollY);
+}
+
+async function requestNodeUpdate(node) {
+  if (!node || !nodeUpdateControl(node).enabled) return;
+  const id = nodeID(node.id);
+  const version = state.nodeRelease.version;
+  if (!confirm(`${t("nodeUpdateConfirm")}\n\n${node.name || id}\n${node.management.version} → ${version}`)) return;
+  const token = state.token;
+  state.nodeUpdatesSubmitting.add(id);
+  refreshNodeInventoryUI();
+  try {
+    const result = await api("/enhancer/api/node-updates", {method:"POST", body:JSON.stringify({node_id:id, version})});
+    if (state.token !== token) return;
+    const job = result?.version === version && Object.hasOwn(nodeUpdateStates, result.status) ? result : {version, status:"queued"};
+    state.nodes = state.nodes.map(item => nodeID(item.id) === id ? {...item, management:{...item.management, update:job}} : item);
+    toast(t(nodeUpdateStates[job.status][0]), "good");
+  } catch (error) {
+    if (state.token === token) {
+      toast(cleanErrorMessage(error.message), "error");
+      nextNodeReleaseCheck = 0;
+    }
+  } finally {
+    if (state.token === token) {
+      state.nodeUpdatesSubmitting.delete(id);
+      refreshNodeInventoryUI();
+      pollNodeInventory();
+    }
+  }
 }
 
 function nodeCheckHTML() {
@@ -1054,7 +1236,7 @@ function bindShell() {
   if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
   if (!statusPollTimer) statusPollTimer = setInterval(() => {
     const active = document.activeElement;
-    if (state.token && ["nodes", "ips", "alerts"].includes(state.tab) && !state.modal && !state.mediaCheckView &&
+    if (state.token && !document.hidden && ["nodes", "ips", "alerts"].includes(state.tab) && !state.modal && !state.mediaCheckView &&
       !active?.matches?.("input, textarea, select, [contenteditable=true]")) loadAll(true);
   }, 60000);
   document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
@@ -1070,7 +1252,6 @@ function bindShell() {
   document.getElementById("empty-add-ip")?.addEventListener("click", () => openIPForm());
   document.getElementById("export-ip-config")?.addEventListener("click", exportIPConfigs);
   document.getElementById("import-ip-config")?.addEventListener("change", event => importIPConfigs(event.target.files?.[0]));
-  document.getElementById("empty-add-node")?.addEventListener("click", () => openNodeForm());
   document.getElementById("refresh-catalog")?.addEventListener("click", refreshCatalog);
   document.getElementById("manage-categories")?.addEventListener("click", () => openCategoryManager());
   const search = document.getElementById("service-search");
@@ -1127,6 +1308,8 @@ function bindShell() {
     const button = event.target.closest?.("button");
     if (button && container.contains(button)) {
       const node = state.nodes.find(item => nodeID(item.id) === nodeID(button.dataset.nodeId));
+      if (button.id === "empty-add-node") { event.preventDefault(); openNodeForm(); return; }
+      if (button.matches(".node-update-trigger")) { event.preventDefault(); requestNodeUpdate(node); return; }
       if (button.matches(".service-custom-edit")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) openServiceForm(service); return; }
        if (button.matches(".service-domains-open")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) openServiceDomains(service.id); return; }
        if (button.matches(".service-delete")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) deleteService(service); return; }
@@ -2007,8 +2190,10 @@ function submitNodeForm(event) {
 
 async function saveNode(draft) {
   const node = state.modal.node;
+  const payload = {...node, ...draft};
+  delete payload.management;
   try {
-    await api(`/enhancer/api/nodes/${encodeURIComponent(node.id)}`, {method:"PUT", body:JSON.stringify({...node, ...draft})});
+    await api(`/enhancer/api/nodes/${encodeURIComponent(node.id)}`, {method:"PUT", body:JSON.stringify(payload)});
     state.modal = null; toast(t("saved"), "good"); await loadAll(true);
   } catch (error) { state.modal.error = cleanErrorMessage(error.message); renderModal(); }
 }
@@ -2365,6 +2550,7 @@ function toast(message, type = "") {
 async function initialize() {
   if (!["services", "nodes", "ips", "sync", "audit", "alerts", "settings"].includes(state.tab)) state.tab = "services";
   bindNavigation();
+  document.addEventListener("visibilitychange", syncNodeInventoryPolling);
   await loadBranding();
   render();
   if (state.token) loadAll();

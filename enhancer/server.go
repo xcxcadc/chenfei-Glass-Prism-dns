@@ -31,6 +31,7 @@ type App struct {
 	preferences  *CatalogPreferenceStore
 	transport    *TransportStore
 	mediaChecks  *MediaCheckStore
+	nodeUpdates  *nodeUpdateStore
 	upstream     *url.URL
 	proxy        *httputil.ReverseProxy
 	client       *http.Client
@@ -95,6 +96,7 @@ func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceSto
 	}
 	app.transport, _ = NewTransportStore("")
 	app.mediaChecks, _ = NewMediaCheckStore("")
+	app.nodeUpdates, _ = newNodeUpdateStore("")
 	proxy.ModifyResponse = app.modifyProxyResponse
 	return app, nil
 }
@@ -152,6 +154,9 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/branding/icon", app.handleBrandingIcon)
 	mux.HandleFunc("/enhancer/api/nodes", app.handleEnhancedNodes)
 	mux.HandleFunc("/enhancer/api/nodes/", app.handleEnhancedNode)
+	mux.HandleFunc("/enhancer/api/node-release", app.handleNodeRelease)
+	mux.HandleFunc("/enhancer/api/node-updates", app.handleNodeUpdates)
+	mux.HandleFunc("/enhancer/api/node-updates/worker", app.handleNodeUpdateWorker)
 	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
 	mux.HandleFunc("/enhancer/api/ip-configs/export", app.handleIPConfigExport)
 	mux.HandleFunc("/enhancer/api/ip-configs/import", app.handleIPConfigImport)

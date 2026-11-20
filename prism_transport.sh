@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
+set +x
 set -Eeuo pipefail
 
 VERSION="2.5.2"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.36}"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.37}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -21,6 +22,9 @@ CLIENT_EGRESS_POLICY="/etc/prismdns/client-egress-policy.json"
 CLIENT_EGRESS_HTTP_PORT=19081
 CLIENT_EGRESS_HTTPS_PORT=19444
 EGRESS_REPO="${PRISM_EGRESS_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
+NODE_UPDATE_UNIT_DIR='/etc/systemd/system'
+NODE_UPDATE_RUNTIME_DIR='/run'
+MEDIA_WORKER_PATH='/usr/local/bin/prism-media-check'
 ROLE=""
 MASTER=""
 MASTER_OVERRIDE=""
@@ -84,6 +88,7 @@ ensure_dependencies() {
     command -v sshd >/dev/null 2>&1 || ready=false
   fi
   $ready && return 0
+  [[ -z "${PRISM_NODE_UPDATE_EXPECTED_VERSION:-}" ]] || fail "managed refresh requires existing transport dependencies"
 
   local manager
   manager=$(detect_package_manager)
@@ -870,9 +875,122 @@ install_media_worker() {
   [[ -z "$temporary" ]] || rm -f "$temporary"
 }
 
+install_node_update_worker() (
+  local installer="${PRISM_NODE_UPDATE_INSTALLER_FILE:-}" temporary='' http_code
+  trap '[[ -z "$temporary" ]] || rm -f -- "$temporary"' EXIT
+  if [[ -z "$installer" ]]; then
+    temporary=$(mktemp "$NODE_UPDATE_RUNTIME_DIR/prism-node-update-installer.XXXXXX") || return 1
+    installer="$temporary"
+    http_code=$(curl -q -fsS --proto '=https' --tlsv1.2 --connect-timeout 8 --max-time 30 \
+      --max-filesize 1048576 --write-out '%{http_code}' --output "$installer" \
+      "https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/$SCRIPT_REF/prism_node_update.sh") &&
+      [[ "$http_code" == 200 ]] || { fail "could not download the node update worker"; return 1; }
+  fi
+  [[ -s "$installer" ]] && grep -Fxq "NODE_UPDATE_REPO='xcxcadc/chenfei-Glass-Prism-dns'" "$installer" &&
+    bash -n "$installer" || { fail "invalid node update worker"; return 1; }
+  bash "$installer" --install "$SCRIPT_REF"
+)
+
+install_optional_node_update_worker() {
+  install_node_update_worker || log 'node update worker unavailable; transport remains installed, retry a runtime refresh to enable online management' >&2
+}
+
+managed_transport_refresh() (
+  local expected="$PRISM_NODE_UPDATE_EXPECTED_VERSION" marker="$STATE_DIR/node-updates/version"
+  local snapshot path signature index timer
+  local -a files=("$INSTALL_PATH" "$MEDIA_WORKER_PATH" "$INSTALL_DIR/prism_node_update.sh"
+    "$NODE_UPDATE_UNIT_DIR"/prism-{transport,media-check,node-update}.{service,timer})
+  local -a timers=(prism-transport.timer prism-media-check.timer prism-node-update.timer prismdns-service-audit.timer)
+  local -A enabled=() active=()
+  [[ -z "$MASTER_OVERRIDE" && -f "$marker" && ! -L "$marker" && "$(<"$marker")" == "$expected" ]] ||
+    fail "node version or configuration changed before refresh"
+  umask 077
+  snapshot=$(mktemp -d "$NODE_UPDATE_RUNTIME_DIR/prism-node-refresh.XXXXXX")
+  trap 'rm -rf -- "$snapshot"' EXIT
+  for index in "${!files[@]}"; do
+    path="${files[index]}"
+    [[ -e "$path" || -L "$path" ]] || continue
+    case "${path##*/}" in
+      prism_transport.sh) signature='^INSTALL_PATH="\$INSTALL_DIR/prism_transport\.sh"$' ;;
+      prism-media-check) signature='^INSTALL_PATH="/usr/local/bin/prism-media-check"$' ;;
+      prism_node_update.sh) signature="^NODE_UPDATE_REPO='xcxcadc/chenfei-Glass-Prism-dns'$" ;;
+      prism-transport.*) signature='^Description=(Synchronize|Refresh) Prism ' ;;
+      prism-media-check.*) signature='^Description=Prism DNS (official IPv4 media check worker|media check job poller)$' ;;
+      prism-node-update.*) signature='^Description=Prism DNS managed node update$' ;;
+    esac
+    [[ -f "$path" && ! -L "$path" ]] && grep -Eq "$signature" "$path" || fail "unowned file blocks managed refresh"
+    cp -p -- "$path" "$snapshot/$index"
+  done
+  for timer in "${timers[@]}"; do
+    if systemctl is-enabled --quiet "$timer"; then enabled["$timer"]=1; fi
+    if systemctl is-active --quiet "$timer"; then active["$timer"]=1; fi
+  done
+  trap 'exit 143' TERM INT
+  trap 'result=$?; trap - EXIT; if ((result != 0)) && [[ "$(<"$marker")" != "$SCRIPT_REF" ]]; then
+    restore_transport_runtime; fi; [[ -z "$snapshot" ]] || rm -rf -- "$snapshot"; exit "$result"' EXIT
+  refresh_transport_runtime
+  install_node_update_worker
+)
+
+restore_transport_runtime() {
+  local index path timer restore_error=0
+  for timer in "${timers[@]}"; do
+    if [[ -z "${active[$timer]:-}" ]] && systemctl is-active --quiet "$timer"; then
+      systemctl stop "$timer" || restore_error=1
+    fi
+    if [[ -z "${enabled[$timer]:-}" ]] && systemctl is-enabled --quiet "$timer"; then
+      systemctl disable "$timer" >/dev/null || restore_error=1
+    fi
+  done
+  for index in "${!files[@]}"; do
+    path="${files[index]}"
+    if [[ -f "$snapshot/$index" ]]; then
+      cp -p -- "$snapshot/$index" "$path" || restore_error=1
+    else
+      rm -f -- "$path" || restore_error=1
+    fi
+  done
+  systemctl daemon-reload || restore_error=1
+  for timer in "${timers[@]}"; do
+    if [[ -n "${enabled[$timer]:-}" ]]; then
+      systemctl enable "$timer" >/dev/null || restore_error=1
+    fi
+    if [[ -n "${active[$timer]:-}" ]]; then
+      systemctl restart "$timer" || restore_error=1
+    fi
+  done
+  if ((restore_error)); then
+    log "managed refresh rollback incomplete; backup retained at $snapshot" >&2
+    snapshot=''
+  fi
+}
+
+uninstall_node_update_worker() {
+  local worker="$INSTALL_DIR/prism_node_update.sh" unit path
+  local -a owned_units=()
+  if [[ -e "$worker" || -L "$worker" ]]; then
+    [[ -f "$worker" && ! -L "$worker" ]] &&
+      grep -Fxq "NODE_UPDATE_REPO='xcxcadc/chenfei-Glass-Prism-dns'" "$worker" || fail 'unowned node update worker'
+    bash "$worker" --uninstall
+    return
+  fi
+  for unit in prism-node-update.timer prism-node-update.service; do
+    path="$NODE_UPDATE_UNIT_DIR/$unit"
+    [[ -f "$path" && ! -L "$path" ]] && grep -Fxq 'Description=Prism DNS managed node update' "$path" || continue
+    if [[ "$unit" == *.timer ]]; then
+      systemctl disable --now "$unit" >/dev/null
+    else
+      systemctl stop "$unit"
+    fi
+    owned_units+=("$path")
+  done
+  if ((${#owned_units[@]})); then rm -f -- "${owned_units[@]}"; fi
+}
+
 uninstall_transport() {
   local service_id proxy_ip
   load_environment
+  (uninstall_node_update_worker) || log 'could not remove node update worker; no unowned files were removed' >&2
   if [[ -x /usr/local/bin/prism-media-check ]]; then
     /usr/local/bin/prism-media-check --uninstall
   fi
@@ -933,10 +1051,17 @@ main() {
   flock -w 30 9 || fail "another transport synchronization is still running"
   case "$ACTION" in
     sync) sync_transport ;;
-    refresh-runtime) refresh_transport_runtime ;;
+    refresh-runtime)
+      if [[ -n "${PRISM_NODE_UPDATE_EXPECTED_VERSION:-}" ]]; then
+        managed_transport_refresh
+      else
+        refresh_transport_runtime
+        install_optional_node_update_worker
+      fi
+      ;;
     uninstall) uninstall_transport ;;
     status) show_status ;;
-    install) install_transport ;;
+    install) install_transport; install_optional_node_update_worker ;;
   esac
 }
 

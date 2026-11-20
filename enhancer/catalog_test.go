@@ -261,6 +261,22 @@ nameserver /proactivebackend-pa.googleapis.com/group
 		"accounts.google.com",
 		"firebaseinstallations.googleapis.com",
 		"gemini.gstatic.com",
+		"geminiweb-pa.clients.google.com",
+		"geminiweb-pa.clients6.google.com",
+		"antigravity.google.com",
+		"bard.google.com",
+		"cloudcode-pa.googleapis.com",
+		"daily-cloudcode-pa.googleapis.com",
+		"autopush-cloudcode-pa.googleapis.com",
+		"cloudaicompanion.googleapis.com",
+		"aisandbox-pa.googleapis.com",
+		"content-push.googleapis.com",
+		"footprints-pa.googleapis.com",
+		"geller-pa.googleapis.com",
+		"notifications-pa.googleapis.com",
+		"proactivebackend-pa.googleapis.com",
+		"robinfrontend-pa.googleapis.com",
+		"push.clients6.google.com",
 		"lh3.googleusercontent.com",
 		"ogads-pa.clients6.google.com",
 		"oauthaccountmanager.googleapis.com",
@@ -274,6 +290,34 @@ nameserver /proactivebackend-pa.googleapis.com/group
 	} {
 		if !contains(services[0].Domains, domain) {
 			t.Fatalf("Gemini application dependency %q missing from %#v", domain, services[0].Domains)
+		}
+	}
+	for _, domain := range []string{"google.com", "clients6.google.com", "googleusercontent.com", "googleapis.com", "aistudio.google.com", "makersuite.google.com", "generativelanguage.googleapis.com"} {
+		if contains(services[0].Domains, domain) {
+			t.Fatalf("Gemini must not take over unrelated or separate service domain %q", domain)
+		}
+	}
+	if len(services[0].DomainKeywords) != 0 {
+		t.Fatalf("unexpected unscoped Gemini keyword rules: %v", services[0].DomainKeywords)
+	}
+}
+
+func TestParseSmartDNSSupplementsAIStudioSeparately(t *testing.T) {
+	input := `# ---------- > AI Platform
+# > Google AiStudio /HK Only/
+nameserver /aistudio.google.com/group
+nameserver /alkalimakersuite-pa.clients6.google.com/group
+`
+	services, err := ParseSmartDNS(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(services) != 1 || services[0].Name != "Google AI Studio" {
+		t.Fatalf("expected a separate Google AI Studio service, got %#v", services)
+	}
+	for _, domain := range []string{"aistudio.google.com", "makersuite.google.com", "generativelanguage.googleapis.com", "alkalimakersuite-pa.clients6.google.com"} {
+		if !contains(services[0].Domains, domain) {
+			t.Fatalf("expected AI Studio host %q, got %v", domain, services[0].Domains)
 		}
 	}
 }

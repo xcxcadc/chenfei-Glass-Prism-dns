@@ -53,6 +53,10 @@ func main() {
 	app.nodeLabels = nodeLabels
 	app.branding = branding
 	app.transport = transport
+	app.nodeUpdates, err = newNodeUpdateStore(filepath.Join(*dataDir, "node-updates.json"))
+	if err != nil {
+		log.Fatalf("initialize node updates: %v", err)
+	}
 	app.mediaChecks, err = NewMediaCheckStore(filepath.Join(*dataDir, "media-checks.json"))
 	if err != nil {
 		log.Fatalf("initialize media checks: %v", err)
