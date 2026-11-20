@@ -77,4 +77,13 @@ menu_output=$(main menu)
 [[ -x "$BIN_PATH" ]]
 [[ "$(env -u PRISMCTL_SOURCE_ONLY "$BIN_PATH" version)" == 'dns 1.5.37' ]]
 
+curl() {
+  [[ "${!#}" == 'https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest' ]] || return 2
+  printf '%s' 'https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/tag/v2.4.6'
+}
+cmd_upgrade() { printf '%s %s\n' "$1" "$SCRIPT_REF"; }
+[[ "$(main upgrade panel)" == 'panel v2.4.6' ]]
+[[ "$(main upgrade panel --ref v1.5.36)" == 'panel v1.5.36' ]]
+[[ "$(PRISM_SCRIPT_REF=v1.5.36 SCRIPT_REF=v1.5.36 main upgrade panel)" == 'panel v1.5.36' ]]
+
 printf 'DNS control command migration tests passed.\n'

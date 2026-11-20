@@ -17,5 +17,6 @@
 
 ## 安装与升级
 
+- 固定的 `main/bootstrap.sh` 安装入口会自动选择 GitHub 最新正式发布。`dns upgrade` 默认升级到最新正式版，仍可用 `--ref` 明确指定历史版本。
 - `dns upgrade panel --ref v1.5.37` 使用同一发布标签的增强层二进制，不再隐式下载 GitHub 的 `latest` 资产。只有版本已发布且资产齐全后才运行该命令。
 - 升级前在服务器本地备份 Controller 数据库、环境文件、整个 Enhancer 数据目录、二进制和 systemd 单元。保留旧版本，确认公网面板和实际解锁链路正常后，再逐台升级其他节点。

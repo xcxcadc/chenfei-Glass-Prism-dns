@@ -154,7 +154,7 @@ install_proxy_egress() {
     temporary=$(mktemp)
     curl -fL --retry 3 --connect-timeout 15 --max-time 120 \
       -o "$temporary" \
-      "https://github.com/$EGRESS_REPO/releases/latest/download/prism-egress-proxy_linux_$architecture"
+      "https://github.com/$EGRESS_REPO/releases/download/$SCRIPT_REF/prism-egress-proxy_linux_$architecture"
     source="$temporary"
   fi
   install -m 755 "$source" "$EGRESS_BINARY"
@@ -208,7 +208,7 @@ install_client_egress() {
     temporary=$(mktemp)
     curl -fL --retry 3 --connect-timeout 15 --max-time 120 \
       -o "$temporary" \
-      "https://github.com/$EGRESS_REPO/releases/latest/download/prism-egress-proxy_linux_$architecture"
+      "https://github.com/$EGRESS_REPO/releases/download/$SCRIPT_REF/prism-egress-proxy_linux_$architecture"
     source="$temporary"
   fi
   install -m 755 "$source" "$EGRESS_BINARY"

@@ -1,6 +1,6 @@
 # Prism DNS 面板迁移与灾备
 
-本文适用于使用 `enhanced_install.sh` 安装的面板。当前面板/脚本为 `1.5.36`，transport 为 `2.5.2`，默认兼容 Agent 为上游 `v1.2.1`，版本不可混写。默认路径如下：
+本文适用于使用 `enhanced_install.sh` 安装的面板。迁移前记录旧面板发布标签，面板/脚本、transport 和上游兼容 Agent 版本分别见[版本矩阵](VERSION_MATRIX_ZH.md)。默认路径如下：
 
 | 数据 | 默认路径 | 内容 |
 |---|---|---|
@@ -62,22 +62,22 @@ var/lib/prism-enhancer/
 
 建议新旧面板使用相同域名和公开端口。这样只需把域名的 A/AAAA 记录切换到新服务器，现有解锁机与被解锁机不需要逐台修改面板地址。
 
-在新服务器的 root Bash 中运行以下命令；非 root 用户先执行 `sudo -i`，已是 root 则跳过。进程替换须在提权后的 Bash 中展开，避免跨 sudo 使用 `/dev/fd` 路径。综合菜单入口为 `dns.sh`，本地快捷方式为 `dns`，见 [v1.5.36 变更](CHANGELOG_v1.5.36.md)。
+在新服务器的 root Bash 中运行以下命令；非 root 用户先执行 `sudo -i`，已是 root 则跳过。进程替换须在提权后的 Bash 中展开，避免跨 sudo 使用 `/dev/fd` 路径。`bootstrap.sh` 自动选择最新公开稳定发布，调用对应标签的 `dns.sh`。若需按旧版本恢复，请使用备份对应的发布标签，不要默认跨版本恢复。
 
 ```bash
 sudo -i
-bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.36/dns.sh) install panel
+bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/bootstrap.sh) install panel
 ```
 
 如果旧服务器使用自定义端口，新服务器必须保持一致：
 
 ```bash
-PRISM_PORT=8081 PRISM_CORE_PORT=18080 bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.36/dns.sh) install panel
+PRISM_PORT=8081 PRISM_CORE_PORT=18080 bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/bootstrap.sh) install panel
 ```
 
 基础安装完成后，不要在新面板中新增节点或服务，直接进入恢复步骤。
 
-同机升级使用 `dns upgrade panel --ref v1.5.36`，沿用公开端口、控制器端口和 Enhancer 数据目录；仅显式设置 `PRISM_PORT`、`PRISM_CORE_PORT`、`PRISM_ENHANCER_DATA_DIR` 才覆盖。该升级路径会备份二进制、数据库与 systemd 单元，失败自动回滚；迁移仍须按下文备份和恢复 `.env` 与整个 Enhancer 数据目录。
+同机升级使用 `dns upgrade panel`，从 `v1.5.37` 起默认选最新公开稳定版；更早安装的 `dns` 需运行 `dns upgrade panel --ref latest`，或通过 `bootstrap.sh` 运行 `upgrade panel`。升级沿用公开端口、控制器端口和 Enhancer 数据目录；仅显式设置 `PRISM_PORT`、`PRISM_CORE_PORT`、`PRISM_ENHANCER_DATA_DIR` 才覆盖。该升级路径会备份二进制、数据库与 systemd 单元，失败自动回滚；迁移仍须按下文备份和恢复 `.env` 与整个 Enhancer 数据目录。
 
 ## 三、新服务器恢复
 
@@ -138,7 +138,7 @@ journalctl -u prism-controller -u prism-enhancer --since "-10 min" --no-pager
 
 增强层首次启动会迁移旧路由数据：移除持久化 Proxy IPv6，将共享域名服务归一到同一 Proxy，清理旧版自动故障切换记录并保留用户选择的路由、节点 ID、目标 IP、令牌、累计流量和采样基线。媒体任务随 `media-checks.json` 保留；配置代变化后拒收旧 `generation` 的迟到结果，避免旧线路覆盖当前结果。旧 full / 四阶段检测不再作为最终媒体结论，DNS 与路由诊断独立保留。
 
-**仅更换 enhancer 二进制不会自动刷新远端节点。** 在每台既有 Proxy/Client 上安装本版 `dns` 后，执行 `dns upgrade --ref v1.5.36`，沿用本机凭据和传输模式；缺少有效本机配置时，重新执行面板生成的本版节点或“IP 配置”专属命令，详见 [已有节点升级](ENHANCED_ZH.md#已有节点升级)。这会刷新 runtime、transport `2.5.2` 和 `/usr/local/bin/prism-media-check`；只运行旧 transport 的 `--sync` 不会升级脚本或补装 worker。专用 dnsmasq、动态路由和本地 53 重定向由面板数据重新生成，不需要从旧目标机复制。所有未来新 Proxy/Client 默认随 transport 安装 worker，并随 transport / Agent 卸载。
+**仅更换 enhancer 二进制不会自动刷新远端节点。** 在每台既有 Proxy/Client 上更新 `dns` 后，执行 `dns upgrade`，沿用本机凭据和传输模式；缺少有效本机配置时，重新执行当前面板生成的节点或“IP 配置”专属命令，详见 [已有节点升级](ENHANCED_ZH.md#已有节点升级)。这会刷新 runtime、transport 和 `/usr/local/bin/prism-media-check`；只运行旧 transport 的 `--sync` 不会升级脚本或补装 worker。专用 dnsmasq、动态路由和本地 53 重定向由面板数据重新生成，不需要从旧目标机复制。所有未来新 Proxy/Client 默认随 transport 安装 worker，并随 transport / Agent 卸载。
 
 worker 的 `prism-media-check.timer` / `prism-media-check.service` 空闲时每 5 秒 claim 任务，独立于 transport/traffic。运行等价于 `bash check.unlock.media -M4 -R0 -Een` 的官方脚本：交互菜单 `0`、只测跨国平台、仅 IPv4。有输出即逐批上报，界面每秒刷新；完整运行，无 30 秒硬停，15 分钟仅作异常安全兜底并明确 `failed`，90 秒无心跳显示失联/失败。每 6 小时自动刷新，也支持手动重测和配置代更新，关窗重开可读任务。**官方脚本结果不保证实际付费播放、账号登录或所有应用功能通过。**
 
@@ -164,6 +164,8 @@ sudo /usr/local/lib/prismdns/prism_transport.sh --sync --master <新面板地址
 Proxy 每 5 秒从面板刷新授权白名单；AUTH nftables 规则先通过校验，再在单次事务中原子替换，避免先删后建造成的授权空窗。IPv4 限制 Prism DNS 53 与 SNI 80/443；IPv6 只拒绝 DNS 53，不拦截 IPv6 80/443，也不修改其他业务规则。迁移后确认 transport 配置指向新地址、worker 心跳及逐批结果恢复，再下线旧面板。
 
 ## 六、失败回滚
+
+需要有意退回某一发布时，可运行 `dns upgrade panel --ref vX.Y.Z`，将 `vX.Y.Z` 替换为目标发布标签。若涉及数据库或配置格式变更，应恢复与该版本匹配的备份，不能只更换脚本或二进制。
 
 如果新面板恢复失败，先保持旧面板继续运行和解析。新服务器可使用恢复前自动复制的文件回滚：
 

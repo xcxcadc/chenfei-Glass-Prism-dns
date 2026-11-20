@@ -31,7 +31,7 @@ dns ${PRISMCTL_VERSION} —— Prism DNS 综合控制脚本
 
 命令：
   install   <panel|proxy|client>   安装
-  upgrade   [panel|proxy|client]   升级（省略角色时按本机已安装的角色自动判断）
+  upgrade   [panel|proxy|client]   升级到最新正式版（省略角色时自动判断）
   uninstall [panel|proxy|client]   卸载（省略角色时自动判断）
   mode      [direct|encrypted]     查看或切换传输模式
   status                           查看本机角色、版本、服务和传输状态
@@ -55,13 +55,13 @@ dns ${PRISMCTL_VERSION} —— Prism DNS 综合控制脚本
 示例：
   dns install proxy  --master https://panel.example.com --secret <节点密钥>
   dns install client --master https://panel.example.com --token <被解锁机令牌> --mode encrypted
-  dns upgrade --ref latest
+  dns upgrade
   dns mode encrypted
   dns doctor
   dns uninstall --yes
 
 无需预先安装，可直接运行：
-  bash <(curl -fsSL https://raw.githubusercontent.com/${SCRIPT_REPO}/refs/tags/${SCRIPT_REF}/dns.sh) <命令> ...
+  bash <(curl -fsSL https://raw.githubusercontent.com/${SCRIPT_REPO}/main/bootstrap.sh) <命令> ...
 EOF
 }
 
@@ -80,12 +80,13 @@ work_dir() {
 }
 
 resolve_ref() {
-  local ref="$1" tag
+  local ref="$1" resolved tag_prefix="https://github.com/${SCRIPT_REPO}/releases/tag/"
   if [[ "$ref" == latest ]]; then
-    tag=$(curl -fsSL --connect-timeout 8 --max-time 20 "https://api.github.com/repos/${SCRIPT_REPO}/releases/latest" \
-      | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
-    [[ -n "$tag" ]] || fail "无法获取 GitHub 最新发布版本。"
-    ref="$tag"
+    resolved=$(curl -qfsSL --proto '=https' --proto-redir '=https' --connect-timeout 8 --max-time 20 \
+      --output /dev/null --write-out '%{url_effective}' "https://github.com/${SCRIPT_REPO}/releases/latest") \
+      || fail "无法获取 GitHub 最新发布版本。"
+    ref=${resolved#"$tag_prefix"}
+    [[ "$resolved" == "$tag_prefix"* && "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "未找到有效的正式发布版本。"
   fi
   [[ "$ref" =~ ^[A-Za-z0-9._-]+$ ]] || fail "无效的发布标签: $ref"
   printf '%s' "$ref"
@@ -666,8 +667,8 @@ menu_install_client() {
 
 menu_upgrade() {
   local ref
-  ask ref "升级到哪个版本？回车=${SCRIPT_REF}，输入 latest=GitHub 最新发布，或输入标签如 v1.5.37"
-  if [[ -n "$ref" ]]; then SCRIPT_REF=$(resolve_ref "$ref"); fi
+  ask ref "升级到哪个版本？也可输入发布标签（如 v1.5.37）" latest
+  SCRIPT_REF=$(resolve_ref "$ref")
   echo "升级顺序提示：先面板，再解锁机，最后被解锁机。"
   cmd_upgrade ""
 }
@@ -724,7 +725,7 @@ run_menu() {
       9) menu_logs ;;
       10) run_action cmd_doctor ;;
       11) run_action menu_mode ;;
-      12) run_action cmd_self_install ;;
+      12) run_action main self-update --ref latest ;;
       0|q|Q|exit) echo "已退出。"; return 0 ;;
       "") continue ;;
       *) echo "无效输入：${choice}，请输入 0-12。"; continue ;;
@@ -769,7 +770,11 @@ main() {
   [[ -z "$OPT_MODE" ]] || valid_mode "$OPT_MODE"
 
   require_root
-  [[ -z "$ref_arg" ]] || SCRIPT_REF="$ref_arg"
+  if [[ -n "$ref_arg" ]]; then
+    SCRIPT_REF="$ref_arg"
+  elif [[ -z "${PRISM_SCRIPT_REF:-}" ]]; then
+    case "$command" in install|upgrade|update|self-update) SCRIPT_REF=latest ;; esac
+  fi
   SCRIPT_REF=$(resolve_ref "$SCRIPT_REF")
   work_dir >/dev/null
 

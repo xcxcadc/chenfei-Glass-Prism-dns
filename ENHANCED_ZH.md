@@ -38,15 +38,15 @@
 
 ## 综合控制脚本 dns
 
-本版入口为 `dns.sh`，本地快捷命令为 `dns`，变更见 [v1.5.36](CHANGELOG_v1.5.36.md)。以下远程脚本在 root Bash 中展开进程替换；非 root 用户先执行 `sudo -i`，已是 root 则跳过，避免跨 sudo 传递 `/dev/fd` 路径。
+`bootstrap.sh` 是固定入口，解析 GitHub 最新公开稳定发布，再运行对应标签的 `dns.sh` 并传递参数；本地快捷命令仍为 `dns`。以下远程脚本在 root Bash 中展开进程替换；非 root 用户先执行 `sudo -i`，已是 root 则跳过，避免跨 sudo 传递 `/dev/fd` 路径。
 
 ```bash
 sudo -i
-bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.36/dns.sh) self-install
+bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/bootstrap.sh) self-install
 dns
 ```
 
-也可在该 root Bash 中直接运行 `bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.36/dns.sh)` 打开数字菜单，并自动安装 `dns` 快捷方式。`self-install` 原子安装 `/usr/local/bin/dns`，默认拒绝覆盖无关的同名 `dns`；已确认属于 Prism 的旧 `prismctl` 入口会原子迁移为指向 `dns` 的兼容符号链接，无关的 `prismctl` 保持原样。`prismctl.sh` 保留兼容跳转，`PRISMCTL_*` 环境变量继续兼容。
+也可在该 root Bash 中直接运行 `bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/bootstrap.sh)` 打开数字菜单，并自动安装 `dns` 快捷方式。`self-install` 原子安装 `/usr/local/bin/dns`，默认拒绝覆盖无关的同名 `dns`；已确认属于 Prism 的旧 `prismctl` 入口会原子迁移为指向 `dns` 的兼容符号链接，无关的 `prismctl` 保持原样。`prismctl.sh` 保留兼容跳转，`PRISMCTL_*` 环境变量继续兼容。
 
 菜单保留三种角色的安装、升级与卸载，以及状态、日志、诊断、模式切换和自身更新；单项操作失败不会退出菜单。`dns logs route-sync -f` 可跟踪路由同步；`dns logs agent -n 200 --errors` 查看警告错误。日志名称保留 `agent`、`egress`、`client-egress`、`dns`、`route-sync`、`transport`、`tunnel`、`traffic`、`media`、`controller`、`enhancer`、`all`，支持 `-n/--lines`、`-f/--follow`、`--errors`；菜单 9 只列出实际安装的服务，可选最近 100 行、实时跟踪、警告错误或自定义行数。
 
@@ -59,11 +59,7 @@ dns
 5. 在目标服务器以 `root` 身份执行该命令。脚本会备份原 DNS，安装兼容 Agent、监听 `127.0.0.1:5353` 的专用 dnsmasq、runtime、transport 和媒体 worker，再接管系统 DNS；发现冲突的旧 `dnsmasq`/`sniproxy` 时先备份再停用，不修改 XrayR/V2bX。
 6. 安装完成后，在面板增删服务或切换解锁机只需点击“保存配置”。目标机每 10 秒检查配置并应用新路由，优先更新专用 DNS，Agent 仅在健康恢复失败时重启；新配置代会触发独立媒体任务。
 
-需要重新打开命令时，可在该 IP 行点击“客户端脚本”。DNS 测试、备份与恢复的专用交互入口如下（仍在 root Bash 中运行）：
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.36/prismdns.sh)
-```
+需要重新打开命令时，可在该 IP 行点击“客户端脚本”。如需本机 DNS 测试、备份与恢复，可从节点对应的发布标签取得 `prismdns.sh`，再在 root Bash 中运行 `bash ./prismdns.sh`。
 
 ## IP 配置备份与授权令牌
 
@@ -79,9 +75,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-
 
 ## 路由自动应用
 
-本次面板与发布脚本版本为 `1.5.36`，固定脚本标签为 `v1.5.36`，SNI transport 为 `2.5.2`，兼容 Agent 默认使用上游 `v1.2.1`；三者独立编号，不能混写为 Agent `v1.3`。安装、升级和卸载命令均使用本版标签，详见 [版本矩阵](VERSION_MATRIX_ZH.md)。
+面板与发布脚本使用同一发布标签，SNI transport 和上游兼容 Agent 独立编号。综合入口负责选择稳定发布，无需手动替换标签；组件版本示例见[版本矩阵](VERSION_MATRIX_ZH.md)。
 
-`prismdns.sh 1.5.36` 在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、专用 dnsmasq 和 DNS 守卫。增强层持久化服务到用户所选 Proxy IPv4 的映射，生成 `127.0.0.1:5353` 与可选 `[::1]:5353` 的路由；守卫每 10 秒检查配置和 DNS 监听，并通过 Prism 自有 nftables cgroup 规则接管受管代理进程的外部 DNS 请求。已选服务只返回指定 IPv4 并抑制 AAAA，未选服务保持直连。配置变化和 30 分钟路由健康缓存刷新仍校验全部域名，每 300 秒抽测各服务代表域名；这些属于路由诊断，不参与媒体结果判定。
+`prismdns.sh` 在每台目标机安装 `/usr/local/lib/prismdns/sync-routes.sh`、`prismdns-route-sync.timer`、专用 dnsmasq 和 DNS 守卫。增强层持久化服务到用户所选 Proxy IPv4 的映射，生成 `127.0.0.1:5353` 与可选 `[::1]:5353` 的路由；守卫每 10 秒检查配置和 DNS 监听，并通过 Prism 自有 nftables cgroup 规则接管受管代理进程的外部 DNS 请求。已选服务只返回指定 IPv4 并抑制 AAAA，未选服务保持直连。配置变化和 30 分钟路由健康缓存刷新仍校验全部域名，每 300 秒抽测各服务代表域名；这些属于路由诊断，不参与媒体结果判定。
 
 `prism_transport.sh 2.5.2` 默认以授权源 IP 直连所选 Proxy 的 TCP 80/443，受限网络可显式选择 `--mode encrypted`。Proxy 每 5 秒同步授权名单，AUTH nftables 规则先校验，再以单次事务原子替换，不先单独删除旧授权表；仅限制 Prism 的 IPv4 DNS/SNI 和 IPv6 DNS 53，不拦截同机 IPv6 80/443。已选出口的 UDP/443 被拒绝，促使应用回落到 TCP/TLS；受管代理发往 Google 网段的 UDP/443 快速拒绝只促使 Google 直连回落，不改变其 DNS 或出口。
 
@@ -111,17 +107,17 @@ worker 每秒检查新输出，有输出即逐批上报，界面每 1 秒刷新�
 
 **仅替换 enhancer 二进制不会自动刷新远端节点。** 面板升级与节点脚本升级应分别完成：
 
-先在每台主机安装上述本版 `dns` 快捷方式，再依次执行：
+先在每台主机用上述入口安装或更新 `dns` 快捷方式。从 `v1.5.37` 起，`dns upgrade` 默认使用最新公开稳定发布；更早安装的 `dns` 需显式使用 `--ref latest`，或通过 `bootstrap.sh` 运行 `upgrade`。需要回滚时，用 `--ref vX.Y.Z` 指定目标发布标签。按以下顺序升级：
 
-1. 面板运行 `dns upgrade panel --ref v1.5.36`；保留整个 Enhancer `dataDir`，包括 `media-checks.json` 的进度和历史。
-2. 每台既有 Proxy 运行 `dns upgrade proxy --ref v1.5.36`，保留本机面板地址、密钥、出口 IPv4、`--smart` 及传输模式。
+1. 面板运行 `dns upgrade panel`；保留整个 Enhancer `dataDir`，包括 `media-checks.json` 的进度和历史。
+2. 每台既有 Proxy 运行 `dns upgrade proxy`，保留本机面板地址、密钥、出口 IPv4、`--smart` 及传输模式。
 3. 每台已有有效配置的 Client 运行以下命令，刷新 runtime、transport 与 worker，保留令牌、路由、累计流量及加密模式：
 
 ```bash
-dns upgrade client --ref v1.5.36
+dns upgrade client
 ```
 
-缺少有效本机配置时，重新执行面板生成的本版节点或“IP 配置”专属命令。面板升级沿用公开端口、控制器端口与 Enhancer 数据目录，显式 `PRISM_PORT`、`PRISM_CORE_PORT`、`PRISM_ENHANCER_DATA_DIR` 才覆盖；升级前备份二进制、数据库及 systemd 单元，失败时自动恢复备份并报错。
+缺少有效本机配置时，重新执行当前面板生成的节点或“IP 配置”专属命令。面板升级沿用公开端口、控制器端口与 Enhancer 数据目录，显式 `PRISM_PORT`、`PRISM_CORE_PORT`、`PRISM_ENHANCER_DATA_DIR` 才覆盖；升级前备份二进制、数据库及 systemd 单元，失败时自动恢复备份并报错。
 
 `prism_transport.sh --sync` 只同步已安装的传输配置，不会下载新版 runtime/transport 或补装 worker。刷新后在每台节点检查 `systemctl is-enabled prism-media-check.timer`、`systemctl status prism-media-check.timer`，并在面板手动重测，确认逐批结果和任务心跳可读；oneshot service 空闲时不常驻是正常现象。
 
@@ -136,7 +132,7 @@ dns upgrade client --ref v1.5.36
 如需在曾安装过 Prism 的主机上明确清空 Prism 数据并重新初始化，执行以下命令：
 
 ```bash
-PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.36/dns.sh) install panel
+PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/bootstrap.sh) install panel
 ```
 
 该模式只清理 `/opt/prism/data.db`、`/opt/prism/.env`、初始密码文件和 `/var/lib/prism-enhancer/`，不会删除或修改 Docker、XrayR、V2bX、MTProxy 等其他业务。需要保留旧面板时，必须按 `MIGRATION_ZH.md` 显式备份和恢复；安装脚本不会自动带入旧数据。
@@ -150,13 +146,13 @@ PRISM_FRESH_INSTALL=1 PRISM_CONFIRM_FRESH=YES bash <(curl -fsSL https://raw.gith
 在上述 root Bash 中执行；已有面板使用 `dns upgrade panel` 保留失败回滚路径。
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.36/dns.sh) install panel
+bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/bootstrap.sh) install panel
 ```
 
 可通过环境变量调整端口：
 
 ```bash
-PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/v1.5.36/dns.sh) install panel
+PRISM_PORT=8080 PRISM_CORE_PORT=18080 bash <(curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/bootstrap.sh) install panel
 ```
 
 ## 本地开发
