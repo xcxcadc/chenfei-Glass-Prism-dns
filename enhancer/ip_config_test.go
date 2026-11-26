@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func TestApplyIPRoutesRejectsInvalidSelectionBeforeWrites(t *testing.T) {
 		case "/api/nodes":
 			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": "valid", "role": "proxy", "public_ip": "198.51.100.20"}})
 		case "/catalog":
-			_, _ = writer.Write([]byte("# ---------- > AI Platform\n# > Example\nnameserver /first.example/group\n# > Another Example\nnameserver /second.example/group\n"))
+			_, _ = writer.Write([]byte("# ---------- > AI Platform\n# > Example\nnameserver /first.example/group\n# > Another Example\nnameserver /second.example/group\n# > Overlapping Example\nnameserver /sub.first.example/group\n"))
 		default:
 			http.NotFound(writer, request)
 		}
@@ -41,16 +42,30 @@ func TestApplyIPRoutesRejectsInvalidSelectionBeforeWrites(t *testing.T) {
 	}
 	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore)
 	services := catalog.Snapshot(context.Background(), true).Services
-	if len(services) != 2 {
+	if len(services) != 3 {
 		t.Fatalf("unexpected fixture catalog: %+v", services)
 	}
+	var separateID string
+	var overlappingIDs []string
+	for _, service := range services {
+		if service.Name == "Another Example" {
+			separateID = service.ID
+		} else {
+			overlappingIDs = append(overlappingIDs, service.ID)
+		}
+	}
+	if separateID == "" || len(overlappingIDs) != 2 {
+		t.Fatalf("unexpected fixture services: %+v", services)
+	}
+	sort.Strings(overlappingIDs)
 	app, err := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, routes := range []map[string]string{
-		{services[0].ID: "valid", services[1].ID: "missing-proxy"},
+		{separateID: "valid", overlappingIDs[0]: "missing-proxy"},
 		{services[0].ID: "valid", "missing-service": "valid"},
+		{overlappingIDs[0]: "valid", overlappingIDs[1]: "missing-proxy"},
 	} {
 		_, err := app.applyIPRoutes(context.Background(), "Bearer valid", "dns-1", nil, routes, "https://panel.example")
 		var invalid routeInputError
@@ -62,6 +77,158 @@ func TestApplyIPRoutesRejectsInvalidSelectionBeforeWrites(t *testing.T) {
 		if response.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("route validation should not report gateway failure, got %d", response.Code)
 		}
+	}
+}
+
+func TestIPConfigRejectsLongNoteBeforeControllerWrites(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			t.Errorf("rejected note caused Controller mutation: %s %s", request.Method, request.URL.Path)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writeJSON(writer, http.StatusOK, []any{})
+	}))
+	defer upstream.Close()
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	config, err := ipStore.Save(IPConfig{IP: "203.0.113.10", DNSNodeID: "dns-old"}, "fixture-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(upstream.URL, NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore), customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const basePath = "/enhancer/api/ip-configs"
+	for _, method := range []string{http.MethodPost, http.MethodPut} {
+		path := basePath
+		if method == http.MethodPut {
+			path += "/" + config.ID
+		}
+		request := httptest.NewRequest(method, path, strings.NewReader(`{"ip":"203.0.113.11","note":"`+strings.Repeat("x", 81)+`","routes":{}}`))
+		request.Header.Set("Authorization", "Bearer valid")
+		response := httptest.NewRecorder()
+		app.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("%s: expected bad request, got %d: %s", method, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestIPConfigDeleteUsesRoutesFromInFlightSave(t *testing.T) {
+	overrideStarted := make(chan struct{})
+	releaseOverride := make(chan struct{}, 1)
+	overrideCalls := make(chan string, 2)
+	deleteAuthorized := make(chan struct{}, 1)
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	service, err := customStore.Upsert(Service{Name: "Example", Domains: []string{"first.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/nodes":
+			if request.Header.Get("Authorization") == "Bearer delete" {
+				select {
+				case deleteAuthorized <- struct{}{}:
+				default:
+				}
+			}
+			writeJSON(writer, http.StatusOK, []map[string]string{
+				{"id": "dns-1", "role": "dns", "public_ip": "203.0.113.10"},
+				{"id": "proxy-1", "role": "proxy", "public_ip": "198.51.100.20"},
+			})
+		case "/api/rules":
+			writeJSON(writer, http.StatusOK, []map[string]any{{
+				"id": "rule-1", "source_type": "all", "target_type": "group", "target_val": "__prism_enhancer_direct__",
+				"name": "Prism IP · Example", "value": "http://example.com/enhancer/rules/" + service.ID + ".list", "enabled": true,
+			}})
+		case "/api/rules/rule-1/override":
+			var payload map[string]string
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Error(err)
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if payload["proxy_node_id"] != "" {
+				close(overrideStarted)
+				<-releaseOverride
+			}
+			overrideCalls <- payload["proxy_node_id"]
+			writer.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+	defer close(releaseOverride)
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	config, err := ipStore.Save(IPConfig{IP: "203.0.113.10", DNSNodeID: "dns-1", ExternalDNSNode: true}, "fixture-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(upstream.URL, NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore), customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	startRequest := func(method, auth, body string) <-chan int {
+		request := httptest.NewRequest(method, "/enhancer/api/ip-configs/"+config.ID, strings.NewReader(body)).WithContext(ctx)
+		request.Header.Set("Authorization", auth)
+		completed := make(chan int, 1)
+		go func() {
+			response := httptest.NewRecorder()
+			app.Handler().ServeHTTP(response, request)
+			completed <- response.Code
+		}()
+		return completed
+	}
+	updated := startRequest(http.MethodPut, "Bearer save", `{"routes":{"`+service.ID+`":"proxy-1"}}`)
+	select {
+	case <-overrideStarted:
+	case status := <-updated:
+		t.Fatalf("save returned %d before reaching Controller override", status)
+	case <-ctx.Done():
+		t.Fatal("save did not reach Controller override")
+	}
+	deleted := startRequest(http.MethodDelete, "Bearer delete", "")
+	select {
+	case <-deleteAuthorized:
+	case <-ctx.Done():
+		t.Fatal("delete did not reach authorization")
+	}
+	select {
+	case status := <-deleted:
+		if status != http.StatusNoContent {
+			t.Fatalf("delete returned %d", status)
+		}
+		deleted = nil
+	case <-time.After(100 * time.Millisecond):
+	}
+	releaseOverride <- struct{}{}
+	for _, result := range []struct {
+		completed <-chan int
+		expected  int
+	}{{updated, http.StatusOK}, {deleted, http.StatusNoContent}} {
+		if result.completed == nil {
+			continue
+		}
+		select {
+		case status := <-result.completed:
+			if status != result.expected {
+				t.Fatalf("expected status %d, got %d", result.expected, status)
+			}
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for status %d", result.expected)
+		}
+	}
+	if _, exists := ipStore.Record(config.ID); exists {
+		t.Fatal("deleted config was resurrected")
+	}
+	if len(overrideCalls) != 2 || <-overrideCalls != "proxy-1" || <-overrideCalls != "" {
+		t.Fatal("delete did not clear the override added by the save")
 	}
 }
 

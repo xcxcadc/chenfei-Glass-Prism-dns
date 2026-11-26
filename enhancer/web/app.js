@@ -107,7 +107,7 @@ const state = {
   theme: localStorage.getItem("prism_theme_v2") || "light",
   tab: localStorage.getItem("enhancer_tab") || "services", nodes: [], rules: [], catalog: [], categories: [], customCategories: [], catalogMeta: {}, ipConfigs: [], dnsNodeId: localStorage.getItem("enhancer_dns") || "",
   overrides: {}, activeSelections: {}, search: "", category: "", statusFilter: "", nodeFilter: "", page: 1, pageSize: 20, selectedServiceIds: new Set(),
-  loading: false, modal: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "",
+  loading: false, modal: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "", syncError: "", routingError: "",
   mediaChecks: new Map(), mediaCheckView: null, mediaCheckPositions: new Map(),
   branding: {site_name:"", browser_title:"", site_tagline:""},
   nodeRelease: {status:"loading"}, nodeInventory: {status:"loading"}, nodeUpdatesSubmitting: new Set(), nodeUpdateErrors: new Map()
@@ -177,15 +177,13 @@ document.addEventListener("error", event => {
     nextServiceIcon(event.target);
   }
 }, true);
-new MutationObserver(() => requestAnimationFrame(() => markLoadedServiceIcons()))
-  .observe(document.documentElement, {childList:true, subtree:true});
-
-const scrollSelectors = [".container", ".service-grid", ".selected-service-list", ".route-node-list"];
+const scrollSelectors = [".container", ".service-grid", ".selected-service-list", ".route-node-list", ".service-table-wrap"];
 function captureScrollPositions() {
   const container = document.querySelector(".container[data-view]");
   const view = container?.dataset.view;
   if (!view) return;
   const positions = {...(state.scrollPositions[view] || {})};
+  positions.document = document.scrollingElement?.scrollTop || 0;
   scrollSelectors.forEach(selector => {
     const element = document.querySelector(selector);
     if (element) positions[selector] = {top:element.scrollTop, left:element.scrollLeft};
@@ -193,8 +191,8 @@ function captureScrollPositions() {
   state.scrollPositions[view] = positions;
 }
 function restoreScrollPositions(view) {
-  const positions = state.scrollPositions[view];
-  if (!positions) return;
+  const positions = state.scrollPositions[view] || {};
+  if (document.scrollingElement) document.scrollingElement.scrollTop = positions.document || 0;
   scrollSelectors.forEach(selector => {
     const position = positions[selector];
     const element = document.querySelector(selector);
@@ -331,14 +329,17 @@ function activeNodeFor(rule) {
   return null;
 }
 function routedNodeForService(service) {
+  if (!state.dnsNodeId) return null;
   const targetConfig = configForNode(selectedDNS());
-  const proxyId = nodeID(serviceRouteEntry(targetConfig, service)?.value);
-  if (proxyId) return state.nodes.find(node => nodeID(node.id) === proxyId) || null;
+  if (targetConfig) {
+    const proxyId = nodeID(serviceRouteEntry(targetConfig, service)?.value);
+    return proxyNodes().find(node => nodeID(node.id) === proxyId) || null;
+  }
   return activeNodeFor(serviceRule(service));
 }
 function serviceStatus(service, node) {
   const targetConfig = configForNode(selectedDNS());
-  const mediaAudit = mediaServiceState(state.mediaChecks.get(`config:${nodeID(targetConfig?.id)}`), service);
+  const mediaAudit = targetMediaServiceState(targetConfig, service);
   if (mediaAudit && nodeID(serviceRouteEntry(targetConfig, service)?.value) === nodeID(node?.id)) return mediaAudit;
   const targetResult = serviceResult(targetConfig, service);
   if (targetResult && nodeID(serviceRouteEntry(targetConfig, service)?.value) === nodeID(node?.id)) {
@@ -537,21 +538,32 @@ function viewFingerprint() {
     rules:state.rules,
     overrides:state.overrides,
     activeSelections:state.activeSelections,
-    catalog:state.catalog.map(service => ({id:service.id, aliases:service.aliases, name:service.name, category:service.category, domains:service.domains, custom:service.custom})),
+    catalog:state.catalog,
     categories:state.categories,
+    customCategories:state.customCategories,
     branding:state.branding
   });
 }
 
 function updateBackgroundIndicator() {
+  const error = state.syncError || state.routingError;
+  const refresh = document.getElementById("refresh");
+  if (refresh) {
+    refresh.disabled = panelRefreshInProgress;
+    refresh.classList.toggle("refresh-error", Boolean(error));
+    refresh.title = error || t("refresh");
+  }
   const indicator = document.getElementById("background-sync-state");
   if (!indicator) return;
-  indicator.classList.toggle("pending", !!state.backgroundPending);
+  indicator.classList.toggle("pending", Boolean(error || panelRefreshInProgress || state.backgroundPending || !state.lastBackgroundSync));
+  indicator.title = error;
   const label = indicator.querySelector("span:last-child");
   if (label) {
-    label.textContent = state.backgroundPending
-      ? (state.lang === "zh" ? "有后台更新" : "Background update")
-      : (state.lang === "zh" ? "数据已同步" : "Data synced");
+    label.textContent = error ? (state.lang === "zh" ? "刷新失败" : "Refresh failed")
+      : panelRefreshInProgress ? (state.lang === "zh" ? "正在刷新" : "Refreshing")
+      : state.backgroundPending ? (state.lang === "zh" ? "有后台更新" : "Background update")
+      : state.lastBackgroundSync ? (state.lang === "zh" ? "面板数据已刷新" : "Panel data refreshed")
+      : (state.lang === "zh" ? "尚未刷新" : "Not refreshed yet");
   }
 }
 function auditResultState(result) {
@@ -628,7 +640,8 @@ function preferredServiceTestDomain(service) {
 
 async function api(path, options = {}) {
   const headers = {...(options.headers || {})};
-  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const token = state.token;
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (options.body && !(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
   const {timeoutMs = 20000, signal, ...fetchOptions} = options;
   const controller = new AbortController();
@@ -639,7 +652,7 @@ async function api(path, options = {}) {
   try {
     const response = await fetch(path, {...fetchOptions, headers, signal:controller.signal});
     if (response.status === 401) {
-      logout(false);
+      if (token && state.token === token) logout(false);
       throw new Error(state.lang === "zh" ? "登录已失效" : "Session expired");
     }
     if (response.status === 204) return null;
@@ -672,7 +685,19 @@ async function loadBranding() {
     const branding = await response.json();
     state.branding = branding && typeof branding === "object" ? branding : state.branding;
     updateBrandingIcon();
+    refreshBrandingUI();
   } catch {}
+}
+
+function refreshBrandingUI() {
+  document.title = browserTitle();
+  const name = document.querySelector(".sidebar-brand > div > strong");
+  const tagline = document.querySelector(".sidebar-brand > div > span");
+  const loginHeading = document.querySelector(".login-box h1");
+  if (name) name.textContent = siteName();
+  if (tagline) tagline.textContent = siteTagline();
+  if (loginHeading) loginHeading.textContent = state.lang === "zh" ? `登录 ${siteName()}` : `Sign in to ${siteName()}`;
+  document.querySelector(".tabs")?.setAttribute("aria-label", browserTitle());
 }
 
 async function login(event) {
@@ -703,6 +728,12 @@ function logout(callAPI = true) {
   state.modal = null;
   renderModal();
   state.token = ""; state.user = {}; state.nodes = []; state.rules = []; state.ipConfigs = [];
+  panelRefreshRevision++;
+  routingRefreshRevision++;
+  panelRefreshInProgress = false;
+  state.loading = false; state.lastBackgroundSync = ""; state.syncError = ""; state.routingError = "";
+  state.catalog = []; state.categories = []; state.customCategories = []; state.catalogMeta = {};
+  state.backgroundPending = false; state.overrides = {}; state.activeSelections = {};
   nodeInventoryRevision++;
   state.nodeRelease = {status:"loading"}; state.nodeInventory = {status:"loading"};
   state.nodeUpdatesSubmitting.clear(); state.nodeUpdateErrors.clear(); nextNodeReleaseCheck = 0;
@@ -710,46 +741,91 @@ function logout(callAPI = true) {
   render();
 }
 
+let panelRefreshRevision = 0;
+let routingRefreshRevision = 0;
+let panelRefreshInProgress = false;
+
+function hasActiveDraft() {
+  return Boolean(state.modal || state.mediaCheckView || document.activeElement?.matches?.("input, textarea, select, [contenteditable=true]"));
+}
+
 async function loadAll(silent = false) {
   if (!state.token) return render();
   const token = state.token;
+  const revision = ++panelRefreshRevision;
+  const isCurrent = () => state.token === token && revision === panelRefreshRevision;
   const previousFingerprint = viewFingerprint();
-  state.loading = !silent;
-  if (!silent) render();
+  panelRefreshInProgress = true;
+  if (!silent && !state.lastBackgroundSync && !hasActiveDraft()) {
+    state.loading = true;
+    render();
+  } else updateBackgroundIndicator();
   try {
     const [rules, catalog, ipConfigs, categoryData] = await Promise.all([api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs"), api("/enhancer/api/categories"), loadNodeInventory({cache:"no-store"})]);
-    if (state.token !== token) return;
-    if (state.tab !== "nodes" && state.nodeInventory.status === "error") toast(nodeInventoryStatus(), "error");
+    if (!isCurrent()) return;
+    if (!Array.isArray(rules) || !Array.isArray(catalog?.services) || !Array.isArray(ipConfigs)) throw new Error(t("nodeInvalidResponse"));
     state.rules = Array.isArray(rules) ? rules : [];
     state.catalog = catalog.services || [];
     state.categories = Array.isArray(categoryData?.categories) ? categoryData.categories : (catalog.categories || []);
     state.customCategories = Array.isArray(categoryData?.custom_categories) ? categoryData.custom_categories : [];
     state.catalogMeta = catalog;
     state.ipConfigs = Array.isArray(ipConfigs) ? ipConfigs : [];
-    if (!dnsNodes().some(node => nodeID(node.id) === nodeID(state.dnsNodeId))) state.dnsNodeId = dnsNodes()[0]?.id || "";
-    localStorage.setItem("enhancer_dns", nodeID(state.dnsNodeId));
-    await loadRoutingState();
-    connectSSE();
-  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
-  finally {
-    state.loading = false;
-    const preserveDraft = silent && (state.modal || state.mediaCheckView || document.activeElement?.matches?.("input, textarea, select, [contenteditable=true]"));
-    const changed = previousFingerprint !== viewFingerprint();
+    if (state.nodeInventory.status === "ready" && !dnsNodes().some(node => nodeID(node.id) === nodeID(state.dnsNodeId))) setDNSNode(dnsNodes()[0]?.id);
+    await loadRoutingState(isCurrent);
+    if (!isCurrent()) return;
+    state.syncError = state.nodeInventory.status === "error" ? nodeInventoryStatus() : "";
     state.lastBackgroundSync = new Date().toISOString();
-    state.backgroundPending = preserveDraft && changed;
-    if (!preserveDraft && (!silent || changed)) render();
-    else updateBackgroundIndicator();
-    if (state.tab === "nodes") proxyNodes().forEach(node => syncMediaCheck(mediaCheckRecord({node_id:nodeID(node.id)}), "read"));
+    connectSSE();
+  } catch (error) {
+    if (isCurrent()) {
+      state.syncError = cleanErrorMessage(error.message);
+      if (!silent) toast(state.syncError, "error");
+    }
+  }
+  finally {
+    if (isCurrent()) {
+      panelRefreshInProgress = false;
+      const wasLoading = state.loading;
+      state.loading = false;
+      if (renderedModal && !state.modal) renderModal();
+      if (previousFingerprint !== viewFingerprint()) state.backgroundPending = true;
+      if (!hasActiveDraft() && (wasLoading || !silent || state.backgroundPending)) render();
+      else updateBackgroundIndicator();
+      if (state.tab === "nodes") proxyNodes().forEach(node => syncMediaCheck(mediaCheckRecord({node_id:nodeID(node.id)}), "read"));
+    }
   }
 }
 
-async function loadRoutingState() {
-  if (!state.dnsNodeId) { state.overrides = {}; state.activeSelections = {}; return; }
-  const [overrides, selections] = await Promise.all([
-    api(`/api/overrides?dns_node_id=${encodeURIComponent(state.dnsNodeId)}`).catch(() => ({})),
-    api(`/api/active_selections?dns_node_id=${encodeURIComponent(state.dnsNodeId)}`).catch(() => ({}))
-  ]);
-  state.overrides = overrides || {}; state.activeSelections = selections || {};
+function setDNSNode(id) {
+  const nodeId = nodeID(id);
+  if (nodeID(state.dnsNodeId) === nodeId) return;
+  routingRefreshRevision++;
+  state.dnsNodeId = nodeId;
+  state.overrides = {}; state.activeSelections = {}; state.routingError = "";
+  localStorage.setItem("enhancer_dns", nodeId);
+}
+
+async function loadRoutingState(panelRequestIsCurrent = () => true) {
+  const id = nodeID(state.dnsNodeId);
+  const revision = ++routingRefreshRevision;
+  if (!id || configForNode(selectedDNS())) {
+    state.routingError = "";
+    return false;
+  }
+  const token = state.token;
+  const isCurrent = () => revision === routingRefreshRevision && state.token === token && panelRequestIsCurrent();
+  try {
+    const [overrides, selections] = await Promise.all([
+      api(`/api/overrides?dns_node_id=${encodeURIComponent(id)}`),
+      api(`/api/active_selections?dns_node_id=${encodeURIComponent(id)}`)
+    ]);
+    if (!isCurrent()) return false;
+    state.overrides = overrides || {}; state.activeSelections = selections || {}; state.routingError = "";
+    return true;
+  } catch (error) {
+    if (isCurrent()) state.routingError = cleanErrorMessage(error.message);
+    return false;
+  }
 }
 
 let eventSource;
@@ -833,8 +909,7 @@ function scheduleLiveReload() {
   reloadTimer = setTimeout(() => {
     reloadTimer = null;
     if (state.tab === "nodes" && document.hidden) return;
-    const active = document.activeElement;
-    if (state.modal || state.mediaCheckView || active?.matches?.("input, textarea, select, [contenteditable=true]")) {
+    if (panelRefreshInProgress || hasActiveDraft()) {
       state.backgroundPending = true;
       updateBackgroundIndicator();
       scheduleLiveReload();
@@ -845,9 +920,13 @@ function scheduleLiveReload() {
 }
 function connectSSE() {
   if (eventSource || !state.token) return;
-  eventSource = new EventSource(`/api/sse?token=${encodeURIComponent(state.token)}`);
-  eventSource.onmessage = scheduleLiveReload;
-  eventSource.onerror = () => { eventSource.close(); eventSource = null; setTimeout(connectSSE, 3500); };
+  const source = new EventSource(`/api/sse?token=${encodeURIComponent(state.token)}`);
+  eventSource = source;
+  source.onmessage = scheduleLiveReload;
+  source.onerror = () => {
+    if (eventSource !== source) return;
+    source.close(); eventSource = null; setTimeout(connectSSE, 3500);
+  };
 }
 
 function updateClock() {
@@ -859,17 +938,31 @@ function updateClock() {
   element.textContent = `${date}  ${time}`;
 }
 
+let shellIdentity = "";
+let renderedModal = null;
+
 function render() {
   captureScrollPositions();
   document.documentElement.dataset.theme = state.theme === "light" ? "light" : "dark";
   document.documentElement.lang = state.lang === "zh" ? "zh-CN" : "en";
   document.title = browserTitle();
   const app = document.getElementById("app");
-  if (!state.token) { app.innerHTML = loginHTML(); bindLogin(); syncNodeInventoryPolling(); return; }
-  app.innerHTML = shellHTML();
-  bindShell();
-  renderModal();
+  if (!state.token) { shellIdentity = ""; app.innerHTML = loginHTML(); bindLogin(); syncNodeInventoryPolling(); return; }
+  const identity = JSON.stringify([state.token, state.theme, state.lang, state.user]);
+  const container = app.querySelector("main.container");
+  if (container && identity === shellIdentity) {
+    container.outerHTML = viewHTML();
+    updateNavigation();
+  } else {
+    app.innerHTML = shellHTML();
+    shellIdentity = identity;
+    bindShell();
+  }
+  bindContent();
+  refreshBrandingUI();
+  if (state.modal !== renderedModal) renderModal();
   restoreScrollPositions(state.tab);
+  state.backgroundPending = false;
   updateBackgroundIndicator();
   syncNodeInventoryPolling();
 }
@@ -917,40 +1010,33 @@ function navigationHTML() {
     ["alerts", "bi-bell", state.lang === "zh" ? "告警中心" : "Alerts"],
     ["settings", "bi-gear", state.lang === "zh" ? "设置中心" : "Settings"]
   ];
-  return items.map(([id, icon, label]) => `<button type="button" class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}"><i class="bi ${icon}" aria-hidden="true"></i><span>${escapeHTML(label)}</span></button>`).join("");
+  return items.map(([id, icon, label]) => `<button type="button" class="tab ${state.tab === id ? "active" : ""}" data-tab="${id}" ${state.tab === id ? 'aria-current="page"' : ""}><i class="bi ${icon}" aria-hidden="true"></i><span>${escapeHTML(label)}</span></button>`).join("");
 }
 function selectTab(tab) {
   if (!["services", "nodes", "ips", "sync", "audit", "alerts", "settings"].includes(tab)) return;
   if (state.tab === tab && document.querySelector(".container")?.dataset.view === tab) return;
+  clearTimeout(searchRenderTimer);
+  searchComposing = false;
   state.tab = tab;
   state.page = 1;
   localStorage.setItem("enhancer_tab", state.tab);
   render();
 }
 
-let navigationEventsBound = false;
-function bindNavigation() {
-  if (navigationEventsBound) return;
-  const activate = event => {
-    const target = event.target;
-    const button = target instanceof Element ? target.closest(".tab[data-tab]") : null;
-    if (!button) return;
-    event.preventDefault();
-    event.stopPropagation();
-    selectTab(button.dataset.tab);
-  };
-  document.addEventListener("click", activate, true);
-  document.addEventListener("pointerup", activate, true);
-  document.addEventListener("keydown", event => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    const target = event.target;
-    const button = target instanceof Element ? target.closest(".tab[data-tab]") : null;
-    if (!button) return;
-    event.preventDefault();
-    event.stopPropagation();
-    selectTab(button.dataset.tab);
-  }, true);
-  navigationEventsBound = true;
+function updateNavigation() {
+  document.querySelectorAll(".tabs .tab[data-tab]").forEach(button => {
+    const current = button.dataset.tab === state.tab;
+    button.classList.toggle("active", current);
+    if (current) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  const meta = pageMeta();
+  document.querySelector(".page-heading h1").textContent = meta.title;
+  document.querySelector(".page-heading p").textContent = meta.hint;
+}
+
+function viewHTML() {
+  return `<main class="container" data-view="${escapeHTML(state.tab)}">${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main>`;
 }
 
 function shellHTML() {
@@ -960,7 +1046,7 @@ function shellHTML() {
     <div class="sidebar-footer"><button class="user-button account-settings-trigger" id="account-settings" title="${t("accountSettings")}"><span class="user-avatar">${escapeHTML(Array.from(state.user.username || "A")[0] || "A")}</span><span class="user-copy"><strong>${escapeHTML(state.user.username || "admin")}</strong><small>${state.lang === "zh" ? "超级管理员" : "Administrator"}</small></span><i class="bi bi-chevron-up" aria-hidden="true"></i></button>
     <div class="sidebar-tools"><button class="btn small theme-toggle-trigger" id="theme-toggle" title="${t("theme")}"><i class="bi ${state.theme === "light" ? "bi-moon" : "bi-sun"}" aria-hidden="true"></i></button><button class="btn small lang-toggle-trigger" id="lang-toggle">${t("language")}</button><button class="btn small danger logout-trigger" id="logout">${t("logout")}</button></div></div></aside>
     <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(meta.title)}</h1><p>${escapeHTML(meta.hint)}</p></div><div class="toolbar-right"><span class="topbar-clock" id="topbar-clock"></span><span class="topbar-divider"></span><span class="live-state authorization-state" title="${state.lang === "zh" ? "只有面板授权目标 IP 可使用 DNS 解锁" : "Only panel-authorized target IPs may use unlock DNS"}"><span class="status-dot"></span>${state.lang === "zh" ? "授权白名单" : "Allowlist"}</span><span class="live-state" id="background-sync-state"><span class="status-dot"></span><span>${state.lang === "zh" ? "数据已同步" : "Data synced"}</span></span><button class="btn icon" id="refresh" title="${t("refresh")}"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button><button class="btn icon theme-toggle-trigger" title="${t("theme")}"><i class="bi ${state.theme === "light" ? "bi-moon" : "bi-sun"}" aria-hidden="true"></i></button><button class="btn lang-toggle-trigger"><i class="bi bi-translate" aria-hidden="true"></i>${state.lang === "zh" ? "中文" : "EN"}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
-    <main class="container" data-view="${escapeHTML(state.tab)}">${state.loading ? `<div class="loading panel"><div class="spinner"></div></div>` : activeContentHTML()}</main></section></div>`;
+    ${viewHTML()}</section></div>`;
 }
 
 function servicesHTML() {
@@ -1311,15 +1397,23 @@ function bindShell() {
   if (!clockTimer) clockTimer = setInterval(updateClock, 1000);
   if (!statusPollTimer) statusPollTimer = setInterval(() => {
     const active = document.activeElement;
-    if (state.token && !document.hidden && ["nodes", "ips", "alerts"].includes(state.tab) && !state.modal && !state.mediaCheckView &&
+    if (state.token && !panelRefreshInProgress && !document.hidden && ["nodes", "ips", "alerts"].includes(state.tab) && !state.modal && !state.mediaCheckView &&
       !active?.matches?.("input, textarea, select, [contenteditable=true]")) loadAll(true);
   }, 60000);
   document.querySelectorAll(".theme-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.theme = state.theme === "light" ? "dark" : "light"; localStorage.setItem("prism_theme_v2", state.theme); render(); }));
   document.querySelectorAll(".lang-toggle-trigger").forEach(button => button.addEventListener("click", () => { state.lang = state.lang === "zh" ? "en" : "zh"; localStorage.setItem("enhancer_lang", state.lang); render(); }));
   document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));
-  document.querySelectorAll(".account-settings-trigger").forEach(button => button.addEventListener("click", openAccountSettings));
-  document.querySelectorAll(".site-settings-trigger").forEach(button => button.addEventListener("click", openBrandingSettings));
+  document.querySelectorAll(".sidebar .account-settings-trigger, .topbar .account-settings-trigger").forEach(button => button.addEventListener("click", openAccountSettings));
   document.getElementById("refresh")?.addEventListener("click", () => loadAll());
+  document.querySelector(".tabs")?.addEventListener("click", event => {
+    const button = event.target.closest?.(".tab[data-tab]");
+    if (button) selectTab(button.dataset.tab);
+  });
+}
+
+function bindContent() {
+  document.querySelectorAll(".container .site-settings-trigger").forEach(button => button.addEventListener("click", openBrandingSettings));
+  document.querySelectorAll(".container .account-settings-trigger").forEach(button => button.addEventListener("click", openAccountSettings));
   document.getElementById("refresh-audits")?.addEventListener("click", () => loadAll());
   document.getElementById("add-service")?.addEventListener("click", () => openServiceForm());
   document.getElementById("add-node")?.addEventListener("click", () => openNodeForm());
@@ -1337,7 +1431,28 @@ function bindShell() {
   document.getElementById("status-filter")?.addEventListener("change", event => { state.statusFilter = event.target.value; state.page = 1; render(); });
   document.getElementById("show-configured-services")?.addEventListener("click", () => { state.statusFilter = state.statusFilter === "configured" ? "" : "configured"; state.page = 1; render(); });
   document.getElementById("node-filter")?.addEventListener("change", event => { state.nodeFilter = event.target.value; state.page = 1; render(); });
-  document.getElementById("dns-select")?.addEventListener("change", async event => { state.dnsNodeId = event.target.value; localStorage.setItem("enhancer_dns", state.dnsNodeId); await loadRoutingState(); render(); });
+  document.getElementById("dns-select")?.addEventListener("change", async event => {
+    const id = event.currentTarget.value;
+    setDNSNode(id);
+    render();
+    document.getElementById("dns-select")?.focus({preventScroll:true});
+    const loaded = await loadRoutingState();
+    if (!state.token || nodeID(state.dnsNodeId) !== id) return;
+    if (!loaded) {
+      updateBackgroundIndicator();
+      if (state.routingError) toast(state.routingError, "error");
+      return;
+    }
+    if (state.tab !== "services") return;
+    const focused = document.activeElement;
+    if (state.modal || state.mediaCheckView || (hasActiveDraft() && focused?.id !== "dns-select")) {
+      state.backgroundPending = true;
+      updateBackgroundIndicator();
+      return;
+    }
+    render();
+    if (focused?.id === "dns-select") document.getElementById("dns-select")?.focus({preventScroll:true});
+  });
   document.getElementById("clear-filter")?.addEventListener("click", () => { state.search = ""; state.category = ""; state.statusFilter = ""; state.nodeFilter = ""; state.page = 1; render(); });
   document.getElementById("page-size")?.addEventListener("change", event => { state.pageSize = Number(event.target.value) || 20; state.page = 1; render(); });
   document.querySelector(".page-prev")?.addEventListener("click", () => { state.page = Math.max(1, state.page - 1); render(); });
@@ -1376,8 +1491,8 @@ function bindShell() {
   document.querySelectorAll(".service-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openServiceRoute(button.dataset.serviceId); }));
   document.querySelectorAll(".service-category-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openServiceCategory(button.dataset.serviceId); }));
   document.querySelectorAll(".service-audit-run").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); runTableServiceAudit(button.dataset.serviceId); }));
-  document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openService(card.dataset.serviceId)));
-  document.querySelectorAll(".selected-service-row").forEach(row => row.addEventListener("click", () => openService(row.dataset.serviceId)));
+  document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openServiceRoute(card.dataset.serviceId)));
+  document.querySelectorAll(".selected-service-row").forEach(row => row.addEventListener("click", () => openServiceRoute(row.dataset.serviceId)));
   const container = document.querySelector(".container");
   container?.addEventListener("click", event => {
     const button = event.target.closest?.("button");
@@ -1408,7 +1523,7 @@ function bindShell() {
   container?.addEventListener("keydown", event => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const row = event.target.closest?.(".ip-row");
-    if (!row || !container.contains(row)) return;
+    if (!row || event.target !== row || !container.contains(row)) return;
     event.preventDefault();
     openIPForm(state.ipConfigs.find(config => nodeID(config.id) === nodeID(row.dataset.ipId)), 2);
   });
@@ -1419,14 +1534,17 @@ function bindShell() {
 function scheduleServiceSearch(input) {
   state.search = input.value;
   state.page = 1;
-  const caret = input.selectionStart;
   clearTimeout(searchRenderTimer);
   searchRenderTimer = setTimeout(() => {
+    if (state.tab !== "services" || !input.isConnected || searchComposing) return;
+    const focused = document.activeElement === input;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
     render();
     const next = document.getElementById("service-search");
-    if (next) {
+    if (next && focused) {
       next.focus({preventScroll:true});
-      if (Number.isInteger(caret)) next.setSelectionRange(caret, caret);
+      if (Number.isInteger(start)) next.setSelectionRange(start, end);
     }
   }, 180);
 }
@@ -1453,10 +1571,8 @@ function openService(id) {
   if (!service) return;
   const current = routedNodeForService(service);
   const fallback = proxyNodes().find(isOnline) || proxyNodes()[0];
-  state.modal = {type:"service", service, proxyId:nodeID(current?.id || fallback?.id)};
+  state.modal = {type:"service", service, dnsNodeId:nodeID(state.dnsNodeId), proxyId:nodeID(current?.id || fallback?.id)};
   renderModal();
-  const config = configForNode(selectedDNS());
-  if (config?.id) syncMediaCheck(mediaCheckRecord({config_id:nodeID(config.id)}), "read");
 }
 function openServiceDomains(id) {
   const service = state.catalog.find(item => item.id === id);
@@ -1476,9 +1592,7 @@ function openServiceRoute(id) {
     openService(id);
     return;
   }
-  openIPForm(config, 2);
-  state.modal.serviceSearch = displayServiceName(service);
-  renderModal();
+  openIPForm(config, 2, null, displayServiceName(service));
 }
 function openBulkServiceConfig() {
   const config = configForNode(selectedDNS());
@@ -1540,10 +1654,10 @@ function openInstallCommand(id) {
   state.modal = {type:"install-command", node, command:installCommand(node, smartMode)};
   renderModal();
 }
-function openIPForm(config = null, step = config ? 2 : 1, existingNode = null) {
+function openIPForm(config = null, step = config ? 2 : 1, existingNode = null, serviceSearch = "") {
   const routes = canonicalRoutesForCatalog(config?.routes || {});
   const defaultProxy = Object.values(routes)[0] || nodeID(proxyNodes()[0]?.id);
-  state.modal = {type:"ip-form", config, existingNode, step, draft:{ip:config?.ip || serverHost(existingNode || {}) || "", note:config?.note || existingNode?.name || "", smart:config?.smart !== false}, routes, defaultProxy, serviceSearch:"", error:""};
+  state.modal = {type:"ip-form", config, existingNode, step, draft:{ip:config?.ip || serverHost(existingNode || {}) || "", note:config?.note || existingNode?.name || "", smart:config?.smart !== false}, routes, defaultProxy, serviceSearch, error:""};
   renderModal();
   if (config?.id) syncMediaCheck(mediaCheckRecord({config_id:nodeID(config.id)}), "read");
 }
@@ -1604,10 +1718,15 @@ async function rotateIPToken(id) {
     toast(t("tokenRotated"), "good");
   } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
 }
-function closeModal() { state.modal = null; renderModal(); }
+function closeModal() {
+  state.modal = null;
+  renderModal();
+  if (state.backgroundPending && !hasActiveDraft()) render();
+}
 
 function renderModal() {
   const root = document.getElementById("modal-root");
+  renderedModal = state.modal;
   if (!state.modal) { root.innerHTML = ""; return; }
   if (state.modal.type === "service") root.innerHTML = serviceModalHTML(state.modal.service);
   if (state.modal.type === "service-domains") root.innerHTML = serviceDomainFormHTML(state.modal.service);
@@ -1623,6 +1742,8 @@ function renderModal() {
   if (state.modal.type === "account") root.innerHTML = accountModalHTML();
   if (state.modal.type === "branding") root.innerHTML = brandingModalHTML();
   bindModal();
+  markLoadedServiceIcons(root);
+  if (state.modal.type === "ip-form" && state.modal.step === 2) updateIPSaveControls(state.modal);
 }
 
 function brandingModalHTML() {
@@ -1719,8 +1840,10 @@ function ipFormHTML() {
   const services = state.catalog;
   const selectedCount = Object.keys(modal.routes).length;
   return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
-     const selectedProxy = serviceRouteEntry({routes:modal.routes}, service)?.value || ""; const checked = !!selectedProxy; const audit = mediaServiceState(state.mediaChecks.get(`config:${nodeID(modal.config?.id)}`), service) || auditResultState(serviceResult(modal.config, service));
-    const canAudit = checked && !!modal.config?.id;
+    const selectedProxy = serviceRouteEntry({routes:modal.routes}, service)?.value || "";
+    const checked = !!selectedProxy;
+    const canAudit = canAuditIPRoute(modal, service);
+    const audit = ipDraftAuditState(modal, service);
     return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "立即实测" : "Test now"}</button></div></div></article>`;
   }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 自动同步配置；实测只更新结果，不会改动您选择的节点" : "The Agent syncs configuration; audits update reports without changing your selected node"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
 }
@@ -1794,12 +1917,14 @@ function bindModal() {
     const count = document.getElementById("ip-selected-count");
     const save = document.getElementById("ip-save-config");
     if (count) count.textContent = String(selectedCount);
-    if (save) save.disabled = selectedCount === 0;
+    if (save) save.disabled = !canSaveIPConfig(state.modal);
+    updateIPAuditControls(state.modal);
   }));
   document.querySelectorAll(".ip-service-proxy").forEach(select => select.addEventListener("change", () => {
     if (select.closest(".ip-service-option")?.querySelector(".ip-service-check")?.checked) {
       state.modal.routes[select.dataset.serviceId] = select.value;
       applyLinkedRouteProxy(select.dataset.serviceId, select.value, true);
+      updateIPAuditControls(state.modal);
     }
   }));
   document.querySelectorAll(".ip-service-audit").forEach(button => button.addEventListener("click", () => triggerIPServiceAudit(button.dataset.serviceId)));
@@ -2041,33 +2166,54 @@ function filterIPServiceOptions() {
   if (empty) empty.hidden = visible !== 0;
 }
 
-async function ensureRule(service, proxyId) {
+async function ensureRule(service) {
+  const token = state.token;
   let rule = serviceRule(service);
   if (rule) return rule;
-  const payload = {name:`Stream · ${service.name}`, type:"RULE-SET", source_type:"all", source_val:"", target_type:"node", target_val:proxyId, value:`${location.origin}/enhancer/rules/${service.id}.list`, enabled:true};
+  const payload = {name:`Stream · ${service.name}`, type:"RULE-SET", source_type:"all", source_val:"", target_type:"group", target_val:"__prism_enhancer_direct__", value:`${location.origin}/enhancer/rules/${service.id}.list`, enabled:true};
   const response = await api("/api/rules", {method:"POST", body:JSON.stringify(payload)});
+  if (state.token !== token) return null;
   rule = response?.id ? response : null;
   if (!rule) {
-    const rules = await api("/api/rules"); state.rules = Array.isArray(rules) ? rules : state.rules; rule = serviceRule(service);
+    const rules = await api("/api/rules");
+    if (state.token !== token) return null;
+    state.rules = Array.isArray(rules) ? rules : state.rules; rule = serviceRule(service);
   } else state.rules.push(rule);
   if (!rule) throw new Error(t("failed"));
   toast(t("ruleCreated"), "good");
   return rule;
 }
 
-async function assignService() {
-  const service = state.modal.service; const proxyId = state.modal.proxyId;
-  try {
-    const rule = await ensureRule(service, proxyId);
-    await api(`/api/rules/${rule.id}/override`, {method:"POST", body:JSON.stringify({dns_node_id:state.dnsNodeId, proxy_node_id:proxyId})});
-    toast(t("switched"), "good"); closeModal(); await loadAll(true);
-  } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
-}
+function assignService() { return changeServiceRoute(false); }
+function resetService() { return changeServiceRoute(true); }
 
-async function resetService() {
-  const rule = serviceRule(state.modal.service); if (!rule) return;
-  try { await api(`/api/rules/${rule.id}/override`, {method:"POST", body:JSON.stringify({dns_node_id:state.dnsNodeId, proxy_node_id:""})}); toast(t("resetDone"), "good"); closeModal(); await loadAll(true); }
-  catch (error) { toast(cleanErrorMessage(error.message), "error"); }
+async function changeServiceRoute(reset) {
+  const modal = state.modal;
+  const token = state.token;
+  const dnsNodeId = modal?.dnsNodeId;
+  const proxyId = reset ? "" : modal?.proxyId;
+  if (modal?.type !== "service" || modal.busy || !dnsNodeId || (!reset && !proxyId)) return;
+  if (dnsNodeId !== nodeID(state.dnsNodeId) || configForNode(selectedDNS())) {
+    toast(state.lang === "zh" ? "目标已变更，请重新打开服务配置。" : "The target changed. Reopen the service configuration.", "warn");
+    return;
+  }
+  modal.busy = true;
+  const controls = [...document.querySelectorAll("#modal-root button:not(:disabled), #modal-root input:not(:disabled)")];
+  controls.forEach(control => { control.disabled = true; });
+  try {
+    const rule = reset ? serviceRule(modal.service) : await ensureRule(modal.service);
+    if (!rule || state.token !== token) return;
+    await api(`/api/rules/${rule.id}/override`, {method:"POST", body:JSON.stringify({dns_node_id:dnsNodeId, proxy_node_id:proxyId})});
+    if (state.token !== token) return;
+    if (state.modal === modal) closeModal();
+    toast(state.lang === "zh" ? "线路设置已保存，等待节点同步" : "Route settings saved; waiting for node sync", "good");
+    await loadAll(true);
+  } catch (error) {
+    if (state.token === token) toast(cleanErrorMessage(error.message), "error");
+  } finally {
+    modal.busy = false;
+    controls.forEach(control => { control.disabled = false; });
+  }
 }
 
 function serverHost(node) {
@@ -2126,65 +2272,102 @@ function submitIPForm(event) {
   renderModal();
 }
 
+function canSaveIPConfig(modal) {
+  return !modal.busy && (Boolean(modal.config) || Object.values(modal.routes).some(Boolean));
+}
+
+function canAuditIPRoute(modal, service) {
+  if (!modal.config?.id || !service) return false;
+  const config = state.ipConfigs.find(item => nodeID(item.id) === nodeID(modal.config.id)) || modal.config;
+  const saved = nodeID(serviceRouteEntry(config, service)?.value);
+  return Boolean(saved && saved === nodeID(serviceRouteEntry({routes:modal.routes}, service)?.value));
+}
+
+function ipDraftAuditState(modal, service) {
+  if (!canAuditIPRoute(modal, service)) return auditResultState("");
+  const config = state.ipConfigs.find(item => nodeID(item.id) === nodeID(modal.config.id)) || modal.config;
+  return targetMediaServiceState(config, service) || auditResultState(serviceResult(config, service));
+}
+
+function updateIPAuditControls(modal) {
+  const services = new Map(state.catalog.map(service => [service.id, service]));
+  document.querySelectorAll(".ip-service-audit").forEach(button => {
+    const service = services.get(button.dataset.serviceId);
+    button.disabled = !canAuditIPRoute(modal, service);
+    button.title = !button.disabled ? "" : state.lang === "zh" ? "请先保存线路配置再实测" : "Save the route before testing";
+    const badge = button.parentElement.querySelector(".badge");
+    const audit = ipDraftAuditState(modal, service);
+    badge.className = `badge ${audit.kind}`;
+    badge.textContent = audit.label;
+    badge.title = audit.raw || audit.detail || audit.label;
+  });
+}
+
+function updateIPSaveControls(modal) {
+  if (state.modal !== modal) return;
+  const form = document.getElementById("ip-form");
+  form?.setAttribute("aria-busy", String(Boolean(modal.busy)));
+  const body = form?.querySelector(".ip-config-body");
+  if (body) body.inert = Boolean(modal.busy);
+  const back = document.getElementById("ip-back");
+  if (back) back.disabled = Boolean(modal.busy);
+  const save = document.getElementById("ip-save-config");
+  if (save) {
+    save.disabled = !canSaveIPConfig(modal);
+    save.textContent = modal.busy ? (state.lang === "zh" ? "正在保存…" : "Saving…")
+      : state.lang === "zh" ? "保存并下发" : "Save and deliver";
+  }
+  const error = form?.querySelector(".form-error");
+  if (error) error.textContent = modal.error || "";
+}
+
 async function saveIPConfig() {
   const modal = state.modal;
-  if (!modal || modal.type !== "ip-form") return;
-  if (!Object.keys(modal.routes).length) return;
+  if (!modal || modal.type !== "ip-form" || !canSaveIPConfig(modal)) return;
+  const token = state.token;
   const editing = !!modal.config;
-  modal.routes = canonicalRoutesForCatalog(modal.routes);
-  const payload = {...modal.draft, routes:modal.routes};
+  const payload = {...modal.draft, routes:canonicalRoutesForCatalog(modal.routes)};
+  modal.busy = true;
+  modal.error = "";
+  updateIPSaveControls(modal);
   try {
-    if (!editing) {
-      const existing = (Array.isArray(state.ipConfigs) ? state.ipConfigs : [])
-        .find(config => normalizeIP(config.ip) === normalizeIP(modal.draft.ip));
-      if (existing) {
-        modal.config = existing;
-        modal.routes = {...(existing.routes || {}), ...modal.routes};
-        return saveIPConfig();
-      }
-    }
+    if (!editing && state.ipConfigs.some(config => normalizeIP(config.ip) === normalizeIP(payload.ip))) throw new Error("IP already exists");
     const path = editing ? `/enhancer/api/ip-configs/${encodeURIComponent(modal.config.id)}` : "/enhancer/api/ip-configs";
     const config = await api(path, {method:editing ? "PUT" : "POST", body:JSON.stringify(payload)});
+    if (state.token !== token) return;
+    if (!config?.id || (!editing && !config.enrollment_token)) throw new Error(t("nodeInvalidResponse"));
     const linkedRoutes = Object.keys(config.routes || {}).filter(serviceId => payload.routes?.[serviceId] && nodeID(payload.routes[serviceId]) !== nodeID(config.routes[serviceId])).length;
-    state.modal = editing ? null : {type:"ip-script", config, command:ipScriptCommand(config)};
-    await loadAll(true);
-    renderModal();
-    toast(linkedRoutes ? (state.lang === "zh" ? `保存成功；${linkedRoutes} 个共享域名服务已自动联动到同一解锁机` : `Saved; ${linkedRoutes} overlapping-domain services were linked to one proxy`) : t("saved"), "good");
-  } catch (error) {
-    if (!editing && /IP.*存在|already exists/i.test(error.message || "")) {
-      try {
-        const configs = await api("/enhancer/api/ip-configs");
-        const existing = (Array.isArray(configs) ? configs : []).find(config => normalizeIP(config.ip) === normalizeIP(modal.draft.ip));
-        if (existing) {
-          modal.config = existing;
-          modal.routes = {...(existing.routes || {}), ...modal.routes};
-          return saveIPConfig();
-        }
-      } catch (recoveryError) {
-        error = recoveryError;
-      }
-    }
-    if (state.modal === modal) {
-      modal.error = cleanErrorMessage(error.message);
+    const previous = state.ipConfigs.findIndex(item => nodeID(item.id) === nodeID(config.id));
+    state.ipConfigs = previous < 0 ? [...state.ipConfigs, config] : state.ipConfigs.map((item, index) => index === previous ? config : item);
+    const ownsModal = state.modal === modal;
+    if (ownsModal) {
+      state.modal = editing ? null : {type:"ip-script", config, command:ipScriptCommand(config)};
       renderModal();
-    } else {
-      toast(cleanErrorMessage(error.message), "error");
     }
+    if (ownsModal || !hasActiveDraft()) render();
+    else { state.backgroundPending = true; updateBackgroundIndicator(); }
+    const delivery = state.lang === "zh" ? "配置已保存，等待节点同步" : "Configuration saved; waiting for node sync";
+    toast(linkedRoutes ? `${delivery} · ${state.lang === "zh" ? `${linkedRoutes} 项共享域名服务已联动` : `${linkedRoutes} overlapping-domain services linked`}` : delivery, "good");
+    await loadAll(true);
+  } catch (error) {
+    if (state.token !== token) return;
+    const message = !editing && /IP.*存在|already exists/i.test(error.message || "")
+      ? (state.lang === "zh" ? "此 IP 已存在，请从列表打开原配置编辑。" : "This IP already exists. Open its existing configuration to edit it.")
+      : cleanErrorMessage(error.message);
+    if (state.modal === modal) {
+      modal.error = message;
+    } else {
+      toast(message, "error");
+    }
+  } finally {
+    modal.busy = false;
+    updateIPSaveControls(modal);
   }
 }
 
 function updateIPServiceAuditUI(config) {
   if (state.modal?.type !== "ip-form" || nodeID(state.modal.config?.id) !== nodeID(config?.id)) return;
-  document.querySelectorAll(".ip-service-option").forEach(option => {
-    const serviceId = option.dataset.serviceId;
-    const service = state.catalog.find(item => item.id === serviceId);
-    const badge = option.querySelector(".service-audit .badge");
-    if (!badge) return;
-    const audit = mediaServiceState(state.mediaChecks.get(`config:${nodeID(config.id)}`), service) || auditResultState(serviceResult(config, service));
-    badge.className = `badge ${audit.kind}`;
-    badge.textContent = audit.label;
-    badge.title = audit.raw || audit.detail || audit.label;
-  });
+  updateIPAuditControls(state.modal);
 }
 
 async function triggerIPServiceAudit(serviceId) {
@@ -2192,6 +2375,7 @@ async function triggerIPServiceAudit(serviceId) {
   const configID = modal?.config?.id;
   if (!configID) return;
   const service = state.catalog.find(item => item.id === serviceId);
+  if (!canAuditIPRoute(modal, service)) return;
   openMediaChecks([{config_id:nodeID(configID)}], service);
 }
 
@@ -2403,13 +2587,25 @@ function mediaServiceState(record, service) {
   const label = record.job.status === "completed" ? t("mediaNotCovered") : record.job.status === "failed" ? t("mediaIncomplete") : t("mediaAwaiting");
   return {kind:"warn", label, raw:label, detail:label};
 }
+function targetMediaServiceState(config, service) {
+  if (!config?.id) return null;
+  const record = state.mediaChecks.get(`config:${nodeID(config.id)}`);
+  return String(record?.job?.generation || "") === String(config.service_audit_requested_at || "")
+    ? mediaServiceState(record, service) : null;
+}
 const mediaRetryDelays = [2000, 5000, 15000];
 const mediaJobStatuses = {queued:"mediaQueued", running:"mediaRunning", completed:"mediaCompleted", failed:"mediaFailed"};
 
 function mediaCheckRecord(payload) {
   const key = payload.node_id ? `node:${payload.node_id}` : `config:${payload.config_id}`;
-  if (!state.mediaChecks.has(key)) state.mediaChecks.set(key, {key, payload, job:null, busy:false, error:"", createError:"", retries:0, timer:null});
-  return state.mediaChecks.get(key);
+  const config = payload.config_id && state.ipConfigs.find(item => nodeID(item.id) === payload.config_id);
+  const generation = config ? String(config.service_audit_requested_at || "") : null;
+  const record = state.mediaChecks.get(key);
+  if (record && record.generation === generation) return record;
+  if (record) clearTimeout(record.timer);
+  const fresh = {key, payload, generation, job:null, busy:false, error:"", createError:"", retries:0, timer:null};
+  state.mediaChecks.set(key, fresh);
+  return fresh;
 }
 function mediaRecordCurrent(record) { return !!state.token && state.mediaChecks.get(record.key) === record; }
 function mediaRequestStatus(record) {
@@ -2440,6 +2636,7 @@ async function syncMediaCheck(record, operation = "latest") {
     } else if (!creating) {
       const query = new URLSearchParams(record.payload);
       job = await api(`/enhancer/api/media-checks?${query}`, {cache:"no-store"});
+      if (job?.id && record.generation !== null && String(job.generation || "") !== record.generation) job = null;
       creating = job === null && operation === "latest" && !record.job && !record.createError;
     }
     if (creating && mediaRecordCurrent(record)) {
@@ -2656,12 +2853,11 @@ function toast(message, type = "") {
   const item = document.createElement("div"); item.className = `toast ${type}`; item.textContent = message; root.appendChild(item); setTimeout(() => item.remove(), 3200);
 }
 
-async function initialize() {
+function initialize() {
   if (!["services", "nodes", "ips", "sync", "audit", "alerts", "settings"].includes(state.tab)) state.tab = "services";
-  bindNavigation();
   document.addEventListener("visibilitychange", syncNodeInventoryPolling);
-  await loadBranding();
   render();
+  loadBranding();
   if (state.token) loadAll();
 }
 initialize();

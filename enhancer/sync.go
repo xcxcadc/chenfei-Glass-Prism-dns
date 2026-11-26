@@ -80,6 +80,10 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 		delete(overrides, cidr)
 	}
 
+	record, ok = app.ipStore.Record(record.ID)
+	if !ok || record.NodeSecret != secret {
+		return nil
+	}
 	routes := cloneStringMap(record.Routes)
 	proxyPeers := app.effectiveProxyPeers(record)
 	serviceIDs := make([]string, 0, len(routes))

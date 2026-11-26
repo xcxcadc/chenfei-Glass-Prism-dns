@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
@@ -90,6 +92,79 @@ func TestAgentSyncRestoresPersistentIPRoutes(t *testing.T) {
 	}
 	if check, _ := rule["check"].(bool); !check {
 		t.Fatalf("managed DNS rule must retain its Smart probe: %+v", rule)
+	}
+}
+
+func TestAgentSyncUsesRouteSavedDuringCatalogRefresh(t *testing.T) {
+	catalogStarted := make(chan struct{})
+	releaseCatalog := make(chan struct{}, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/sync":
+			_, _ = writer.Write([]byte(`{"role":"dns","rules":{},"rule_overrides":{}}`))
+		case "/catalog":
+			close(catalogStarted)
+			<-releaseCatalog
+			http.NotFound(writer, request)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+	defer close(releaseCatalog)
+	customStore, _ := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	service, err := customStore.Upsert(Service{Name: "Example", Domains: []string{"route.example"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ipStore, _ := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	config, err := ipStore.Save(IPConfig{
+		IP: "203.0.113.10", DNSNodeID: "dns-1", Routes: map[string]string{service.ID: "old-proxy"},
+	}, "node-secret", map[string][]string{"old-proxy": {"198.51.100.10"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := NewApp(upstream.URL, NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore), customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	request := httptest.NewRequest(http.MethodGet, "/api/sync", nil).WithContext(ctx)
+	request.Header.Set("Authorization", "Bearer node-secret")
+	response := httptest.NewRecorder()
+	completed := make(chan struct{})
+	go func() {
+		app.Handler().ServeHTTP(response, request)
+		close(completed)
+	}()
+	select {
+	case <-catalogStarted:
+	case <-ctx.Done():
+		t.Fatal("sync did not reach catalog refresh")
+	}
+	config.Routes = map[string]string{service.ID: "new-proxy"}
+	if _, err := ipStore.Save(config, "node-secret", map[string][]string{"new-proxy": {"198.51.100.20"}}); err != nil {
+		t.Fatal(err)
+	}
+	releaseCatalog <- struct{}{}
+	select {
+	case <-completed:
+	case <-ctx.Done():
+		t.Fatal("sync did not return")
+	}
+	var payload struct {
+		Rules map[string]struct {
+			IPs []string `json:"ips"`
+		} `json:"rules"`
+		RuleOverrides map[string]string `json:"rule_overrides"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || response.Code != http.StatusOK {
+		t.Fatalf("unexpected sync response: %d, %v", response.Code, err)
+	}
+	route := payload.Rules["enhancer:"+service.ID+":route.example"]
+	if payload.RuleOverrides["route.example"] != "new-proxy" || len(route.IPs) != 1 || route.IPs[0] != "198.51.100.20" {
+		t.Fatalf("sync replayed the old route: %s", response.Body.String())
 	}
 }
 

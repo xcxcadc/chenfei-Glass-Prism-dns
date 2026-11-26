@@ -104,6 +104,40 @@ func TestIPConfigStoreTrafficLifecycle(t *testing.T) {
 	}
 }
 
+func TestIPConfigStoreSavePreservesLatestCountersAndInvalidatesChangedRouteHealth(t *testing.T) {
+	store, err := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := store.Save(IPConfig{IP: "203.0.113.30", DNSNodeID: "dns-a", Routes: map[string]string{"netflix": "proxy-a"}}, "node-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	health := ClientHealth{DNSReady: true, SystemDNSReady: true, RoutesReady: true, HealthyRoutes: 2, ExpectedRoutes: 2}
+	if _, err := store.UpdateClientReport(draft.EnrollmentToken, 100, 200, health); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateClientReport(draft.EnrollmentToken, 150, 260, health); err != nil {
+		t.Fatal(err)
+	}
+	draft.Note = "edit with an older snapshot"
+	saved, err := store.Save(draft, "node-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.TrafficRXBytes != 50 || saved.TrafficTXBytes != 60 || saved.TrafficUpdatedAt == nil || !saved.RoutesReady {
+		t.Fatalf("note-only save regressed traffic or live health: %+v", saved)
+	}
+	draft.Routes = map[string]string{"netflix": "proxy-b"}
+	saved, err = store.Save(draft, "node-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.TrafficRXBytes != 50 || saved.TrafficTXBytes != 60 || saved.HealthUpdatedAt != nil || saved.RoutesReady {
+		t.Fatalf("route switch must retain traffic without showing the old route as active: %+v", saved)
+	}
+}
+
 func TestIPConfigStorePreservesDualStackProxyPeers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ip-configs.json")
 	data, err := json.Marshal([]ipConfigRecord{{

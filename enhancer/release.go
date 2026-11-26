@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-const uiVersion = "1.5.39"
+const uiVersion = "1.5.40"
 const prismSourceRef = "v" + uiVersion
 
 func prismRawURL(file string) string {

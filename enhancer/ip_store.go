@@ -178,6 +178,9 @@ func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...m
 	record := ipConfigRecord{IPConfig: config, NodeSecret: secret}
 	if existing, ok := store.configs[config.ID]; ok {
 		config.CreatedAt = existing.CreatedAt
+		config.TrafficRXBytes = existing.TrafficRXBytes
+		config.TrafficTXBytes = existing.TrafficTXBytes
+		config.TrafficUpdatedAt = existing.TrafficUpdatedAt
 		record.LastRXBytes = existing.LastRXBytes
 		record.LastTXBytes = existing.LastTXBytes
 		record.ProxyPeers = cloneProxyPeers(existing.ProxyPeers)
@@ -185,11 +188,20 @@ func (store *IPConfigStore) Save(config IPConfig, secret string, proxyPeers ...m
 			record.ProxyPeers = validProxyPeers(proxyPeers[0])
 		}
 		peersUnchanged := len(proxyPeers) == 0 || proxyPeersEqual(existing.ProxyPeers, record.ProxyPeers)
-		if stringMapEqual(existing.Routes, config.Routes) && peersUnchanged {
+		if stringMapEqual(existing.Routes, config.Routes) && peersUnchanged && config.DNSNodeID == existing.DNSNodeID && secret == existing.NodeSecret && config.Smart == existing.Smart {
+			config.DNSReady = existing.DNSReady
+			config.SystemDNSReady = existing.SystemDNSReady
+			config.RoutesReady = existing.RoutesReady
+			config.HealthyRoutes = existing.HealthyRoutes
+			config.ExpectedRoutes = existing.ExpectedRoutes
+			config.DNSBackend = existing.DNSBackend
+			config.HealthMessage = existing.HealthMessage
+			config.HealthUpdatedAt = existing.HealthUpdatedAt
 			config.ServiceResults = existing.ServiceResults
 			config.ServiceAuditedAt = existing.ServiceAuditedAt
 			config.ServiceAuditRequestedAt = existing.ServiceAuditRequestedAt
 		} else {
+			config.clearHealthReport()
 			config.ServiceResults = nil
 			config.ServiceAuditedAt = nil
 			auditRequestedAt := monotonicTimestamp(now, existing.ServiceAuditRequestedAt)
@@ -475,6 +487,7 @@ func (store *IPConfigStore) NormalizeRouteConflicts(services []Service) (int, er
 func (store *IPConfigStore) applyNormalizedRoutes(record *ipConfigRecord, routes map[string]string, now time.Time) {
 	updated := record.IPConfig
 	updated.Routes = cloneStringMap(routes)
+	updated.clearHealthReport()
 	updated.ServiceResults = nil
 	updated.ServiceAuditedAt = nil
 	auditRequestedAt := monotonicTimestamp(now, record.ServiceAuditRequestedAt)
@@ -483,6 +496,17 @@ func (store *IPConfigStore) applyNormalizedRoutes(record *ipConfigRecord, routes
 	record.IPConfig = updated
 	pruneUnusedProxyPeers(record)
 	record.TrafficPeers = flattenProxyPeers(record.ProxyPeers)
+}
+
+func (config *IPConfig) clearHealthReport() {
+	config.DNSReady = false
+	config.SystemDNSReady = false
+	config.RoutesReady = false
+	config.HealthyRoutes = 0
+	config.ExpectedRoutes = 0
+	config.DNSBackend = ""
+	config.HealthMessage = ""
+	config.HealthUpdatedAt = nil
 }
 
 func (store *IPConfigStore) ClearTraffic(id string) (IPConfig, error) {

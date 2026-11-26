@@ -13,8 +13,11 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
+
+var ipConfigWriteMu sync.Mutex
 
 type ipConfigRequest struct {
 	IP                string            `json:"ip"`
@@ -22,6 +25,17 @@ type ipConfigRequest struct {
 	Smart             bool              `json:"smart"`
 	Routes            map[string]string `json:"routes"`
 	ExistingDNSNodeID string            `json:"existing_dns_node_id,omitempty"`
+}
+
+func decodeIPConfigRequest(request *http.Request, payload *ipConfigRequest) error {
+	if err := decodeJSON(request, payload); err != nil {
+		return err
+	}
+	payload.Note = strings.TrimSpace(payload.Note)
+	if len(payload.Note) > 80 {
+		return errors.New("note is too long")
+	}
+	return nil
 }
 
 type trafficReportRequest struct {
@@ -204,6 +218,8 @@ func (app *App) handleIPConfig(writer http.ResponseWriter, request *http.Request
 			methodNotAllowed(writer, http.MethodPost)
 			return
 		}
+		ipConfigWriteMu.Lock()
+		defer ipConfigWriteMu.Unlock()
 		config, err := app.ipStore.RotateEnrollmentToken(record.ID)
 		if errors.Is(err, os.ErrNotExist) {
 			writeJSON(writer, http.StatusNotFound, map[string]string{"error": "IP 配置不存在"})
@@ -216,11 +232,27 @@ func (app *App) handleIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusOK, config)
 		return
 	}
+	var payload ipConfigRequest
+	if request.Method == http.MethodPut {
+		if err := decodeIPConfigRequest(request, &payload); err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	if request.Method == http.MethodPut || request.Method == http.MethodDelete {
+		ipConfigWriteMu.Lock()
+		defer ipConfigWriteMu.Unlock()
+		record, ok = app.ipStore.Record(id)
+		if !ok {
+			writeJSON(writer, http.StatusNotFound, map[string]string{"error": "IP 配置不存在"})
+			return
+		}
+	}
 	switch request.Method {
 	case http.MethodGet:
 		writeJSON(writer, http.StatusOK, record.public())
 	case http.MethodPut:
-		app.updateIPConfig(writer, request, record)
+		app.updateIPConfig(writer, request, record, payload)
 	case http.MethodDelete:
 		app.deleteIPConfig(writer, request, record)
 	default:
@@ -556,7 +588,7 @@ func preferredProbeDomains(service Service) []string {
 
 func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request) {
 	var payload ipConfigRequest
-	if err := decodeJSON(request, &payload); err != nil {
+	if err := decodeIPConfigRequest(request, &payload); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -565,6 +597,8 @@ func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "请输入有效的 IPv4 或 IPv6 地址"})
 		return
 	}
+	ipConfigWriteMu.Lock()
+	defer ipConfigWriteMu.Unlock()
 	for _, existing := range app.ipStore.List() {
 		if existing.IP == payload.IP {
 			writeJSON(writer, http.StatusConflict, map[string]string{"error": "该 IP 已存在"})
@@ -652,12 +686,7 @@ func (app *App) resolveIPConfigNode(ctx context.Context, authorization string, p
 	return "", "", "", false, errors.New("DNS node to adopt was not found")
 }
 
-func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request, record ipConfigRecord) {
-	var payload ipConfigRequest
-	if err := decodeJSON(request, &payload); err != nil {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
+func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request, record ipConfigRecord, payload ipConfigRequest) {
 	var err error
 	record, err = app.reconcileIPConfigNode(request.Context(), request.Header.Get("Authorization"), record)
 	if err != nil {
@@ -808,12 +837,27 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		}
 	}
 	catalogServices := app.catalog.Snapshot(ctx, false).Services
+	selectedPeers := make(map[string][]string)
 	for serviceID, proxyID := range current {
-		if strings.TrimSpace(proxyID) != "" {
-			if _, _, ok := canonicalServiceRouteID(serviceID, catalogServices); !ok {
-				return routeApplication{}, routeInputError("服务不存在或域名目录尚未同步: " + serviceID)
-			}
+		proxyID = strings.TrimSpace(proxyID)
+		if proxyID == "" {
+			continue
 		}
+		if _, _, ok := canonicalServiceRouteID(serviceID, catalogServices); !ok {
+			return routeApplication{}, routeInputError("服务不存在或域名目录尚未同步: " + serviceID)
+		}
+		if _, validated := selectedPeers[proxyID]; validated {
+			continue
+		}
+		proxyNode, exists := proxyNodes[proxyID]
+		if !exists {
+			return routeApplication{}, routeInputError("解锁机不存在: " + proxyID)
+		}
+		peers := nodePublicIPv4s(proxyNode)
+		if len(peers) == 0 {
+			return routeApplication{}, routeInputError("解锁机没有可用公网 IPv4，DNS 解锁路由无法建立: " + proxyID)
+		}
+		selectedPeers[proxyID] = peers
 	}
 	previous, _ = canonicalizeServiceRoutes(previous, catalogServices)
 	current, _ = normalizeConflictingRoutes(previous, current, catalogServices)
@@ -877,15 +921,8 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 	proxyPeers := make(map[string][]string)
 	serviceIDs := make([]string, 0, len(current))
 	for serviceID, proxyID := range current {
-		proxyNode, exists := proxyNodes[proxyID]
-		if !exists {
-			return routeApplication{}, routeInputError("解锁机不存在: " + proxyID)
-		}
-		peers := nodePublicIPv4s(proxyNode)
-		if len(peers) == 0 {
-			return routeApplication{}, routeInputError("解锁机没有可用公网 IPv4，DNS 解锁路由无法建立: " + proxyID)
-		}
-		proxyPeers[proxyID] = append([]string(nil), peers...)
+		peers := selectedPeers[proxyID]
+		proxyPeers[proxyID] = peers
 		for _, peer := range peers {
 			trafficPeerSet[peer] = struct{}{}
 		}
