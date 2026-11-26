@@ -32,7 +32,7 @@ func newReleaseTestHandler(t *testing.T) http.Handler {
 }
 
 func TestReleaseAssetsUsePublishedTag(t *testing.T) {
-	if uiVersion != "1.5.37" || prismSourceRef != "v"+uiVersion {
+	if uiVersion != "1.5.38" || prismSourceRef != "v"+uiVersion {
 		t.Fatalf("release version mismatch: UI %q, source %q", uiVersion, prismSourceRef)
 	}
 	handler := newReleaseTestHandler(t)
@@ -130,7 +130,7 @@ func TestReleaseMediaUIKeepsFailureDetailsAndRawResults(t *testing.T) {
 		"title=\"${escapeHTML(status.tooltip || status.detail)}\"",
 		`result.textContent = String(raw ?? "")`,
 		`card.querySelector(".media-new").addEventListener("click", () => syncMediaCheck(record, "create"))`,
-		`card.querySelector(".media-reconnect").addEventListener("click", () => syncMediaCheck(record))`,
+		`card.querySelector(".media-reconnect").addEventListener("click", () => syncMediaCheck(record, "resume"))`,
 	} {
 		if !strings.Contains(response.Body.String(), fragment) {
 			t.Errorf("served media UI source is missing %q", fragment)

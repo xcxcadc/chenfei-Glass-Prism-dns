@@ -112,6 +112,43 @@ func TestAgentSyncIgnoresUnknownNodeSecret(t *testing.T) {
 	}
 }
 
+func TestAgentSyncRemovesManagedRulesAfterLastRouteIsCleared(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, _ = writer.Write([]byte(`{"role":"dns","rules":{"enhancer:removed:old.example":{"name":"enhancer:removed","pattern":"old.example"},"unmanaged":{"name":"unmanaged","pattern":"direct.example"}},"rule_overrides":{"old.example":"removed-proxy","direct.example":"other-proxy"}}`))
+	}))
+	defer upstream.Close()
+	customStore, err := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ipStore, err := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ipStore.Save(IPConfig{IP: "203.0.113.10", DNSNodeID: "dns-1", NodeName: "Target"}, "node-secret"); err != nil {
+		t.Fatal(err)
+	}
+	catalog := NewCatalogManager("http://127.0.0.1:1/unavailable", upstream.Client(), customStore)
+	app, err := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/sync", nil)
+	request.Header.Set("Authorization", "Bearer node-secret")
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	var payload struct {
+		Rules         map[string]json.RawMessage `json:"rules"`
+		RuleOverrides map[string]string          `json:"rule_overrides"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || response.Code != http.StatusOK {
+		t.Fatalf("unexpected response: %d, %v", response.Code, err)
+	}
+	if len(payload.Rules) != 1 || payload.Rules["unmanaged"] == nil || len(payload.RuleOverrides) != 1 || payload.RuleOverrides["direct.example"] != "other-proxy" {
+		t.Fatalf("expected only unmanaged rules and overrides: %+v", payload)
+	}
+}
+
 func TestEffectiveProxyPeersMigratesSingleProxyConfigWithIPv4Priority(t *testing.T) {
 	record := ipConfigRecord{IPConfig: IPConfig{
 		Routes:       map[string]string{"service-a": "proxy-1", "service-b": "proxy-1"},

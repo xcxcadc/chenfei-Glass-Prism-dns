@@ -59,6 +59,9 @@ func NewMediaCheckStore(path string) (*MediaCheckStore, error) {
 	if err := json.Unmarshal(data, &store.jobs); err != nil {
 		return nil, err
 	}
+	if store.jobs == nil {
+		store.jobs = make(map[string]MediaCheckJob)
+	}
 	for id, job := range store.jobs {
 		if job.Status == "running" {
 			now := time.Now().UTC()

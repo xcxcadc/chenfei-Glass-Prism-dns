@@ -3,7 +3,7 @@ set -euo pipefail
 
 UPSTREAM_REPO="${PRISM_UPSTREAM_REPO:-mslxi/Liquid-Glass-Prism-dns}"
 ENHANCER_REPO="${PRISM_ENHANCER_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.37}"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.38}"
 INSTALL_DIR="${PRISM_INSTALL_DIR:-/opt/prism}"
 DATA_DIR="${PRISM_ENHANCER_DATA_DIR:-/var/lib/prism-enhancer}"
 PUBLIC_PORT="${PRISM_PORT:-8080}"

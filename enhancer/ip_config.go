@@ -52,6 +52,19 @@ type routeApplication struct {
 	Routes       map[string]string
 }
 
+type routeInputError string
+
+func (err routeInputError) Error() string { return string(err) }
+
+func writeIPRouteError(writer http.ResponseWriter, err error) {
+	status := http.StatusBadGateway
+	var invalid routeInputError
+	if errors.As(err, &invalid) {
+		status = http.StatusUnprocessableEntity
+	}
+	writeJSON(writer, status, map[string]string{"error": err.Error()})
+}
+
 func (app *App) handleTrafficReport(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		methodNotAllowed(writer, http.MethodPost)
@@ -568,7 +581,7 @@ func (app *App) createIPConfig(writer http.ResponseWriter, request *http.Request
 		if !externalNode {
 			_ = app.upstreamJSON(request.Context(), request.Header.Get("Authorization"), http.MethodDelete, "/api/nodes/"+url.PathEscape(dnsNodeID), nil, nil)
 		}
-		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeIPRouteError(writer, err)
 		return
 	}
 	config, err := app.ipStore.Save(IPConfig{IP: payload.IP, Note: payload.Note, DNSNodeID: dnsNodeID, NodeName: nodeName, ExternalDNSNode: externalNode, Smart: payload.Smart, Routes: application.Routes, TrafficPeers: application.TrafficPeers}, secret, application.ProxyPeers)
@@ -653,7 +666,7 @@ func (app *App) updateIPConfig(writer http.ResponseWriter, request *http.Request
 	}
 	application, err := app.applyIPRoutes(request.Context(), request.Header.Get("Authorization"), record.DNSNodeID, record.Routes, payload.Routes, publicBaseURL(request))
 	if err != nil {
-		writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		writeIPRouteError(writer, err)
 		return
 	}
 	record.Note = payload.Note
@@ -795,6 +808,13 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		}
 	}
 	catalogServices := app.catalog.Snapshot(ctx, false).Services
+	for serviceID, proxyID := range current {
+		if strings.TrimSpace(proxyID) != "" {
+			if _, _, ok := canonicalServiceRouteID(serviceID, catalogServices); !ok {
+				return routeApplication{}, routeInputError("服务不存在或域名目录尚未同步: " + serviceID)
+			}
+		}
+	}
 	previous, _ = canonicalizeServiceRoutes(previous, catalogServices)
 	current, _ = normalizeConflictingRoutes(previous, current, catalogServices)
 	stalePrevious := stalePreviousRouteIDs(rawPrevious, catalogServices)
@@ -855,24 +875,26 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 	}
 	trafficPeerSet := make(map[string]struct{})
 	proxyPeers := make(map[string][]string)
+	serviceIDs := make([]string, 0, len(current))
 	for serviceID, proxyID := range current {
 		proxyNode, exists := proxyNodes[proxyID]
 		if !exists {
-			return routeApplication{}, fmt.Errorf("解锁机不存在: %s", proxyID)
+			return routeApplication{}, routeInputError("解锁机不存在: " + proxyID)
 		}
 		peers := nodePublicIPv4s(proxyNode)
 		if len(peers) == 0 {
-			return routeApplication{}, fmt.Errorf("解锁机没有可用公网 IPv4，DNS 解锁路由无法建立: %s", proxyID)
+			return routeApplication{}, routeInputError("解锁机没有可用公网 IPv4，DNS 解锁路由无法建立: " + proxyID)
 		}
 		proxyPeers[proxyID] = append([]string(nil), peers...)
 		for _, peer := range peers {
 			trafficPeerSet[peer] = struct{}{}
 		}
-		service, ok := services[serviceID]
-		if !ok {
-			return routeApplication{}, fmt.Errorf("服务不存在: %s", serviceID)
-		}
-		rule, err := prepareRule(service)
+		serviceIDs = append(serviceIDs, serviceID)
+	}
+	sort.Strings(serviceIDs)
+	for _, serviceID := range serviceIDs {
+		proxyID := current[serviceID]
+		rule, err := prepareRule(services[serviceID])
 		if err != nil {
 			return routeApplication{}, err
 		}
@@ -882,7 +904,7 @@ func (app *App) applyIPRoutes(ctx context.Context, authorization, dnsNodeID stri
 		}
 		payload := map[string]string{"dns_node_id": dnsNodeID, "proxy_node_id": proxyID}
 		if err := app.upstreamJSON(ctx, authorization, http.MethodPost, "/api/rules/"+url.PathEscape(ruleID)+"/override", payload, nil); err != nil {
-			return routeApplication{}, err
+			return routeApplication{}, fmt.Errorf("下发 %s 路由: %w", services[serviceID].Name, err)
 		}
 	}
 	for serviceID := range previous {

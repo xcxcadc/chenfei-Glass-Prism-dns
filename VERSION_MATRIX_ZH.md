@@ -1,14 +1,15 @@
 # 版本对应关系
 
-本 Fork 的面板/脚本版本、SNI transport 版本与上游 Agent 版本独立编号，不能混写。下表以已发布的 `v1.5.36` 为例；安装时按所选发布标签获取配套组件，不需要把表中的版本写进安装命令。其他版本见仓库的发布说明。
+本 Fork 的面板/脚本版本、SNI transport 版本与上游 Agent 版本独立编号，不能混写。下表以 `v1.5.38` 为例；安装时按所选发布标签获取配套组件，不需要把表中的版本写进安装命令。其他版本见仓库的发布说明。
 
-| 组件 | `v1.5.36` 发布组合 |
+| 组件 | `v1.5.38` 发布组合 |
 | --- | --- |
-| Panel Enhancer | `1.5.36`（发布标签 `v1.5.36`） |
-| 安装、升级、卸载及客户端脚本 | `v1.5.36` 标签 |
+| Panel Enhancer | `1.5.38`（发布标签 `v1.5.38`） |
+| 安装、升级、卸载及客户端脚本 | `v1.5.38` 标签 |
 | 综合控制脚本与快捷方式 | `dns.sh` → `/usr/local/bin/dns`；`prismctl.sh` 保留兼容跳转，兼容 `PRISMCTL_*` |
-| SNI transport (`prism_transport.sh`) | `2.5.2` |
-| 官方媒体脚本 worker (`prism_media.sh`) | 随 `v1.5.36` 发布，安装为 `/usr/local/bin/prism-media-check` |
+| SNI transport (`prism_transport.sh`) | `2.5.3` |
+| 官方媒体脚本 worker (`prism_media.sh`) | 随发布标签安装为 `/usr/local/bin/prism-media-check` |
+| 节点更新 worker (`prism_node_update.sh`) | 随 transport 安装，验证正式不可变发布；旧节点须先接入一次 |
 | Controller | 上游稳定 Controller |
 | Proxy/DNS 兼容 Agent | 上游 `v1.2.1`（默认校验并锁定） |
 

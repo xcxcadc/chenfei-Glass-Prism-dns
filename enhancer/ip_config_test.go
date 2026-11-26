@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,6 +11,59 @@ import (
 	"testing"
 	"time"
 )
+
+func TestApplyIPRoutesRejectsInvalidSelectionBeforeWrites(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			t.Errorf("invalid route request mutated Controller: %s %s", request.Method, request.URL.Path)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		switch request.URL.Path {
+		case "/api/rules":
+			writeJSON(writer, http.StatusOK, []any{})
+		case "/api/nodes":
+			writeJSON(writer, http.StatusOK, []any{map[string]any{"id": "valid", "role": "proxy", "public_ip": "198.51.100.20"}})
+		case "/catalog":
+			_, _ = writer.Write([]byte("# ---------- > AI Platform\n# > Example\nnameserver /first.example/group\n# > Another Example\nnameserver /second.example/group\n"))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer upstream.Close()
+	customStore, err := NewCustomServiceStore(filepath.Join(t.TempDir(), "services.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ipStore, err := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := NewCatalogManager(upstream.URL+"/catalog", upstream.Client(), customStore)
+	services := catalog.Snapshot(context.Background(), true).Services
+	if len(services) != 2 {
+		t.Fatalf("unexpected fixture catalog: %+v", services)
+	}
+	app, err := NewApp(upstream.URL, catalog, customStore, ipStore, upstream.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, routes := range []map[string]string{
+		{services[0].ID: "valid", services[1].ID: "missing-proxy"},
+		{services[0].ID: "valid", "missing-service": "valid"},
+	} {
+		_, err := app.applyIPRoutes(context.Background(), "Bearer valid", "dns-1", nil, routes, "https://panel.example")
+		var invalid routeInputError
+		if !errors.As(err, &invalid) {
+			t.Fatalf("expected a route validation error, got %v", err)
+		}
+		response := httptest.NewRecorder()
+		writeIPRouteError(response, err)
+		if response.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("route validation should not report gateway failure, got %d", response.Code)
+		}
+	}
+}
 
 func TestIPConfigCreateBootstrapAndTraffic(t *testing.T) {
 	var override map[string]string

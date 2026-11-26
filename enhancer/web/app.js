@@ -26,11 +26,16 @@ const translations = {
     manageCategories: "分类管理", categoryHint: "服务分类只影响整理和筛选，不会修改域名、路由或客户端配置。", newCategory: "新建分类", categoryName: "分类名称", categoryCreated: "分类已创建", categoryDeleted: "分类已删除", editCategory: "分类", serviceCategory: "调整服务分类", restoreCategory: "恢复原分类", originalCategory: "原始分类", useCategory: "使用", builtInCategory: "内置", customCategory: "自定义", categoryInUse: "该分类仍有服务，请先移动这些服务", categoryDeleteConfirm: "删除这个空分类？",
     unlockResults: "完整媒体检测任务", availableServices: "可用服务", unavailableServices: "不可用服务", unlockSourceHint: "官方 check.unlock.media 脚本 0（跨国平台）完整 IPv4 实测，每秒读取任务，输出返回即展示，直到任务结束，无固定时长截止。Global_UnlockTest 分两批输出，等待期间可能没有新增项目。原始 Yes / No / WAF 和地区原样展示；DNS/TLS 探针不作为媒体解锁结果。", checkAgain: "新建检测任务", waitingResults: "等待脚本下一批输出；完整检测仍在运行。",
     mediaNodeSelfCheck: "媒体自检（解锁机本机）",
-    nodeVersions: "节点版本", nodeVersion: "Prism 版本", nodeTransportVersion: "传输组件版本", nodeAgentVersion: "Agent 版本",
-    nodeIPv4: "上报 IPv4", nodeLastSeen: "最近上报", nodeUpdate: "更新节点", nodeRelease: "可用版本",
-    nodeUpdateUnsupported: "此节点暂不支持面板更新。", nodeUpdateBootstrap: "需一次性引导：此节点尚未上报在线更新组件。", nodeUpdateWorkerOffline: "更新组件未近期上报。", nodeUpdateCurrent: "无需更新", nodeUpdateLoading: "正在查询可用版本…",
+    nodeVersions: "节点上报", nodeVersion: "Prism 版本", nodeTransportVersion: "传输组件版本", nodeAgentVersion: "Agent 版本",
+    nodeIPv4: "上报 IPv4", nodeLastSeen: "更新组件最近心跳", nodeUpdate: "更新节点", nodeRelease: "可用版本", nodeNotReported: "未上报",
+    nodeWorkerUnmanaged: "尚未纳管", nodeWorkerReady: "心跳正常", nodeWorkerStale: "心跳已过期", nodeWorkerUnknown: "心跳状态未确认",
+    nodeUpdateUnsupported: "节点未上报可比较的 Prism 版本。", nodeUpdateBootstrap: "需先通过原有安装或升级入口接入。", nodeUpdateWorkerOffline: "请等待更新组件重新上报心跳。", nodeUpdateCurrent: "无需更新", nodeUpdateLoading: "正在查询可用版本…",
     nodeUpdateUnavailable: "当前面板不支持在线更新。", nodeReleaseUnavailable: "暂时无法查询可用版本，稍后自动重试。",
-    nodeInventoryOffline: "节点刷新失败，正在显示上次取得的数据。", nodeUpdateSubmitting: "正在提交…",
+    nodeInventoryLoading: "正在读取节点…", nodeInventoryOffline: "节点刷新失败。", nodeInventoryCached: "正在显示上次取得的数据。", nodeInventoryMissing: "暂无可显示的节点数据。",
+    nodeInvalidResponse: "服务端未返回有效数据。", nodeForbidden: "访问被拒绝，请检查权限。", nodeBadGateway: "上游网关暂不可用，请稍后重试。",
+    nodeUpdateSubmitting: "正在提交…", nodeUpdateSubmitFailed: "提交未获确认",
+    mediaCreateUnconfirmed: "媒体任务建单失败（未确认）", mediaPollFailed: "媒体任务轮询失败", mediaPollRetrying: "稍后自动重查。", mediaPollPaused: "已暂停自动重查。",
+    mediaLookup: "重新查询任务", mediaCreateHint: "服务端可能已创建任务，请先重新查询；不会自动重发建单请求。", mediaMissingHint: "未找到该任务，已保留上次结果。可重新查询。",
     nodeUpdateQueued: "更新已排队", nodeUpdateRunning: "正在更新", nodeUpdateSucceeded: "更新成功", nodeUpdateFailed: "更新失败",
     nodeUpdateRequestedAt: "提交时间", nodeUpdateUpdatedAt: "最后更新", nodeUpdateConfirm: "确定更新此节点？该节点上的 Prism 服务可能会短暂重启。",
     mediaNotStarted: "未启动", mediaExecutionFailed: "执行失败", mediaUnverified: "服务可用性未确认", mediaFailureCause: "失败原因", mediaFailureUnknown: "服务端未返回失败原因", mediaFailureHint: "检测任务失败不代表所有服务不可用；请查看已返回的原始结果，或重试检测。",
@@ -64,11 +69,16 @@ const translations = {
     manageCategories: "Manage categories", categoryHint: "Categories only organize and filter services. Domains, routes, and client configuration remain unchanged.", newCategory: "New category", categoryName: "Category name", categoryCreated: "Category created", categoryDeleted: "Category deleted", editCategory: "Category", serviceCategory: "Change service category", restoreCategory: "Restore original", originalCategory: "Original category", useCategory: "Use", builtInCategory: "Built-in", customCategory: "Custom", categoryInUse: "This category still contains services. Move them first.", categoryDeleteConfirm: "Delete this empty category?",
     unlockResults: "Complete media check jobs", availableServices: "Available services", unavailableServices: "Unavailable services", unlockSourceHint: "Full IPv4 results from official check.unlock.media script 0 (multinational platforms). Jobs are read every second; output appears as soon as it arrives, until the job ends, with no fixed duration limit. Global_UnlockTest outputs in two batches, so there may be no new items between batches. Original Yes / No / WAF values and regions are preserved. DNS/TLS probes are not media unlock results.", checkAgain: "Start new check", waitingResults: "Waiting for the next script output batch; the full check is still running.",
     mediaNodeSelfCheck: "Media self-check (on proxy)",
-    nodeVersions: "Node versions", nodeVersion: "Prism version", nodeTransportVersion: "Transport version", nodeAgentVersion: "Agent version",
-    nodeIPv4: "Reported IPv4", nodeLastSeen: "Last check-in", nodeUpdate: "Update node", nodeRelease: "Available release",
-    nodeUpdateUnsupported: "This node does not support panel updates yet.", nodeUpdateBootstrap: "One-time bootstrap required: the node update worker has not checked in.", nodeUpdateWorkerOffline: "The update worker has not checked in recently.", nodeUpdateCurrent: "No update needed", nodeUpdateLoading: "Checking available release…",
+    nodeVersions: "Node report", nodeVersion: "Prism version", nodeTransportVersion: "Transport version", nodeAgentVersion: "Agent version",
+    nodeIPv4: "Reported IPv4", nodeLastSeen: "Last update worker check-in", nodeUpdate: "Update node", nodeRelease: "Available release", nodeNotReported: "Not reported",
+    nodeWorkerUnmanaged: "Not enrolled", nodeWorkerReady: "Heartbeat current", nodeWorkerStale: "Heartbeat expired", nodeWorkerUnknown: "Heartbeat unverified",
+    nodeUpdateUnsupported: "The node did not report a comparable Prism version.", nodeUpdateBootstrap: "Enroll this node first through its existing install or upgrade entry point.", nodeUpdateWorkerOffline: "Wait for the update worker to check in again.", nodeUpdateCurrent: "No update needed", nodeUpdateLoading: "Checking available release…",
     nodeUpdateUnavailable: "The panel does not support node updates yet.", nodeReleaseUnavailable: "Could not check the available release. Retrying…",
-    nodeInventoryOffline: "Could not refresh nodes. Showing the last known inventory.", nodeUpdateSubmitting: "Submitting…",
+    nodeInventoryLoading: "Loading nodes…", nodeInventoryOffline: "Could not refresh nodes.", nodeInventoryCached: "Showing the last known inventory.", nodeInventoryMissing: "No node data to display.",
+    nodeInvalidResponse: "The server did not return valid data.", nodeForbidden: "Access denied. Check permissions.", nodeBadGateway: "The upstream gateway is unavailable. Retry later.",
+    nodeUpdateSubmitting: "Submitting…", nodeUpdateSubmitFailed: "Submission not confirmed",
+    mediaCreateUnconfirmed: "Media job creation failed (unconfirmed)", mediaPollFailed: "Media job polling failed", mediaPollRetrying: "Will check again shortly.", mediaPollPaused: "Automatic checks paused.",
+    mediaLookup: "Check for job", mediaCreateHint: "The server may already have created the job. Check for it first; the creation request will not be resent automatically.", mediaMissingHint: "Job not found. Last known results are preserved. You can check again.",
     nodeUpdateQueued: "Update queued", nodeUpdateRunning: "Updating", nodeUpdateSucceeded: "Update succeeded", nodeUpdateFailed: "Update failed",
     nodeUpdateRequestedAt: "Requested", nodeUpdateUpdatedAt: "Last update", nodeUpdateConfirm: "Update this node now? Prism services on this node may restart briefly.",
     mediaNotStarted: "Not started", mediaExecutionFailed: "Execution failed", mediaUnverified: "Service availability unverified", mediaFailureCause: "Failure reason", mediaFailureUnknown: "The server did not provide a failure reason", mediaFailureHint: "A failed check does not mean all services are unavailable. Inspect the raw results received or retry the check.",
@@ -100,7 +110,7 @@ const state = {
   loading: false, modal: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "",
   mediaChecks: new Map(), mediaCheckView: null, mediaCheckPositions: new Map(),
   branding: {site_name:"", browser_title:"", site_tagline:""},
-  nodeRelease: {version:"", status:"loading"}, nodeInventoryOffline: false, nodeUpdatesSubmitting: new Set()
+  nodeRelease: {status:"loading"}, nodeInventory: {status:"loading"}, nodeUpdatesSubmitting: new Set(), nodeUpdateErrors: new Map()
 };
 
 const prismSourceRef = "__PRISM_SOURCE_REF__";
@@ -693,20 +703,23 @@ function logout(callAPI = true) {
   state.modal = null;
   renderModal();
   state.token = ""; state.user = {}; state.nodes = []; state.rules = []; state.ipConfigs = [];
-  state.nodeRelease = {version:"", status:"loading"}; state.nodeInventoryOffline = false;
-  state.nodeUpdatesSubmitting.clear(); nextNodeReleaseCheck = 0;
+  nodeInventoryRevision++;
+  state.nodeRelease = {status:"loading"}; state.nodeInventory = {status:"loading"};
+  state.nodeUpdatesSubmitting.clear(); state.nodeUpdateErrors.clear(); nextNodeReleaseCheck = 0;
   localStorage.removeItem("prism_token"); localStorage.removeItem("prism_user");
   render();
 }
 
 async function loadAll(silent = false) {
   if (!state.token) return render();
+  const token = state.token;
   const previousFingerprint = viewFingerprint();
   state.loading = !silent;
   if (!silent) render();
   try {
-    const [nodes, rules, catalog, ipConfigs, categoryData] = await Promise.all([api("/enhancer/api/nodes"), api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs"), api("/enhancer/api/categories")]);
-    state.nodes = Array.isArray(nodes) ? nodes : [];
+    const [rules, catalog, ipConfigs, categoryData] = await Promise.all([api("/api/rules"), api("/enhancer/api/catalog"), api("/enhancer/api/ip-configs"), api("/enhancer/api/categories"), loadNodeInventory({cache:"no-store"})]);
+    if (state.token !== token) return;
+    if (state.tab !== "nodes" && state.nodeInventory.status === "error") toast(nodeInventoryStatus(), "error");
     state.rules = Array.isArray(rules) ? rules : [];
     state.catalog = catalog.services || [];
     state.categories = Array.isArray(categoryData?.categories) ? categoryData.categories : (catalog.categories || []);
@@ -747,6 +760,7 @@ let clockTimer;
 let statusPollTimer;
 let nodeInventoryTimer;
 let nodeInventoryRequest;
+let nodeInventoryRevision = 0;
 let nextNodeReleaseCheck = 0;
 let lastNodeListHTML = "";
 
@@ -765,35 +779,53 @@ function syncNodeInventoryPolling() {
   }
 }
 
+function requestErrorDetail(error) {
+  if (error.status === 403) return `HTTP 403 · ${t("nodeForbidden")}`;
+  if (error.status === 502) return `HTTP 502 · ${t("nodeBadGateway")}`;
+  const detail = cleanErrorMessage(error.message) || t("failed");
+  return error.status ? `HTTP ${error.status} · ${detail}` : detail;
+}
+
+async function loadNodeInventory(options) {
+  const revision = ++nodeInventoryRevision;
+  const snapshot = state.nodes;
+  const isCurrent = () => !options.signal?.aborted && revision === nodeInventoryRevision;
+  try {
+    const nodes = await api("/enhancer/api/nodes", options);
+    if (!Array.isArray(nodes) || !nodes.every(node => node && typeof node === "object" && nodeID(node.id))) {
+      throw new Error(t("nodeInvalidResponse"));
+    }
+    if (!isCurrent() || state.nodes !== snapshot) return;
+    state.nodes = nodes;
+    state.nodeInventory = {status:"ready"};
+  } catch (error) {
+    if (!isCurrent()) return;
+    state.nodeInventory = {status:"error", error:requestErrorDetail(error)};
+  }
+  refreshNodeInventoryUI();
+}
+
 async function pollNodeInventory() {
   if (!nodesVisible() || nodeInventoryRequest) return;
   const controller = new AbortController();
   const options = {signal:controller.signal, cache:"no-store", timeoutMs:8000};
-  const snapshot = state.nodes;
   nodeInventoryRequest = controller;
-  const nodes = api("/enhancer/api/nodes", options).then(result => {
-    if (controller.signal.aborted) return;
-    state.nodeInventoryOffline = !Array.isArray(result);
-    if (!state.nodeInventoryOffline && state.nodes === snapshot) state.nodes = result;
-  }).catch(() => {
-    if (!controller.signal.aborted) state.nodeInventoryOffline = true;
-  }).finally(() => {
-    if (!controller.signal.aborted) refreshNodeInventoryUI();
-  });
+  const nodes = loadNodeInventory(options);
   const release = Date.now() < nextNodeReleaseCheck ? null : api("/enhancer/api/node-release", options).then(result => {
     if (controller.signal.aborted) return;
-    const version = typeof result?.version === "string" ? result.version : "";
-    state.nodeRelease = version ? {version, status:"ready"} : {version:"", status:"unsupported"};
+    const version = result?.version;
+    if (!isNodeVersion(version)) throw new Error(t("nodeInvalidResponse"));
+    state.nodeRelease = {version, status:"ready"};
   }).catch(error => {
     if (controller.signal.aborted) return;
-    state.nodeRelease = {version:"", status:[404, 405, 501].includes(error.status) ? "unsupported" : "unavailable"};
+    state.nodeRelease = [404, 405, 501].includes(error.status) ? {status:"unsupported"} : {status:"unavailable", error:requestErrorDetail(error)};
   }).finally(() => {
     if (controller.signal.aborted) return;
     nextNodeReleaseCheck = Date.now() + (state.nodeRelease.status === "unavailable" ? 10000 : 30000);
     refreshNodeInventoryUI();
   });
-  await Promise.all([nodes, release]);
-  if (nodeInventoryRequest === controller) nodeInventoryRequest = undefined;
+  try { await Promise.all([nodes, release]); }
+  finally { if (nodeInventoryRequest === controller) nodeInventoryRequest = undefined; }
 }
 
 function scheduleLiveReload() {
@@ -1090,22 +1122,36 @@ function routeNodeCardHTML(node, configuredServices) {
 function nodesHTML() {
   const header = contentHeaderHTML(state.lang === "zh" ? "节点管理" : "Nodes", state.lang === "zh" ? "统一管理解锁机和被解锁机；节点状态变化不会自动改写服务路由。" : "Manage proxy and target nodes. Status changes never rewrite service routes automatically.", `<button class="btn primary" id="add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button>`);
   lastNodeListHTML = nodeListHTML();
-  return `${header}<p class="node-inventory-status" id="node-inventory-status" role="status">${escapeHTML(nodeInventoryStatus())}</p><div id="node-list">${lastNodeListHTML}</div>`;
+  return `${header}<p class="node-inventory-status${hasNodeInventoryError() ? " has-error" : ""}" id="node-inventory-status" role="status">${escapeHTML([nodeInventoryStatus(), nodeReleaseStatus()].filter(Boolean).join(" · "))}</p><div id="node-list">${lastNodeListHTML}</div>`;
 }
 
 function nodeInventoryStatus() {
-  if (state.nodeInventoryOffline) return t("nodeInventoryOffline");
+  if (state.nodeInventory.status === "error") {
+    return [t("nodeInventoryOffline"), state.nodeInventory.error, state.nodes.length ? t("nodeInventoryCached") : ""].filter(Boolean).join(" ");
+  }
+  return state.nodeInventory.status === "loading" ? t("nodeInventoryLoading") : "";
+}
+
+function nodeReleaseStatus() {
   if (state.nodeRelease.status === "ready") return `${t("nodeRelease")}: ${state.nodeRelease.version}`;
   if (state.nodeRelease.status === "unsupported") return t("nodeUpdateUnavailable");
-  if (state.nodeRelease.status === "unavailable") return t("nodeReleaseUnavailable");
+  if (state.nodeRelease.status === "unavailable") return `${t("nodeReleaseUnavailable")} ${state.nodeRelease.error}`;
   return t("nodeUpdateLoading");
 }
 
+function hasNodeInventoryError() {
+  return state.nodeInventory.status === "error" || state.nodeRelease.status === "unavailable";
+}
+
+const nodeVersionPattern = /^v?(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$/;
+const nodeHeartbeatTTL = 90000;
+
+function isNodeVersion(value) { return typeof value === "string" && nodeVersionPattern.test(value); }
+
 function compareNodeVersions(current, target) {
-  const pattern = /^v?(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$/;
-  const currentParts = pattern.exec(current ?? "");
-  const targetParts = pattern.exec(target ?? "");
-  if (!currentParts || !targetParts) return null;
+  if (!isNodeVersion(current) || !isNodeVersion(target)) return null;
+  const currentParts = nodeVersionPattern.exec(current);
+  const targetParts = nodeVersionPattern.exec(target);
   for (let part = 1; part < currentParts.length; part++) {
     const difference = Number(currentParts[part]) - Number(targetParts[part]);
     if (difference) return difference;
@@ -1118,36 +1164,60 @@ const nodeUpdateStates = {
   succeeded:["nodeUpdateSucceeded", "good"], failed:["nodeUpdateFailed", "bad"]
 };
 
-function nodeUpdateControl(node) {
+function nodeReportedDate(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? formatDate(value) : t("nodeNotReported");
+}
+
+function nodeWorkerStatus(management) {
+  if (!management?.last_seen) return {label:"nodeWorkerUnmanaged", kind:"warn", reason:"nodeUpdateBootstrap"};
+  const lastSeen = typeof management.last_seen === "string" ? Date.parse(management.last_seen) : NaN;
+  if (!Number.isFinite(lastSeen)) return {label:"nodeWorkerUnknown", kind:"warn", reason:"nodeWorkerUnknown"};
+  if (management.update_supported === false || Date.now() - lastSeen >= nodeHeartbeatTTL) {
+    return {label:"nodeWorkerStale", kind:"warn", reason:"nodeUpdateWorkerOffline"};
+  }
+  if (management.update_supported !== true) return {label:"nodeWorkerUnknown", kind:"warn", reason:"nodeWorkerUnknown"};
+  return {label:"nodeWorkerReady", kind:"good"};
+}
+
+function nodeUpdateControl(node, worker = nodeWorkerStatus(node.management)) {
   const management = node.management;
   const job = management?.update;
   if (state.nodeUpdatesSubmitting.has(nodeID(node.id))) return {enabled:false, reason:t("nodeUpdateSubmitting")};
   if (job?.status === "queued" || job?.status === "running") return {enabled:false, reason:t(nodeUpdateStates[job.status][0])};
-  if (state.nodeInventoryOffline || state.nodeRelease.status !== "ready") return {enabled:false, reason:nodeInventoryStatus()};
-  if (!management?.last_seen && !management?.update_supported) return {enabled:false, reason:t("nodeUpdateBootstrap")};
-  if (!management?.update_supported) return {enabled:false, reason:t("nodeUpdateWorkerOffline")};
+  if (worker.reason) return {enabled:false, reason:t(worker.reason)};
+  if (state.nodeInventory.status !== "ready") return {enabled:false, reason:nodeInventoryStatus()};
+  if (state.nodeRelease.status !== "ready") return {enabled:false, reason:nodeReleaseStatus()};
   const comparison = compareNodeVersions(management.version, state.nodeRelease.version);
   if (comparison === null) return {enabled:false, reason:t("nodeUpdateUnsupported")};
   if (comparison >= 0) return {enabled:false, reason:t("nodeUpdateCurrent")};
-  return {enabled:true, reason:`${t("nodeRelease")}: ${state.nodeRelease.version}`};
+  return {enabled:true, reason:nodeReleaseStatus()};
 }
 
 function nodeManagementHTML(node) {
   const management = node.management;
+  const ipv4 = management?.ipv4;
+  const reportedIPv4 = typeof ipv4 === "string" && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(ipv4) && ipv4.split(".").every(part => Number(part) <= 255) ? ipv4 : "";
   const values = [["nodeVersion", management?.version], ["nodeTransportVersion", management?.transport_version],
-    ["nodeAgentVersion", management?.agent_version], ["nodeIPv4", management?.ipv4], ["nodeLastSeen", formatDate(management?.last_seen)]];
-  const control = nodeUpdateControl(node);
+    ["nodeAgentVersion", management?.agent_version], ["nodeIPv4", reportedIPv4], ["nodeLastSeen", nodeReportedDate(management?.last_seen)]];
+  const worker = nodeWorkerStatus(management);
+  const control = nodeUpdateControl(node, worker);
+  const submitError = state.nodeUpdateErrors.get(nodeID(node.id));
   const job = management?.update;
   const jobState = Object.hasOwn(nodeUpdateStates, job?.status) ? nodeUpdateStates[job.status] : null;
-  return `<div class="node-management"><span class="node-management-heading">${t("nodeVersions")}</span><dl class="node-inventory">${values.map(([label, value]) => `<div><dt>${t(label)}</dt><dd>${escapeHTML(value || "-")}</dd></div>`).join("")}</dl>
+  return `<div class="node-management"><div class="node-management-head"><span class="node-management-heading">${t("nodeVersions")}</span><span class="badge ${worker.kind}">${t(worker.label)}</span></div><dl class="node-inventory">${values.map(([label, value]) => `<div><dt>${t(label)}</dt><dd>${escapeHTML(typeof value === "string" && value.trim() ? value : t("nodeNotReported"))}</dd></div>`).join("")}</dl>
     <div class="node-update"><button type="button" class="btn small node-update-trigger" data-node-id="${escapeHTML(nodeID(node.id))}" ${control.enabled ? "" : "disabled"} title="${escapeHTML(control.reason)}"><i class="bi bi-arrow-up-circle" aria-hidden="true"></i>${t("nodeUpdate")}</button>
     ${jobState ? `<span class="badge ${jobState[1]}">${t(jobState[0])}${job.version ? ` · ${escapeHTML(job.version)}` : ""}</span>` : ""}
-    ${!control.enabled && (!jobState || control.reason !== t(jobState[0])) ? `<small>${escapeHTML(control.reason)}</small>` : ""}
-    ${jobState ? `<small>${t("nodeUpdateRequestedAt")}: ${escapeHTML(formatDate(job.requested_at))} · ${t("nodeUpdateUpdatedAt")}: ${escapeHTML(formatDate(job.updated_at))}</small>` : ""}</div></div>`;
+    ${!control.enabled && control.reason !== t(worker.label) && (!jobState || control.reason !== t(jobState[0])) ? `<small>${escapeHTML(control.reason)}</small>` : ""}
+    ${jobState ? `<small>${t("nodeUpdateRequestedAt")}: ${escapeHTML(nodeReportedDate(job.requested_at))} · ${t("nodeUpdateUpdatedAt")}: ${escapeHTML(nodeReportedDate(job.updated_at))}</small>` : ""}
+    ${submitError ? `<small class="node-update-error" role="status">${t("nodeUpdateSubmitFailed")}: ${escapeHTML(submitError)}</small>` : ""}</div></div>`;
 }
 
 function nodeListHTML() {
-  if (!state.nodes.length) return `<div class="panel empty"><strong>${state.nodeInventoryOffline ? t("nodeInventoryOffline") : state.lang === "zh" ? "还没有节点" : "No nodes"}</strong><button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button></div>`;
+  if (!state.nodes.length) {
+    const ready = state.nodeInventory.status === "ready";
+    const label = ready ? (state.lang === "zh" ? "还没有节点" : "No nodes") : t(state.nodeInventory.status === "error" ? "nodeInventoryMissing" : "nodeInventoryLoading");
+    return `<div class="panel empty"><strong>${label}</strong>${ready ? `<button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button>` : ""}</div>`;
+  }
   return `<section class="node-grid">${state.nodes.map(node => {
     const online = isOnline(node);
     const proxyDetail = nodeMediaSummary(node);
@@ -1166,8 +1236,9 @@ function refreshNodeInventoryUI() {
   const scrollY = window.scrollY;
   captureScrollPositions();
   const status = document.getElementById("node-inventory-status");
-  const label = nodeInventoryStatus();
+  const label = [nodeInventoryStatus(), nodeReleaseStatus()].filter(Boolean).join(" · ");
   if (status.textContent !== label) status.textContent = label;
+  status.classList.toggle("has-error", hasNodeInventoryError());
   const html = nodeListHTML();
   if (html !== lastNodeListHTML) {
     const active = list.contains(document.activeElement) ? document.activeElement : null;
@@ -1186,17 +1257,21 @@ async function requestNodeUpdate(node) {
   const version = state.nodeRelease.version;
   if (!confirm(`${t("nodeUpdateConfirm")}\n\n${node.name || id}\n${node.management.version} → ${version}`)) return;
   const token = state.token;
+  state.nodeUpdateErrors.delete(id);
   state.nodeUpdatesSubmitting.add(id);
   refreshNodeInventoryUI();
   try {
-    const result = await api("/enhancer/api/node-updates", {method:"POST", body:JSON.stringify({node_id:id, version})});
+    const job = await api("/enhancer/api/node-updates", {method:"POST", body:JSON.stringify({node_id:id, version})});
     if (state.token !== token) return;
-    const job = result?.version === version && Object.hasOwn(nodeUpdateStates, result.status) ? result : {version, status:"queued"};
+    if (job?.version !== version || typeof job.id !== "string" || !job.id || !Object.hasOwn(nodeUpdateStates, job.status)) throw new Error(t("nodeInvalidResponse"));
     state.nodes = state.nodes.map(item => nodeID(item.id) === id ? {...item, management:{...item.management, update:job}} : item);
-    toast(t(nodeUpdateStates[job.status][0]), "good");
+    const [label, kind] = nodeUpdateStates[job.status];
+    toast(t(label), kind === "bad" ? "error" : kind);
   } catch (error) {
     if (state.token === token) {
-      toast(cleanErrorMessage(error.message), "error");
+      const detail = requestErrorDetail(error);
+      state.nodeUpdateErrors.set(id, detail);
+      toast(`${t("nodeUpdateSubmitFailed")}: ${detail}`, "error");
       nextNodeReleaseCheck = 0;
     }
   } finally {
@@ -2252,7 +2327,7 @@ function mediaFailureReason(job) {
 }
 function nodeMediaSummary(node) {
   const record = state.mediaChecks.get(`node:${nodeID(node.id)}`);
-  if (!record?.job) return record?.error ? t("mediaDisconnected") : t("mediaNotStarted");
+  if (!record?.job) return record ? mediaRequestStatus(record).label || t("mediaNotStarted") : t("mediaNotStarted");
   const job = record.job;
   const count = Object.keys(job.results || {}).length;
   const failed = job.status === "failed";
@@ -2263,7 +2338,7 @@ function nodeMediaDetail(node) {
   const record = state.mediaChecks.get(`node:${nodeID(node.id)}`);
   const details = [nodeMediaSummary(node)];
   if (record?.job?.status === "failed") details.push(`${t("mediaFailureCause")}: ${mediaFailureReason(record.job)}`, t("mediaFailureHint"));
-  if (record?.error) details.push(record.error);
+  if (record) details.push(...mediaRequestStatus(record).messages);
   return details.join("\n");
 }
 function updateNodeMediaUI() {
@@ -2328,59 +2403,91 @@ function mediaServiceState(record, service) {
   const label = record.job.status === "completed" ? t("mediaNotCovered") : record.job.status === "failed" ? t("mediaIncomplete") : t("mediaAwaiting");
   return {kind:"warn", label, raw:label, detail:label};
 }
+const mediaRetryDelays = [2000, 5000, 15000];
+const mediaJobStatuses = {queued:"mediaQueued", running:"mediaRunning", completed:"mediaCompleted", failed:"mediaFailed"};
+
 function mediaCheckRecord(payload) {
   const key = payload.node_id ? `node:${payload.node_id}` : `config:${payload.config_id}`;
-  if (!state.mediaChecks.has(key)) state.mediaChecks.set(key, {key, payload, job:null, busy:false, error:"", timer:null});
+  if (!state.mediaChecks.has(key)) state.mediaChecks.set(key, {key, payload, job:null, busy:false, error:"", createError:"", retries:0, timer:null});
   return state.mediaChecks.get(key);
 }
 function mediaRecordCurrent(record) { return !!state.token && state.mediaChecks.get(record.key) === record; }
+function mediaRequestStatus(record) {
+  const messages = [];
+  if (record.createError) messages.push(`${t("mediaCreateUnconfirmed")}: ${record.createError} ${t("mediaCreateHint")}`);
+  if (record.error) messages.push(`${t("mediaPollFailed")}: ${record.error} ${t(record.timer ? "mediaPollRetrying" : "mediaPollPaused")}`);
+  if (record.missing) messages.push(t("mediaMissingHint"));
+  const label = record.error ? t("mediaPollFailed") : record.missing ? t("mediaMissingStatus") : record.createError ? t("mediaCreateUnconfirmed") : "";
+  return {label, messages};
+}
+
 async function syncMediaCheck(record, operation = "latest") {
-  if (operation === "latest") record.startIfMissing = true;
   if (record.busy || !mediaRecordCurrent(record)) return;
+  if (operation === "read" && (record.error || record.createError || record.missing)) return;
+  if (["latest", "resume", "create"].includes(operation)) record.retries = 0;
   clearTimeout(record.timer);
+  record.timer = null;
+  let creating = operation === "create";
+  const byID = operation === "poll" && !!record.job?.id;
+  let retry;
   record.busy = true;
-  record.operation = operation;
+  record.operation = creating ? "create" : "read";
   updateMediaCheckUI();
   try {
     let job;
-    if (operation === "poll" && record.job?.id) {
+    if (byID) {
       job = await api(`/enhancer/api/media-checks/${encodeURIComponent(record.job.id)}`, {cache:"no-store"});
-    } else if (operation === "create") {
-      job = await api("/enhancer/api/media-checks", {method:"POST", body:JSON.stringify(record.payload)});
-    } else {
+    } else if (!creating) {
       const query = new URLSearchParams(record.payload);
       job = await api(`/enhancer/api/media-checks?${query}`, {cache:"no-store"});
-      if (job === null && mediaRecordCurrent(record) && !record.job && (operation === "latest" || record.startIfMissing)) job = await api("/enhancer/api/media-checks", {method:"POST", body:JSON.stringify(record.payload)});
+      creating = job === null && operation === "latest" && !record.job && !record.createError;
+    }
+    if (creating && mediaRecordCurrent(record)) {
+      record.operation = "create";
+      record.error = "";
+      updateMediaCheckUI();
+      job = await api("/enhancer/api/media-checks", {method:"POST", body:JSON.stringify(record.payload)});
     }
     if (!mediaRecordCurrent(record)) return;
-    if (job === null) {
-      record.missing = !!record.job || !!record.error;
-      record.error = record.missing ? t("mediaJobMissing") : "";
+    if (!creating && job === null) {
+      record.missing = !!record.job;
+      record.error = "";
+      record.retries = 0;
       return;
     }
-    if (!job?.id || !["queued", "running", "completed", "failed"].includes(job.status) || !job.results || typeof job.results !== "object" || Array.isArray(job.results)) {
+    if (typeof job?.id !== "string" || !job.id || !Object.hasOwn(mediaJobStatuses, job.status) || !job.results || typeof job.results !== "object" || Array.isArray(job.results)) {
       throw new Error(state.lang === "zh" ? "媒体任务响应无效，请检查 API" : "Invalid media job response. Check the API.");
     }
     const previous = record.job?.id === job.id ? record.job.results : {};
+    if (creating || record.job?.id !== job.id) record.createError = "";
     record.job = {...job, results:{...previous, ...job.results}};
     record.missing = false;
     record.error = "";
+    record.retries = 0;
     if (record.payload.config_id) {
       const config = state.ipConfigs.find(item => nodeID(item.id) === record.payload.config_id);
       if (config) updateIPServiceAuditUI(config);
     }
   } catch (error) {
-    if (mediaRecordCurrent(record)) record.error = cleanErrorMessage(error.message);
+    if (!mediaRecordCurrent(record)) return;
+    if (creating) record.createError = requestErrorDetail(error);
+    else {
+      record.error = requestErrorDetail(error);
+      if (byID && error.status === 404) record.missing = true;
+      if (!error.status || error.status >= 500 || [408, 429].includes(error.status) || (byID && error.status === 404)) {
+        retry = {operation:record.missing || !byID ? "recover" : "poll", delay:mediaRetryDelays[record.retries]};
+        if (retry.delay !== undefined) record.retries++;
+      }
+    }
   } finally {
     record.busy = false;
-    record.startIfMissing = false;
     if (mediaRecordCurrent(record)) {
+      if (retry?.delay !== undefined) record.timer = setTimeout(() => syncMediaCheck(record, retry.operation), retry.delay);
+      else if (!record.error && !record.createError && !record.missing && record.job && !mediaCheckFinished(record.job)) {
+        record.timer = setTimeout(() => syncMediaCheck(record, "poll"), 1000);
+      }
       updateMediaCheckUI();
       updateNodeMediaUI();
-      if (record.error || (record.job && !mediaCheckFinished(record.job))) {
-        const next = record.error ? "read" : "poll";
-        record.timer = setTimeout(() => syncMediaCheck(record, next), 1000);
-      }
     }
   }
 }
@@ -2444,7 +2551,8 @@ function mediaJobCard(record) {
   card.dataset.mediaKey = record.key;
   card.innerHTML = `<header class="media-job-head"><div><h3 class="media-job-title"></h3><span class="badge media-job-status" role="status"></span></div><div class="inline-actions"><button class="btn small media-reconnect" type="button">${t("mediaResume")}</button><button class="btn small primary media-new" type="button">${t("checkAgain")}</button></div></header><p class="media-job-meta"></p><p class="media-job-offline form-error" hidden></p><p class="media-job-error form-error" role="alert" hidden></p><p class="media-job-connection form-error" role="status" hidden></p><p class="media-job-progress" role="status"></p><h4>${t("mediaFullResults")}</h4><div class="media-table-wrap"><table class="media-results-table"><thead><tr><th>${t("mediaPlatform")}</th><th>${t("mediaRaw")}</th><th>${t("mediaStatus")}</th></tr></thead><tbody></tbody></table></div><p class="hint media-job-empty"></p><details class="media-coverage"><summary>${t("mediaCoverage")}</summary><p class="hint">${t("mediaCoverageHint")}</p><div class="media-coverage-rows"></div></details>`;
   card.querySelector(".media-new").addEventListener("click", () => syncMediaCheck(record, "create"));
-  card.querySelector(".media-reconnect").addEventListener("click", () => syncMediaCheck(record));
+  card.querySelector(".media-reconnect").textContent = t("mediaLookup");
+  card.querySelector(".media-reconnect").addEventListener("click", () => syncMediaCheck(record, "resume"));
   card.querySelector("details").open = state.mediaCheckView.position.details[record.key] ?? !!state.mediaCheckView.service;
   return card;
 }
@@ -2466,11 +2574,12 @@ function updateMediaCheckUI() {
     const config = record.payload.config_id ? state.ipConfigs.find(item => nodeID(item.id) === record.payload.config_id) : null;
     card.querySelector(".media-job-title").textContent = record.payload.node_id ? `${t("proxy")} · ${node?.name || record.payload.node_id}` : `${t("targetIP")} · ${config?.ip || record.payload.config_id}`;
     const status = card.querySelector(".media-job-status");
-    const statusKey = {queued:"mediaQueued", running:"mediaRunning", completed:"mediaCompleted", failed:"mediaFailed"}[job?.status];
-    status.textContent = record.missing ? t("mediaMissingStatus") : statusKey ? t(statusKey) : record.error ? t("mediaNoJob") : t("mediaSubmitting");
-    status.className = `badge media-job-status ${record.missing || job?.status === "failed" || (!job && record.error) ? "bad" : job?.status === "completed" ? "good" : "warn"}`;
+    const statusKey = mediaJobStatuses[job?.status];
+    const request = mediaRequestStatus(record);
+    status.textContent = request.label || (statusKey ? t(statusKey) : t(record.busy && record.operation === "create" ? "mediaSubmitting" : "mediaNotStarted"));
+    status.className = `badge media-job-status ${request.label || job?.status === "failed" ? "bad" : job?.status === "completed" ? "good" : "warn"}`;
     card.querySelector(".media-new").disabled = record.busy || (!!job && !mediaCheckFinished(job) && !record.missing);
-    card.querySelector(".media-reconnect").hidden = !record.error;
+    card.querySelector(".media-reconnect").hidden = !request.label;
     card.querySelector(".media-reconnect").disabled = record.busy;
     card.querySelector(".media-job-meta").textContent = job
       ? `${job.source || "check.unlock.media"} · ${job.network || "ipv4"} · ${state.lang === "zh" ? "菜单" : "Menu"} ${job.region ?? "0"} · ID ${job.id}\n${[["mediaRequested", job.requested_at], ["mediaStarted", job.started_at], ["mediaLatest", job.updated_at], ["mediaFinished", job.finished_at]].filter(([, value]) => value).map(([label, value]) => `${t(label)}: ${formatDate(value)}`).join(" · ")}`
@@ -2482,8 +2591,8 @@ function updateMediaCheckUI() {
     failure.hidden = job?.status !== "failed" && !job?.error;
     failure.textContent = job?.status === "failed" ? `${t("mediaFailed")}: ${mediaFailureReason(job)}\n${t("mediaFailureHint")}` : "";
     const connection = card.querySelector(".media-job-connection");
-    connection.hidden = !record.error;
-    connection.textContent = record.error ? record.missing ? record.error : `${t("mediaDisconnected")}: ${record.error}` : "";
+    connection.hidden = !request.messages.length;
+    connection.textContent = request.messages.join(" ");
     const entries = Object.entries(job?.results || {});
     const passed = entries.filter(([, raw]) => mediaRawState(raw).kind === "good").length;
     const issues = entries.filter(([, raw]) => mediaRawState(raw).kind === "bad").length;

@@ -3,8 +3,8 @@
 set +x
 set -Eeuo pipefail
 
-VERSION="2.5.2"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.37}"
+VERSION="2.5.3"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.38}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -454,17 +454,25 @@ collect_transport_cgroups() {
 }
 
 apply_client_egress_rules() {
-  [[ "$ROLE" == "client" && "$TRANSPORT_MODE" == "direct" ]] || return 0
-  local temporary cgroup_id
+  [[ "$ROLE" == "client" ]] || return 0
+  local temporary cgroup_id service_count
   local -a cgroups=()
-  mapfile -t cgroups < <(collect_transport_cgroups | sort -u)
-  nft delete table inet prism_client_egress >/dev/null 2>&1 || true
+  service_count=$(jq -er '(.egress_services // []) | if type == "array" then length else error("invalid egress services") end' <<<"$1") ||
+    fail "invalid client egress configuration"
+  if [[ "$TRANSPORT_MODE" == "direct" && "$service_count" != 0 ]]; then
+    mapfile -t cgroups < <(collect_transport_cgroups | sort -u)
+  fi
   ((${#cgroups[@]} > 0)) || {
-    log "no managed proxy cgroup found; transparent SNI fallback is idle"
+    if nft list table inet prism_client_egress >/dev/null 2>&1; then
+      nft delete table inet prism_client_egress
+    fi
     return 0
   }
   temporary=$(mktemp)
   {
+    if nft list table inet prism_client_egress >/dev/null 2>&1; then
+      echo 'delete table inet prism_client_egress'
+    fi
     echo 'table inet prism_client_egress {'
     echo '  chain redirect_output {'
     echo '    type nat hook output priority -90; policy accept;'
@@ -573,6 +581,9 @@ apply_client_rules() {
   local current="$1" temporary peer proxy_ip local_http local_https
   temporary=$(mktemp)
   {
+    if nft list table inet prism_transport >/dev/null 2>&1; then
+      echo 'delete table inet prism_transport'
+    fi
     echo 'table inet prism_transport {'
     echo '  counter tx {}'
     echo '  counter rx {}'
@@ -616,8 +627,10 @@ apply_client_rules() {
     fi
     echo '}'
   } >"$temporary"
-  nft delete table inet prism_transport >/dev/null 2>&1 || true
-  nft -f "$temporary"
+  if ! nft -f "$temporary"; then
+    rm -f "$temporary"
+    fail "failed to replace client transport rules"
+  fi
   rm -f "$temporary"
 }
 
@@ -728,7 +741,7 @@ sync_client() {
     ! nft list counter inet prism_transport rx >/dev/null 2>&1; then
     apply_client_rules "$current_json"
   fi
-  apply_client_egress_rules
+  apply_client_egress_rules "$response"
   printf '%s\n' "$current_json" >"$ACTIVE_FILE"
   chmod 600 "$ACTIVE_FILE"
   sleep 2

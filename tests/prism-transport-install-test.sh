@@ -49,4 +49,40 @@ install_optional_node_update_worker() { record node-update; }
 main
 [[ "$(paste -sd ' ' "$events")" == 'dependencies lock install node-update' ]]
 
+source <(sed -n '/^apply_client_egress_rules() {$/,/^}$/p; /^apply_client_rules() {$/,/^}$/p' prism_transport.sh)
+ROLE=client
+CLIENT_EGRESS_HTTP_PORT=19081
+CLIENT_EGRESS_HTTPS_PORT=19444
+collect_transport_cgroups() { printf '%s\n' 12345; }
+nft() {
+  case "$1" in
+    list) [[ "$2" == table && "$3" == inet ]] ;;
+    delete) record "delete $4" ;;
+    -f)
+      record 'transaction'
+      cp "$2" "$temp_dir/transaction"
+      [[ ! -f "$temp_dir/reject-update" ]]
+      ;;
+    *) return 2 ;;
+  esac
+}
+: >"$events"
+apply_client_egress_rules '{"egress_services":[{}]}'
+[[ "$(cat "$events")" == transaction ]]
+[[ "$(head -n1 "$temp_dir/transaction")" == 'delete table inet prism_client_egress' ]]
+grep -Fq 'meta cgroup 12345 tcp dport 443 redirect to :19444' "$temp_dir/transaction"
+: >"$events"
+apply_client_egress_rules '{}'
+[[ "$(cat "$events")" == 'delete prism_client_egress' ]]
+
+: >"$events"
+touch "$temp_dir/reject-update"
+if (apply_client_rules '[]' 2>/dev/null); then
+  printf '%s\n' 'Failed client transport transaction must not report success.' >&2
+  exit 1
+fi
+[[ "$(cat "$events")" == transaction ]]
+[[ "$(head -n1 "$temp_dir/transaction")" == 'delete table inet prism_transport' ]]
+grep -Fxq 'table inet prism_transport {' "$temp_dir/transaction"
+
 printf 'Prism transport installation order tests passed.\n'

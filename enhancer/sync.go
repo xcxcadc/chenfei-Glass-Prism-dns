@@ -38,7 +38,7 @@ func (app *App) modifyUpstreamResponse(response *http.Response) error {
 		return nil
 	}
 	record, ok := app.ipStore.GetByNodeSecret(secret)
-	if !ok || len(record.Routes) == 0 {
+	if !ok {
 		return nil
 	}
 	rules := objectMap(payload["rules"])

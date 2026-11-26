@@ -770,8 +770,12 @@ func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		started := time.Now()
 		next.ServeHTTP(writer, request)
-		if !strings.HasPrefix(request.URL.Path, "/api/sse") {
-			log.Printf("%s %s %s", request.Method, request.URL.Path, time.Since(started).Round(time.Millisecond))
+		path := request.URL.Path
+		if strings.HasPrefix(path, "/enhancer/api/bootstrap/") {
+			path = "/enhancer/api/bootstrap/[redacted]"
+		}
+		if !strings.HasPrefix(path, "/api/sse") {
+			log.Printf("%s %s %s", request.Method, path, time.Since(started).Round(time.Millisecond))
 		}
 	})
 }

@@ -7,6 +7,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -149,6 +152,86 @@ func TestMediaCheckHTTPAuthenticationAndGeneration(t *testing.T) {
 	json.Unmarshal(response.Body.Bytes(), &claimed)
 	if response.Code != http.StatusOK || claimed.Job != nil {
 		t.Fatal("script failure caused an automatic retry loop", response.Body.String())
+	}
+}
+
+func TestMediaCheckHTTPWithNullStore(t *testing.T) {
+	controller := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/nodes" || request.Header.Get("Authorization") != "Bearer fixture-admin" {
+			writer.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer controller.Close()
+	custom, err := NewCustomServiceStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ipStore, err := NewIPConfigStore(filepath.Join(t.TempDir(), "ip-configs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := ipStore.Save(IPConfig{IP: "192.0.2.10", DNSNodeID: "fixture-client", EnrollmentToken: "fixture-enrollment"}, "fixture-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := NewCatalogManager(controller.URL+"/catalog", controller.Client(), custom)
+
+	for _, test := range []struct {
+		name, path, auth string
+		payload          map[string]string
+		code             int
+		status           string
+	}{
+		{"admin create", "/enhancer/api/media-checks", "Bearer fixture-admin", map[string]string{"config_id": config.ID}, http.StatusAccepted, "queued"},
+		{"worker auto-create", "/enhancer/api/media-checks/worker", "", map[string]string{"role": "client", "credential": config.EnrollmentToken, "action": "claim"}, http.StatusOK, "running"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "media-checks.json")
+			if err := os.WriteFile(path, []byte("null"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			app, err := NewApp(controller.URL, catalog, custom, ipStore, controller.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			app.mediaChecks, err = NewMediaCheckStore(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			enhancer := httptest.NewServer(app.Handler())
+			defer enhancer.Close()
+			upstream, err := url.Parse(enhancer.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gateway := httptest.NewServer(httputil.NewSingleHostReverseProxy(upstream))
+			defer gateway.Close()
+			body, err := json.Marshal(test.payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, err := http.NewRequest(http.MethodPost, gateway.URL+test.path, bytes.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Authorization", test.auth)
+			client := gateway.Client()
+			client.Timeout = 5 * time.Second
+			response, err := client.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != test.code {
+				t.Fatalf("got HTTP %d, want %d", response.StatusCode, test.code)
+			}
+			if job, ok := app.mediaChecks.Latest("", config.ID); !ok || job.Status != test.status {
+				t.Fatalf("got job %+v, want %s", job, test.status)
+			}
+		})
 	}
 }
 
