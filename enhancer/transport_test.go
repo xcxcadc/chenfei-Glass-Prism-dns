@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -74,6 +77,61 @@ func TestTransportClientIPIsStableAndScoped(t *testing.T) {
 }
 
 func TestControllerNodeBySecret(t *testing.T) {
+	const secret = "secret-a"
+	databasePath := testProxyControllerDB(t, secret)
+	node, err := controllerNodeBySecret(databasePath, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.ID != "node-a" || node.Role != "proxy" || firstNodeIPv4(node) != "203.0.113.20" {
+		t.Fatalf("unexpected node: %#v", node)
+	}
+}
+
+func TestProxyTransportReturnsEmptyAuthorizedIPs(t *testing.T) {
+	const secret = "secret-a"
+	databasePath := testProxyControllerDB(t, secret)
+	ipStore, err := NewIPConfigStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := NewTransportStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	customStore, err := NewCustomServiceStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := NewCatalogManager("", &http.Client{}, customStore)
+	catalog.snapshot.UpdatedAt = time.Now()
+	app := &App{controllerDB: databasePath, ipStore: ipStore, transport: transport, catalog: catalog}
+
+	body, err := json.Marshal(proxyTransportRequest{Secret: secret, SSHHostKey: testSSHKey(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/enhancer/api/transport/proxy", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	app.handleProxyTransport(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &config); err != nil {
+		t.Fatal(err)
+	}
+	authorizedIPs, ok := config["authorized_ips"]
+	if !ok {
+		t.Fatalf("response omitted authorized_ips: %s", response.Body.String())
+	}
+	if string(authorizedIPs) != "[]" {
+		t.Fatalf("expected authorized_ips to be [], got %s", authorizedIPs)
+	}
+}
+
+func testProxyControllerDB(t *testing.T, secret string) string {
+	t.Helper()
 	databasePath := filepath.Join(t.TempDir(), "data.db")
 	database, err := sql.Open("sqlite", databasePath)
 	if err != nil {
@@ -89,19 +147,13 @@ func TestControllerNodeBySecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := database.Exec(`INSERT INTO nodes (id, role, secret, public_ip, address) VALUES (?, ?, ?, ?, ?)`,
-		"node-a", "proxy", "secret-a", "203.0.113.20", "proxy.example"); err != nil {
+		"node-a", "proxy", secret, "203.0.113.20", "proxy.example"); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}
-	node, err := controllerNodeBySecret(databasePath, "secret-a")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if node.ID != "node-a" || node.Role != "proxy" || firstNodeIPv4(node) != "203.0.113.20" {
-		t.Fatalf("unexpected node: %#v", node)
-	}
+	return databasePath
 }
 
 func TestFirstNodeIPv4NeverSelectsIPv6(t *testing.T) {

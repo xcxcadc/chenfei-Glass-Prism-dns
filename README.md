@@ -6,7 +6,7 @@ YouTube 页面能打开但视频一直转圈、Play 商店打不开时，见 [v1
 
 `dns` 快捷命令的引入见 [v1.5.36 变更](CHANGELOG_v1.5.36.md)。
 
-这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名与分类、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。当前面板增强层与发布脚本版本为 `1.5.36`，SNI 传输版本为 `2.5.2`；完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，增强层版本见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases)。
+这是 [xcxcadc/chenfei-Glass-Prism-dns](https://github.com/xcxcadc/chenfei-Glass-Prism-dns) 的中文增强版本。默认提供简体中文界面、自定义服务域名与分类、服务级解锁机切换、IP 配置闭环、解锁链路流量统计、账户安全和客户端脚本。完整说明见 [ENHANCED_ZH.md](ENHANCED_ZH.md)，组件对应关系见 [版本矩阵](VERSION_MATRIX_ZH.md)，当前发布见 [Releases](https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases)。
 
 Prism-Gateway 是一个基于 DNS 的分流规则管理面板。轻量，非侵入式部署，支持流媒体解锁和 AI 服务智能解锁检测。采用 Liquid Glass 风格 UI。
 

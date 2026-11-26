@@ -92,7 +92,7 @@ type transportConfig struct {
 	Role           string                   `json:"role"`
 	Interface      string                   `json:"interface"`
 	Peers          []transportPeer          `json:"peers"`
-	AuthorizedIPs  []string                 `json:"authorized_ips,omitempty"`
+	AuthorizedIPs  []string                 `json:"authorized_ips"`
 	EgressServices []transportEgressService `json:"egress_services,omitempty"`
 }
 
@@ -169,7 +169,7 @@ func (store *TransportStore) ClientConfig(record ipConfigRecord) transportConfig
 	store.mu.RLock()
 	defer store.mu.RUnlock()
 	_, exists := store.clients[record.ID]
-	config := transportConfig{Role: "client", Interface: "loopback", Peers: []transportPeer{}}
+	config := transportConfig{Role: "client", Interface: "loopback", Peers: []transportPeer{}, AuthorizedIPs: []string{}}
 	if !exists {
 		return config
 	}
