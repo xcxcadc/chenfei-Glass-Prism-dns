@@ -21,7 +21,7 @@ func TestEvaluateNativeProbeResponse(t *testing.T) {
 	}
 
 	claude := Service{ID: "claude", Name: "Claude", Domains: []string{"claude.ai"}}
-	st, reg, _ = evaluateNativeProbeResponse(claude, 200, "https://claude.ai/cdn-cgi/trace", "ip=78.142.230.156\nloc=NL\n", "")
+	st, reg, _ = evaluateNativeProbeResponse(claude, 200, "https://claude.ai/cdn-cgi/trace", "ip=203.0.113.10\nloc=NL\n", "")
 	if st != "yes" || reg != "NL" {
 		t.Fatalf("expected Claude NL -> yes/NL, got %s/%s", st, reg)
 	}
@@ -42,7 +42,7 @@ func TestClientNativeCheckLifecycle(t *testing.T) {
 	customStore, _ := NewCustomServiceStore(filepath.Join(dir, "custom.json"))
 	svc, _ := customStore.Upsert(Service{Name: "Claude", Category: "AI", Domains: []string{"claude.ai"}})
 	ipStore, _ := NewIPConfigStore(filepath.Join(dir, "ips.json"))
-	cfg, err := ipStore.Save(IPConfig{IP: "78.142.230.156", DNSNodeID: "dns-1", NodeSecret: "sec-1"}, "sec-1")
+	cfg, err := ipStore.Save(IPConfig{IP: "203.0.113.10", DNSNodeID: "dns-1", NodeSecret: "sec-1"}, "sec-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestClientNativeCheckLifecycle(t *testing.T) {
 		"service_id":   svc.ID,
 		"http_code":    200,
 		"final_url":    "https://claude.ai/cdn-cgi/trace",
-		"body_snippet": "ip=78.142.230.156\nloc=NL\n",
+		"body_snippet": "ip=203.0.113.10\nloc=NL\n",
 		"latency_ms":   120,
 	})
 	repReq := httptest.NewRequest(http.MethodPost, "/enhancer/api/client-native-check/report", bytes.NewReader(repBody))

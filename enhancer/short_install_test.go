@@ -15,12 +15,12 @@ func TestHandleShortInstallClientToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg, err := ipStore.Save(IPConfig{
-		IP:         "78.142.230.156",
-		Note:       "NL",
-		DNSNodeID:  "dns-nl-1",
-		NodeSecret: "nlsecret123",
+		IP:         "203.0.113.10",
+		Note:       "Demo",
+		DNSNodeID:  "dns-demo-1",
+		NodeSecret: "demosecret123",
 		Routes:     map[string]string{"gemini": "proxy-1"},
-	}, "nlsecret123")
+	}, "demosecret123")
 	if err != nil {
 		t.Fatal(err)
 	}
