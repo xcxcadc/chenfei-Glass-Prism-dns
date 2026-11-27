@@ -3,8 +3,8 @@
 set +x
 set -Eeuo pipefail
 
-VERSION="2.6.4"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.4}"
+VERSION="2.6.5"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.5}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -339,12 +339,61 @@ post_json() {
   return 1
 }
 
-proxy_warp_ready() {
+proxy_warp_listening() {
   ss -lnt 2>/dev/null | awk '$4 ~ /(127\.0\.0\.1|\[::1\]):40000$/ {found=1} END {exit !found}'
+}
+
+proxy_warp_ready() {
+  proxy_warp_listening || return 1
+  if [[ -f /run/prism-warp-liveness.ok && "$(</run/prism-warp-liveness.ok)" == "0" ]]; then
+    return 1
+  fi
+  return 0
 }
 
 proxy_warp_provisioning() {
   systemctl is-active --quiet prism-warp-bootstrap.service 2>/dev/null
+}
+
+check_and_heal_warp_liveness() {
+  local now last_check=0 ts_file="/run/prism-warp-liveness.ts" ok_file="/run/prism-warp-liveness.ok"
+  local conf="/etc/prismdns/warp/wireproxy.conf"
+  now=$(date +%s)
+  [[ -f "$ts_file" ]] && last_check=$(cat "$ts_file" 2>/dev/null || echo 0)
+  if (( now - last_check < 30 )); then
+    return 0
+  fi
+  printf '%s\n' "$now" >"$ts_file"
+  if curl -4 -fsS --socks5-hostname 127.0.0.1:40000 --connect-timeout 3 --max-time 4 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -q 'warp=on'; then
+    printf '1\n' >"$ok_file"
+    return 0
+  fi
+  log "WARP tunnel liveness check failed; restarting prism-warp.service to self-heal..."
+  systemctl restart prism-warp.service >/dev/null 2>&1 || true
+  sleep 2
+  if curl -4 -fsS --socks5-hostname 127.0.0.1:40000 --connect-timeout 3 --max-time 4 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -q 'warp=on'; then
+    printf '1\n' >"$ok_file"
+    systemctl kill -s HUP "$EGRESS_SERVICE" >/dev/null 2>&1 || true
+    log "WARP tunnel self-healed successfully"
+    return 0
+  fi
+  # Try alternate Cloudflare WARP endpoints if default 2408 is blocked/degraded
+  if [[ -f "$conf" ]]; then
+    local ep
+    for ep in "162.159.192.1:500" "162.159.192.1:1701" "162.159.192.1:4500" "162.159.193.1:854" "162.159.192.1:2408"; do
+      sed -i "s/^Endpoint = .*/Endpoint = ${ep}/" "$conf" 2>/dev/null || true
+      systemctl restart prism-warp.service >/dev/null 2>&1 || true
+      sleep 2
+      if curl -4 -fsS --socks5-hostname 127.0.0.1:40000 --connect-timeout 3 --max-time 4 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -q 'warp=on'; then
+        printf '1\n' >"$ok_file"
+        systemctl kill -s HUP "$EGRESS_SERVICE" >/dev/null 2>&1 || true
+        log "WARP tunnel self-healed using alternate endpoint ${ep}"
+        return 0
+      fi
+    done
+  fi
+  printf '0\n' >"$ok_file"
+  log "WARP tunnel remains unhealthy; egress proxy will automatically bypass to native"
 }
 
 reconcile_local_warp() {
@@ -352,13 +401,16 @@ reconcile_local_warp() {
   local response="$1" desired
   desired=$(jq -r '.warp_desired // false' <<<"$response" 2>/dev/null || echo false)
   if [[ "$desired" == "true" ]]; then
-    if proxy_warp_ready; then
+    if proxy_warp_listening; then
+      check_and_heal_warp_liveness
       return 0
     fi
-    if [[ -f /etc/systemd/system/prism-warp.service && -s /etc/prism-warp/wireproxy.conf ]]; then
+    if [[ -f /etc/systemd/system/prism-warp.service && ( -s /etc/prismdns/warp/wireproxy.conf || -s /etc/prism-warp/wireproxy.conf ) ]]; then
       systemctl enable --now prism-warp.service >/dev/null 2>&1 || true
       for _ in {1..15}; do
-        if proxy_warp_ready; then
+        if proxy_warp_listening; then
+          rm -f /run/prism-warp-liveness.ts /run/prism-warp-liveness.ok
+          check_and_heal_warp_liveness
           systemctl kill -s HUP "$EGRESS_SERVICE" >/dev/null 2>&1 || true
           log "auto-started local WARP service (127.0.0.1:40000)"
           return 0
@@ -382,9 +434,11 @@ reconcile_local_warp() {
           rm -f /tmp/prism-dns-auto.sh
         fi
         /usr/local/bin/dns warp enable
+        rm -f /run/prism-warp-liveness.ts /run/prism-warp-liveness.ok
         systemctl kill -s HUP '$EGRESS_SERVICE' >/dev/null 2>&1 || true
       " >/dev/null 2>&1 || true
   else
+    rm -f /run/prism-warp-liveness.ts /run/prism-warp-liveness.ok
     if systemctl is-active --quiet prism-warp.service 2>/dev/null || systemctl is-enabled --quiet prism-warp.service 2>/dev/null; then
       systemctl disable --now prism-warp.service >/dev/null 2>&1 || true
       log "auto-stopped local WARP service (no services configured for WARP)"

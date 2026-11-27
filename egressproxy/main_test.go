@@ -236,3 +236,22 @@ func TestDialSOCKS5DomainConnect(t *testing.T) {
 		t.Fatal("timed out waiting for SOCKS5 request")
 	}
 }
+
+func TestWarpCircuitBreakerTripsAndRecovers(t *testing.T) {
+	policy := newFamilyPolicy("")
+	if policy.shouldBypassWARP() {
+		t.Fatal("breaker must not be tripped initially")
+	}
+	policy.recordWARPResult(false)
+	if policy.shouldBypassWARP() {
+		t.Fatal("single failure should not trip breaker")
+	}
+	policy.recordWARPResult(false)
+	if !policy.shouldBypassWARP() {
+		t.Fatal("two consecutive failures must trip WARP circuit breaker")
+	}
+	policy.recordWARPResult(true)
+	if policy.shouldBypassWARP() {
+		t.Fatal("success must reset WARP circuit breaker")
+	}
+}

@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.6.4"
+VERSION="1.6.5"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 BACKUP_RETENTION="${PRISM_DNS_BACKUP_RETENTION:-12}"

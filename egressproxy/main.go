@@ -97,8 +97,10 @@ type familyPolicy struct {
 	routeIPs     map[string]string
 	keywords     []keywordRoute
 	cidrs        []cidrRoute
-	knownProxies map[string]struct{}
-	refresh      chan struct{}
+	knownProxies    map[string]struct{}
+	refresh         chan struct{}
+	warpFailCount   int
+	warpBypassUntil time.Time
 }
 
 func newFamilyPolicy(path string) *familyPolicy {
@@ -110,6 +112,29 @@ func newFamilyPolicy(path string) *familyPolicy {
 		routeIPs:     make(map[string]string),
 		knownProxies: make(map[string]struct{}),
 		refresh:      make(chan struct{}, 1),
+	}
+}
+
+func (policy *familyPolicy) shouldBypassWARP() bool {
+	policy.mu.RLock()
+	until := policy.warpBypassUntil
+	policy.mu.RUnlock()
+	return !until.IsZero() && time.Now().Before(until)
+}
+
+func (policy *familyPolicy) recordWARPResult(ok bool) {
+	policy.mu.Lock()
+	defer policy.mu.Unlock()
+	if ok {
+		policy.warpFailCount = 0
+		policy.warpBypassUntil = time.Time{}
+		return
+	}
+	policy.warpFailCount++
+	if policy.warpFailCount >= 2 {
+		policy.warpBypassUntil = time.Now().Add(25 * time.Second)
+		policy.warpFailCount = 0
+		log.Printf("warp circuit breaker tripped: bypassing unhealthy WARP to native for 25s")
 	}
 }
 
@@ -883,23 +908,32 @@ func (server *proxyServer) handle(client net.Conn, port string, hostname func([]
 	egressMode := server.policy.egressModeFor(host)
 	var upstream net.Conn
 	var err error
-	ctx, cancel := context.WithTimeout(context.Background(), server.dialTimeout)
-	if (egressMode == egressWarp6 || egressMode == egressWarp4) && server.policy.warpSocks != "" {
+	if (egressMode == egressWarp6 || egressMode == egressWarp4) && server.policy.warpSocks != "" && !server.policy.shouldBypassWARP() {
 		family := "ipv6"
 		if egressMode == egressWarp4 {
 			family = "ipv4"
 		}
-		upstream, err = dialViaWARP(ctx, server.policy.warpSocks, host, port, family)
+		warpTimeout := 4 * time.Second
+		if server.dialTimeout < warpTimeout {
+			warpTimeout = server.dialTimeout
+		}
+		warpCtx, warpCancel := context.WithTimeout(context.Background(), warpTimeout)
+		upstream, err = dialViaWARP(warpCtx, server.policy.warpSocks, host, port, family)
+		warpCancel()
 		if err != nil {
-			log.Printf("warp dial %s:%s (%s) failed, falling back to native: %v", host, port, egressMode, err)
+			server.policy.recordWARPResult(false)
+			log.Printf("warp dial %s:%s (%s) failed, falling back to native with fresh context: %v", host, port, egressMode, err)
+		} else {
+			server.policy.recordWARPResult(true)
 		}
 	}
 	if upstream == nil {
+		nativeCtx, nativeCancel := context.WithTimeout(context.Background(), server.dialTimeout)
 		prefer6 := egressMode == egressNative6 || server.policy.preferIPv6(host)
 		allow6 := prefer6 || server.policy.allowIPv6Fallback(host)
-		upstream, err = dialHost(ctx, host, port, prefer6, !allow6, allow6, "")
+		upstream, err = dialHost(nativeCtx, host, port, prefer6, !allow6, allow6, "")
+		nativeCancel()
 	}
-	cancel()
 	if err != nil {
 		log.Printf("dial %s:%s (mode=%s): %v", host, port, egressMode, err)
 		return

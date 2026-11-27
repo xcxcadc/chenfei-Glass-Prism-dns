@@ -34,7 +34,7 @@ func dialSOCKS5(ctx context.Context, proxyAddr, targetHost, targetPort string) (
 	if err != nil || portNum < 1 || portNum > 65535 {
 		return nil, fmt.Errorf("invalid target port %q", targetPort)
 	}
-	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	dialer := &net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}
 	conn, err := dialer.DialContext(ctx, "tcp", proxyAddr)
 	if err != nil {
 		return nil, err
