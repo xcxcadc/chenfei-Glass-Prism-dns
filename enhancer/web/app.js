@@ -109,6 +109,7 @@ const state = {
   overrides: {}, activeSelections: {}, search: "", category: "", statusFilter: "", nodeFilter: "", page: 1, pageSize: 20, selectedServiceIds: new Set(),
   loading: false, modal: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "", syncError: "", routingError: "",
   mediaChecks: new Map(), mediaCheckView: null, mediaCheckPositions: new Map(),
+  quickChecks: new Map(),
   branding: {site_name:"", browser_title:"", site_tagline:""},
   nodeRelease: {status:"loading"}, nodeInventory: {status:"loading"}, nodeUpdatesSubmitting: new Set(), nodeUpdateErrors: new Map()
 };
@@ -117,6 +118,69 @@ const prismSourceRef = "__PRISM_SOURCE_REF__";
 
 function prismRawURL(file) {
   return `https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/refs/tags/${prismSourceRef}/${file}`;
+}
+
+function prismDistURL(file) {
+  return `${location.origin}/enhancer/dist/${file}`;
+}
+
+function proxyServiceBadgeText(node, service) {
+  if (!node || !service) return "";
+  const cached = state.quickChecks.get(service.id)?.get(nodeID(node.id));
+  if (cached?.summary) {
+    const icon = cached.status === "yes" ? "✓" : cached.status === "no" ? "✗" : "⚠";
+    return `${icon} ${cached.summary}${cached.latency_ms ? ` · ${cached.latency_ms}ms` : ""}`;
+  }
+  const results = node.media_summary?.results || state.mediaChecks.get(`node:${nodeID(node.id)}`)?.job?.results;
+  if (!results) return "";
+  const keys = new Set(mediaServiceLabels(service).map(mediaLabelKey));
+  const matched = Object.entries(results).find(([label]) => keys.has(mediaLabelKey(label)));
+  if (!matched) {
+    const play = results["Google Play Store"];
+    if (play && /^China\b/i.test(String(play).trim()) && /gemini|google|youtube/i.test(service.name)) {
+      return "⚠ IPv4送中";
+    }
+    return "";
+  }
+  const raw = String(matched[1] || "").trim();
+  const parsed = mediaRawState(raw);
+  const icon = parsed.kind === "good" ? "✓" : parsed.kind === "bad" ? "✗" : "⚠";
+  return `${icon} ${raw.length > 26 ? `${raw.slice(0, 26)}…` : raw}`;
+}
+
+function proxyOptionLabel(node, service) {
+  const onlinePrefix = isOnline(node) ? "" : (state.lang === "zh" ? "[离线] " : "[OFFLINE] ");
+  const country = node.country ? ` (${node.country})` : "";
+  const badge = proxyServiceBadgeText(node, service);
+  return `${onlinePrefix}${node.name}${country}${badge ? ` · ${badge}` : ""}`;
+}
+
+function orphanRouteEntries() {
+  if (!state.nodes.length) return [];
+  const validProxyIds = new Set(proxyNodes().map(node => nodeID(node.id)));
+  const items = [];
+  for (const config of state.ipConfigs || []) {
+    const orphanServices = [];
+    for (const [serviceId, proxyId] of Object.entries(config.routes || {})) {
+      if (proxyId && !validProxyIds.has(nodeID(proxyId))) {
+        const svc = state.catalog.find(item => serviceIDs(item).includes(serviceId));
+        orphanServices.push(svc ? displayServiceName(svc) : serviceId);
+      }
+    }
+    if (orphanServices.length) {
+      items.push({config, services: orphanServices});
+    }
+  }
+  return items;
+}
+
+function orphanBannerHTML() {
+  const orphans = orphanRouteEntries();
+  if (!orphans.length) return "";
+  const proxies = proxyNodes();
+  const preferred = proxies.find(isOnline) || proxies[0];
+  const summary = orphans.map(item => `${item.config.ip}（${item.services.join("、")}）`).join("；");
+  return `<section class="panel orphan-banner"><div class="orphan-banner-copy"><i class="bi bi-exclamation-triangle-fill"></i><div><strong>${state.lang === "zh" ? "检测到指向已删除解锁机的残留路由" : "Stale routes pointing to deleted proxy nodes detected"}</strong><p>${escapeHTML(summary)}</p></div></div><div class="orphan-banner-actions">${proxies.length ? `<select class="select compact-select" id="orphan-target-proxy">${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(preferred?.id) ? "selected" : ""}>${escapeHTML(node.name)}${node.country ? ` · ${escapeHTML(node.country)}` : ""}</option>`).join("")}</select><button class="btn small primary" type="button" id="heal-orphans-migrate"><i class="bi bi-magic"></i>${state.lang === "zh" ? "一键迁移修复" : "Migrate & fix"}</button>` : ""}<button class="btn small danger" type="button" id="heal-orphans-remove">${state.lang === "zh" ? "仅清除失效项" : "Remove stale routes"}</button></div></section>`;
 }
 
 function t(key) { return translations[state.lang][key] || key; }
@@ -891,7 +955,7 @@ async function pollNodeInventory() {
     if (controller.signal.aborted) return;
     const version = result?.version;
     if (!isNodeVersion(version)) throw new Error(t("nodeInvalidResponse"));
-    state.nodeRelease = {version, status:"ready"};
+    state.nodeRelease = {version, self_hosted:Boolean(result?.self_hosted), status:"ready"};
   }).catch(error => {
     if (controller.signal.aborted) return;
     state.nodeRelease = [404, 405, 501].includes(error.status) ? {status:"unsupported"} : {status:"unavailable", error:requestErrorDetail(error)};
@@ -1076,6 +1140,7 @@ function servicesHTML() {
   const pageStart = (state.page - 1) * state.pageSize;
   const pageServices = filtered.slice(pageStart, pageStart + state.pageSize);
   return `${dns.length === 0 ? `<div class="panel empty"><strong>${t("noDNS")}</strong><button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button></div>` : ""}
+    ${orphanBannerHTML()}
     <section class="dashboard-summary panel">
       <div class="dashboard-stat"><span class="stat-icon blue"><i class="bi bi-grid-fill"></i></span><div><span>${state.lang === "zh" ? "活跃服务" : "Active services"}</span><strong>${configured}</strong><small>${state.lang === "zh" ? `总计 ${state.catalog.length}` : `${state.catalog.length} total`}</small></div></div>
       <div class="dashboard-stat"><span class="stat-icon cyan"><i class="bi bi-server"></i></span><div><span>${state.lang === "zh" ? "DNS 节点" : "DNS nodes"}</span><strong>${dns.length}</strong><small class="good-copy"><i class="bi bi-circle-fill"></i>${dns.filter(isOnline).length}/${dns.length} ${state.lang === "zh" ? "在线" : "online"}</small></div></div>
@@ -1105,17 +1170,25 @@ function serviceTableRowHTML(service) {
   const node = routedNodeForService(service);
   const status = serviceStatus(service, node);
   const targetConfig = configForNode(selectedDNS());
+  const rawRouteProxyId = nodeID(serviceRouteEntry(targetConfig, service)?.value);
+  const orphanRoute = Boolean(rawRouteProxyId && !node && state.nodes.length);
   const result = serviceResult(targetConfig, service);
-  const configured = !!node;
+  const configured = !!node || orphanRoute;
   const checked = state.selectedServiceIds.has(service.id);
-  const statusClass = !configured ? "neutral" : status.kind === "warn" ? "warn" : status.kind === "bad" ? "bad" : "";
-  const statusLabel = configured ? (status.kind === "bad" ? (state.lang === "zh" ? "异常" : "Issue") : (state.lang === "zh" ? "已配置" : "Configured")) : t("notConfigured");
+  const statusClass = !configured ? "neutral" : orphanRoute ? "bad" : status.kind === "warn" ? "warn" : status.kind === "bad" ? "bad" : "";
+  const statusLabel = orphanRoute ? (state.lang === "zh" ? "节点已删除" : "Node deleted") : configured ? (status.kind === "bad" ? (state.lang === "zh" ? "异常" : "Issue") : (state.lang === "zh" ? "已配置" : "Configured")) : t("notConfigured");
   const uncovered = /^NOT COVERED\b/i.test(result) || [t("auditNotCovered"), t("mediaNotCovered")].includes(status.label);
-  const auditLabel = uncovered ? t("auditNotCovered") : status.kind === "good" ? (state.lang === "zh" ? "成功" : "Passed") : status.kind === "warn" ? (state.lang === "zh" ? "待确认" : "Review") : status.kind === "bad" ? (state.lang === "zh" ? "失败" : "Failed") : t("auditPending");
+  const auditLabel = orphanRoute ? (state.lang === "zh" ? "需迁移" : "Orphan") : uncovered ? t("auditNotCovered") : status.kind === "good" ? (state.lang === "zh" ? "成功" : "Passed") : status.kind === "warn" ? (state.lang === "zh" ? "待确认" : "Review") : status.kind === "bad" ? (state.lang === "zh" ? "失败" : "Failed") : t("auditPending");
   const customActions = service.custom ? `<button class="btn small icon service-custom-edit" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("customEdit"))}"><i class="bi bi-pencil"></i></button>` : "";
+  const quickAction = `<button class="btn small icon service-quick-check" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "⚡ 全节点秒测解锁" : "⚡ Instant check across proxies"}"><i class="bi bi-lightning-charge-fill"></i></button>`;
   const domainAction = `<button class="btn small icon service-domains-open" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("viewDomains"))}"><i class="bi bi-pencil-square"></i></button>`;
   const deleteAction = `<button class="btn small icon danger service-delete${service.custom ? " service-custom-delete" : ""}" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("deleteService"))}"><i class="bi bi-trash3"></i></button>`;
-  return `<tr class="${configured ? "configured" : ""}" data-service-id="${escapeHTML(service.id)}"><td><input class="service-select" type="checkbox" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}></td><td><button class="service-identity service-open" data-service-id="${escapeHTML(service.id)}">${serviceIconHTML(service)}<span><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</small></span></button></td><td><span class="table-status"><i class="status-dot ${statusClass}"></i>${escapeHTML(statusLabel)}</span></td><td><span class="result-badge ${status.kind || "neutral"}" title="${escapeHTML(result || status.raw || status.label)}">${escapeHTML(auditLabel)}</span></td><td>${node ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(node.country || node.public_ip || node.address || "-")}</small></span></div>` : `<span class="muted-cell">${t("notConfigured")}</span>`}</td><td><span class="last-audit" title="${escapeHTML(formatDate(targetConfig?.service_audited_at))}">${result ? escapeHTML(formatRelativeDate(targetConfig?.service_audited_at)) : t("auditPending")}</span></td><td><div class="table-actions">${configured ? `<button class="btn small icon service-audit-run" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "立即实测" : "Test now"}"><i class="bi bi-play-circle"></i></button>` : ""}<button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button>${domainAction}<button class="btn small icon service-category-open" data-service-id="${escapeHTML(service.id)}" title="${t("editCategory")}"><i class="bi bi-three-dots"></i></button>${customActions}${deleteAction}</div></td></tr>`;
+  const routeNodeCell = node
+    ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(proxyServiceBadgeText(node, service) || node.country || node.public_ip || node.address || "-")}</small></span></div>`
+    : orphanRoute
+      ? `<span class="badge bad">${state.lang === "zh" ? "⚠ 旧节点已删" : "⚠ Deleted node"}</span>`
+      : `<span class="muted-cell">${t("notConfigured")}</span>`;
+  return `<tr class="${configured ? "configured" : ""}" data-service-id="${escapeHTML(service.id)}"><td><input class="service-select" type="checkbox" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}></td><td><button class="service-identity service-open" data-service-id="${escapeHTML(service.id)}">${serviceIconHTML(service)}<span><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))} · ${service.domains.length} ${t("domains")}</small></span></button></td><td><span class="table-status"><i class="status-dot ${statusClass}"></i>${escapeHTML(statusLabel)}</span></td><td><span class="result-badge ${orphanRoute ? "bad" : (status.kind || "neutral")}" title="${escapeHTML(result || status.raw || status.label)}">${escapeHTML(auditLabel)}</span></td><td>${routeNodeCell}</td><td><span class="last-audit" title="${escapeHTML(formatDate(targetConfig?.service_audited_at))}">${result ? escapeHTML(formatRelativeDate(targetConfig?.service_audited_at)) : t("auditPending")}</span></td><td><div class="table-actions">${quickAction}${configured && !orphanRoute ? `<button class="btn small icon service-audit-run" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "目标机完整实测" : "Full target check"}"><i class="bi bi-play-circle"></i></button>` : ""}<button class="btn small service-open" data-service-id="${escapeHTML(service.id)}">${t("open")}</button>${domainAction}<button class="btn small icon service-category-open" data-service-id="${escapeHTML(service.id)}" title="${t("editCategory")}"><i class="bi bi-three-dots"></i></button>${customActions}${deleteAction}</div></td></tr>`;
 }
 
 function contentHeaderHTML(title, hint, actions = "") {
@@ -1206,7 +1279,8 @@ function routeNodeCardHTML(node, configuredServices) {
 }
 
 function nodesHTML() {
-  const header = contentHeaderHTML(state.lang === "zh" ? "节点管理" : "Nodes", state.lang === "zh" ? "统一管理解锁机和被解锁机；节点状态变化不会自动改写服务路由。" : "Manage proxy and target nodes. Status changes never rewrite service routes automatically.", `<button class="btn primary" id="add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button>`);
+  const actions = `<div class="inline-actions"><button class="btn" id="batch-update-nodes" type="button"><i class="bi bi-cloud-arrow-up"></i>${state.lang === "zh" ? "一键升级全部节点" : "Update all nodes"}</button><button class="btn primary" id="add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button></div>`;
+  const header = contentHeaderHTML(state.lang === "zh" ? "节点管理" : "Nodes", state.lang === "zh" ? "统一管理解锁机和被解锁机；节点状态变化不会自动改写服务路由。" : "Manage proxy and target nodes. Status changes never rewrite service routes automatically.", actions);
   lastNodeListHTML = nodeListHTML();
   return `${header}<p class="node-inventory-status${hasNodeInventoryError() ? " has-error" : ""}" id="node-inventory-status" role="status">${escapeHTML([nodeInventoryStatus(), nodeReleaseStatus()].filter(Boolean).join(" · "))}</p><div id="node-list">${lastNodeListHTML}</div>`;
 }
@@ -1298,6 +1372,35 @@ function nodeManagementHTML(node) {
     ${submitError ? `<small class="node-update-error" role="status">${t("nodeUpdateSubmitFailed")}: ${escapeHTML(submitError)}</small>` : ""}</div></div>`;
 }
 
+function proxyCapabilityChipsHTML(node) {
+  if (node?.role !== "proxy") return "";
+  const results = node.media_summary?.results || state.mediaChecks.get(`node:${nodeID(node.id)}`)?.job?.results;
+  if (!results || typeof results !== "object") return "";
+  const items = [
+    ["Google Gemini", "Gemini"],
+    ["ChatGPT", "ChatGPT"],
+    ["Claude", "Claude"],
+    ["Netflix", "Netflix"],
+    ["Disney+", "Disney+"],
+    ["YouTube Premium", "YouTube"]
+  ];
+  const chips = [];
+  for (const [key, shortName] of items) {
+    const raw = String(results[key] || "").trim();
+    if (!raw) continue;
+    const parsed = mediaRawState(raw);
+    const regionMatch = /Region:\s*([A-Za-z]{2,3})/i.exec(raw) || /\(([A-Za-z]{2,3})\)/.exec(raw);
+    const region = regionMatch ? ` ${regionMatch[1].toUpperCase()}` : "";
+    const icon = parsed.kind === "good" ? "✓" : parsed.kind === "bad" ? "✗" : "·";
+    chips.push(`<span class="cap-chip ${parsed.kind}" title="${escapeHTML(`${key}: ${raw}`)}">${icon} ${escapeHTML(shortName)}${escapeHTML(region)}</span>`);
+  }
+  const play = String(results["Google Play Store"] || "").trim();
+  if (/^China\b/i.test(play)) {
+    chips.push(`<span class="cap-chip warn" title="${escapeHTML(`Google Play Store: ${play}（已启用 IPv6 双栈防送中自适应分流）`)}">⚡ IPv6防送中</span>`);
+  }
+  return chips.length ? `<div class="proxy-capability-strip">${chips.join("")}</div>` : "";
+}
+
 function nodeListHTML() {
   if (!state.nodes.length) {
     const ready = state.nodeInventory.status === "ready";
@@ -1310,6 +1413,7 @@ function nodeListHTML() {
     const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail, tooltip:nodeMediaDetail(node)};
     return `<article class="panel node-card"><div class="node-title"><div><h3>${escapeHTML(node.name)}</h3><div class="brand-meta"><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${node.role === "proxy" ? t("proxy") : t("dns")}</div></div><span class="badge ${status.kind}" title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.label)}</span></div>
       <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("mediaNodeSelfCheck")}</span><strong ${node.role === "proxy" ? `data-media-node-id="${escapeHTML(nodeID(node.id))}"` : ""} title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
+      ${proxyCapabilityChipsHTML(node)}
       ${nodeManagementHTML(node)}
        <div class="node-actions"><button class="btn small node-install" data-node-id="${escapeHTML(nodeID(node.id))}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${escapeHTML(nodeID(node.id))}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}${node.role === "proxy" ? `<button class="btn small node-test" data-node-id="${escapeHTML(nodeID(node.id))}" title="${t("mediaNodeHint")}">${t("triggerUnlock")}</button>` : ""}<button class="btn small node-edit" data-node-id="${escapeHTML(nodeID(node.id))}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${escapeHTML(nodeID(node.id))}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
@@ -1384,7 +1488,7 @@ function ipConfigsHTML() {
   const header = contentHeaderHTML(state.lang === "zh" ? "IP 配置" : "IP Configs", state.lang === "zh" ? "每个目标 IP 独立配置解锁服务、统计 DNS 53 与解锁 TCP 80/443 流量。" : "Configure each target independently and count only DNS 53 plus unlock TCP 80/443 traffic.", `<input id="import-ip-config" type="file" accept="application/json,.json" hidden><button class="btn" id="export-ip-config"><i class="bi bi-download"></i>${t("exportConfig")}</button><label class="btn" for="import-ip-config"><i class="bi bi-upload"></i>${t("importConfig")}</label><button class="btn primary" id="add-ip"><i class="bi bi-plus-circle"></i>${t("addIP")}</button>`);
   if (!state.ipConfigs.length) return `${header}<div class="panel empty"><strong>${t("noIPConfigs")}</strong><button class="btn primary" id="empty-add-ip"><i class="bi bi-plus-circle"></i>${t("addIP")}</button></div>`;
   const totalTraffic = state.ipConfigs.reduce((total, config) => total + Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0), 0);
-  return `${header}<section class="traffic-summary panel"><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small>${t("trafficHint")}</small></div><button class="btn danger" id="clear-all-traffic">${t("clearAllTraffic")}</button></section><section class="ip-list panel"><div class="ip-list-head"><span>${t("targetIP")}</span><span>${t("selectedServices")}</span><span>${t("clientTraffic")}</span><span>${t("dnsClient")}</span><span></span></div>${state.ipConfigs.map(config => {
+  return `${header}${orphanBannerHTML()}<section class="traffic-summary panel"><div><span>${t("totalTraffic")}</span><strong>${formatBytes(totalTraffic)}</strong><small>${t("trafficHint")}</small></div><button class="btn danger" id="clear-all-traffic">${t("clearAllTraffic")}</button></section><section class="ip-list panel"><div class="ip-list-head"><span>${t("targetIP")}</span><span>${t("selectedServices")}</span><span>${t("clientTraffic")}</span><span>${t("dnsClient")}</span><span></span></div>${state.ipConfigs.map(config => {
     const node = ipConfigNode(config); const status = clientState(config, node); const count = Object.keys(config.routes || {}).length; const traffic = Number(config.traffic_rx_bytes || 0) + Number(config.traffic_tx_bytes || 0);
     const audited = serviceAuditFresh(config) ? Object.values(config.service_results || {}).map(auditResultState) : [];
     const passed = audited.filter(result => result.kind === "good").length;
@@ -1417,6 +1521,9 @@ function bindContent() {
   document.getElementById("refresh-audits")?.addEventListener("click", () => loadAll());
   document.getElementById("add-service")?.addEventListener("click", () => openServiceForm());
   document.getElementById("add-node")?.addEventListener("click", () => openNodeForm());
+  document.getElementById("batch-update-nodes")?.addEventListener("click", requestBatchNodeUpdate);
+  document.getElementById("heal-orphans-migrate")?.addEventListener("click", () => healOrphanRoutes(false));
+  document.getElementById("heal-orphans-remove")?.addEventListener("click", () => healOrphanRoutes(true));
   document.getElementById("add-ip")?.addEventListener("click", () => openIPForm());
   document.getElementById("empty-add-ip")?.addEventListener("click", () => openIPForm());
   document.getElementById("export-ip-config")?.addEventListener("click", exportIPConfigs);
@@ -1491,6 +1598,7 @@ function bindContent() {
   document.querySelectorAll(".service-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openServiceRoute(button.dataset.serviceId); }));
   document.querySelectorAll(".service-category-open").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openServiceCategory(button.dataset.serviceId); }));
   document.querySelectorAll(".service-audit-run").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); runTableServiceAudit(button.dataset.serviceId); }));
+  document.querySelectorAll(".service-quick-check").forEach(button => button.addEventListener("click", event => { event.stopPropagation(); openQuickCheck(button.dataset.serviceId); }));
   document.querySelectorAll(".service-card").forEach(card => card.addEventListener("click", () => openServiceRoute(card.dataset.serviceId)));
   document.querySelectorAll(".selected-service-row").forEach(row => row.addEventListener("click", () => openServiceRoute(row.dataset.serviceId)));
   const container = document.querySelector(".container");
@@ -1651,7 +1759,7 @@ function openInstallCommand(id) {
   const node = state.nodes.find(item => nodeID(item.id) === nodeID(id));
   if (!node) return;
   const smartMode = node.role === "dns" && (node.smart === true || String(node.smart).toLowerCase() === "true") ? "smart" : "standard";
-  state.modal = {type:"install-command", node, command:installCommand(node, smartMode)};
+  state.modal = {type:"install-command", node, command:installCommand(node, smartMode), selfHostedCommand:selfHostedInstallCommand(node, smartMode)};
   renderModal();
 }
 function openIPForm(config = null, step = config ? 2 : 1, existingNode = null, serviceSearch = "") {
@@ -1664,10 +1772,20 @@ function openIPForm(config = null, step = config ? 2 : 1, existingNode = null, s
 function ipScriptCommand(config) {
   return `wget -qO- ${prismRawURL("prismdns.sh")} | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click --non-interactive`;
 }
+function selfHostedIPScriptCommand(config) {
+  return `curl -fsSL ${prismDistURL("prismdns.sh")} | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click --non-interactive`;
+}
+function selfHostedInstallCommand(node, smartMode) {
+  const managedConfig = state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(node.id));
+  if (node.role === "dns" && managedConfig) return selfHostedIPScriptCommand(managedConfig);
+  const smart = node.role === "dns" && smartMode === "smart" ? " --smart" : "";
+  const ip = node.role === "proxy" && node.public_ip ? ` --ip "${node.public_ip.replace(/"/g, "")}"` : "";
+  return `curl -fsSL ${prismDistURL("agent_install.sh")} | bash -s -- --master ${location.origin} --secret ${node.secret || "<secret>"}${smart}${ip}`;
+}
 function openIPScript(id) {
   const config = state.ipConfigs.find(item => item.id === id);
   if (!config) return;
-  state.modal = {type:"ip-script", config, command:ipScriptCommand(config)};
+  state.modal = {type:"ip-script", config, command:selfHostedIPScriptCommand(config), fallbackCommand:ipScriptCommand(config)};
   renderModal();
 }
 function openIPDelete(id) {
@@ -1741,6 +1859,7 @@ function renderModal() {
   if (state.modal.type === "ip-delete") root.innerHTML = ipDeleteHTML();
   if (state.modal.type === "account") root.innerHTML = accountModalHTML();
   if (state.modal.type === "branding") root.innerHTML = brandingModalHTML();
+  if (state.modal.type === "quick-check") root.innerHTML = quickCheckModalHTML();
   bindModal();
   markLoadedServiceIcons(root);
   if (state.modal.type === "ip-form" && state.modal.step === 2) updateIPSaveControls(state.modal);
@@ -1769,7 +1888,7 @@ function serviceModalHTML(service) {
      <div class="service-domain-box"><div class="service-domain-head"><div><strong>${t("domainList")}</strong><span>${service.domain_override ? t("domainOverrideHint") : `${service.domains.length} ${t("domains")}`}</span></div><button class="btn small" id="edit-service-domains" type="button">${t("viewDomains")}</button></div><div class="domain-chip-list">${visibleDomains.map(domain => `<code>${escapeHTML(domain)}</code>`).join("")}${hiddenDomainCount ? `<span class="domain-chip-more">+${hiddenDomainCount}</span>` : ""}</div>${service.domain_override ? `<button class="btn small" id="restore-service-domains" type="button">${t("restoreDomains")}</button>` : ""}</div>
      <div class="inline" style="margin-top:15px"><span class="badge ${manual ? "warn" : ""}">${manual ? t("manual") : t("auto")}</span><span class="hint">${t("currentRoute")}: ${escapeHTML(current?.name || "-")}</span></div>
      <p class="hint media-context">${t("mediaConfigHint")} ${t("unlockSourceHint")}</p></div>
-      <footer class="modal-foot"><div class="inline"><button class="btn small" id="edit-service-category" type="button">${t("serviceCategory")}</button>${service.custom ? `<button class="btn small" id="edit-custom" type="button">${t("customEdit")}</button>` : ""}<button class="btn small danger" id="delete-service" type="button">${t("deleteService")}</button></div><div class="modal-foot-right"><button class="btn" id="test-service" type="button" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" type="button" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" type="button" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
+      <footer class="modal-foot"><div class="inline"><button class="btn small" id="modal-quick-check-service" type="button"><i class="bi bi-lightning-charge-fill"></i>${state.lang === "zh" ? "全节点秒测" : "Quick check"}</button><button class="btn small" id="edit-service-category" type="button">${t("serviceCategory")}</button>${service.custom ? `<button class="btn small" id="edit-custom" type="button">${t("customEdit")}</button>` : ""}<button class="btn small danger" id="delete-service" type="button">${t("deleteService")}</button></div><div class="modal-foot-right"><button class="btn" id="test-service" type="button" ${!state.modal.proxyId ? "disabled" : ""}>${t("connectivity")}</button><button class="btn" id="reset-service" type="button" ${!rule || !manual ? "disabled" : ""}>${t("reset")}</button><button class="btn primary" id="assign-service" type="button" ${!state.modal.proxyId || !state.dnsNodeId ? "disabled" : ""}>${t("assign")}</button></div></footer></section></div>`;
 }
 
 function serviceDomainFormHTML(service) {
@@ -1824,7 +1943,8 @@ function nodeFormHTML() {
 
 function installCommandHTML() {
   const modal = state.modal;
-  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("installCommand")}</h2><p>${escapeHTML(modal.node?.name || "")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p class="hint">${state.lang === "zh" ? "请在目标节点服务器执行以下命令，Agent 连接后节点会自动变为在线。" : "Run this command on the target node. The node becomes online after the Agent connects."}</p><pre class="code" id="install-command">${escapeHTML(modal.command)}</pre></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn" id="copy-install-command" type="button">${t("copy")}</button><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
+  const selfHostedCmd = modal.selfHostedCommand || "";
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("installCommand")}</h2><p>${escapeHTML(modal.node?.name || "")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p class="hint">${state.lang === "zh" ? "请在目标节点服务器执行以下命令，Agent 连接后节点会自动变为在线。" : "Run this command on the target node. The node becomes online after the Agent connects."}</p>${selfHostedCmd ? `<div class="field" style="margin-bottom:10px"><label>${state.lang === "zh" ? "推荐：面板直连高速安装（免 GitHub，同步最新二开组件）" : "Recommended: Direct panel install (no GitHub required)"}</label><pre class="code" id="install-command">${escapeHTML(selfHostedCmd)}</pre></div><details><summary class="hint">${state.lang === "zh" ? "查看 GitHub 源备用命令" : "Show GitHub fallback command"}</summary><pre class="code" style="margin-top:8px">${escapeHTML(modal.command)}</pre></details>` : `<pre class="code" id="install-command">${escapeHTML(modal.command)}</pre>`}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn" id="copy-install-command" type="button">${t("copy")}</button><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
 }
 
 function nodeDeleteHTML() {
@@ -1839,18 +1959,21 @@ function ipFormHTML() {
   }
   const services = state.catalog;
   const selectedCount = Object.keys(modal.routes).length;
-  return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
+  const bulkProxy = modal.bulkProxy || modal.defaultProxy || nodeID(proxies[0]?.id);
+  return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><div class="ip-quick-bar"><div class="ip-preset-buttons"><button class="btn small" type="button" data-ip-preset="ai"><i class="bi bi-stars"></i>${state.lang === "zh" ? "AI 全家桶" : "AI Bundle"}</button><button class="btn small" type="button" data-ip-preset="stream"><i class="bi bi-film"></i>${state.lang === "zh" ? "流媒体全家桶" : "Streaming Bundle"}</button><button class="btn small" type="button" data-ip-preset="clear">${state.lang === "zh" ? "清空已选" : "Clear all"}</button></div><div class="ip-bulk-assign"><select class="select compact-select" id="ip-bulk-proxy">${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(bulkProxy) ? "selected" : ""}>${escapeHTML(node.name)}${node.country ? ` (${escapeHTML(node.country)})` : ""}</option>`).join("")}</select><button class="btn small" type="button" id="ip-apply-bulk-proxy">${state.lang === "zh" ? "已选统一改节点" : "Apply to selected"}</button></div></div><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
     const selectedProxy = serviceRouteEntry({routes:modal.routes}, service)?.value || "";
     const checked = !!selectedProxy;
-    const canAudit = canAuditIPRoute(modal, service);
-    const audit = ipDraftAuditState(modal, service);
-    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(node.name)}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "立即实测" : "Test now"}</button></div></div></article>`;
-  }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 自动同步配置；实测只更新结果，不会改动您选择的节点" : "The Agent syncs configuration; audits update reports without changing your selected node"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!selectedCount ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
+    const proxyExists = proxies.some(node => nodeID(node.id) === nodeID(selectedProxy));
+    const canAudit = canAuditIPRoute(modal, service) && proxyExists;
+    const audit = checked && !proxyExists ? {kind:"bad", label:state.lang === "zh" ? "旧节点已删" : "Deleted node", detail:selectedProxy} : ipDraftAuditState(modal, service);
+    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${checked && !proxyExists ? `<option value="${escapeHTML(selectedProxy)}" selected>${state.lang === "zh" ? "⚠ 已删除旧节点（请重选）" : "⚠ Deleted node (reselect)"}</option>` : ""}${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(proxyOptionLabel(node, service))}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small icon ip-service-quick" type="button" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "⚡ 秒测所有解锁机" : "⚡ Quick check proxies"}"><i class="bi bi-lightning-charge-fill"></i></button><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "目标实测" : "Target test"}</button></div></div></article>`;
+  }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 自动同步配置；实测只更新结果，不会改动您选择的节点" : "The Agent syncs configuration; audits update reports without changing your selected node"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!canSaveIPConfig(modal) ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
 }
 
 function ipScriptHTML() {
   const modal = state.modal;
-  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("scriptCommand")}</h2><p>${escapeHTML(modal.config.ip)}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p class="hint">${t("runScriptHint")}</p><pre class="code" id="install-command">${escapeHTML(modal.command)}</pre></div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn" id="copy-install-command" type="button">${t("copy")}</button><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
+  const fallback = modal.fallbackCommand || "";
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>${t("scriptCommand")}</h2><p>${escapeHTML(modal.config.ip)}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><p class="hint">${t("runScriptHint")}</p><pre class="code" id="install-command">${escapeHTML(modal.command)}</pre>${fallback && fallback !== modal.command ? `<details style="margin-top:10px"><summary class="hint">${state.lang === "zh" ? "查看 GitHub 源备用命令" : "Show GitHub fallback command"}</summary><pre class="code" style="margin-top:8px">${escapeHTML(fallback)}</pre></details>` : ""}</div><footer class="modal-foot"><div></div><div class="modal-foot-right"><button class="btn" id="copy-install-command" type="button">${t("copy")}</button><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
 }
 
 function ipDeleteHTML() {
@@ -1865,6 +1988,7 @@ function bindModal() {
   document.getElementById("assign-service")?.addEventListener("click", assignService);
   document.getElementById("reset-service")?.addEventListener("click", resetService);
   document.getElementById("test-service")?.addEventListener("click", testService);
+  document.getElementById("modal-quick-check-service")?.addEventListener("click", () => openQuickCheck(state.modal.service.id));
   document.getElementById("edit-service-domains")?.addEventListener("click", () => openServiceDomains(state.modal.service.id));
   document.getElementById("restore-service-domains")?.addEventListener("click", restoreServiceDomains);
   document.getElementById("edit-custom")?.addEventListener("click", () => openServiceForm(state.modal.service));
@@ -1928,6 +2052,17 @@ function bindModal() {
     }
   }));
   document.querySelectorAll(".ip-service-audit").forEach(button => button.addEventListener("click", () => triggerIPServiceAudit(button.dataset.serviceId)));
+  document.querySelectorAll(".ip-service-quick").forEach(button => button.addEventListener("click", () => openQuickCheck(button.dataset.serviceId, state.modal)));
+  document.querySelectorAll("[data-ip-preset]").forEach(button => button.addEventListener("click", () => applyIPServicePreset(button.dataset.ipPreset)));
+  document.getElementById("ip-apply-bulk-proxy")?.addEventListener("click", applyBulkProxyToSelected);
+  document.getElementById("quick-check-rerun")?.addEventListener("click", () => runQuickCheckNow(state.modal?.service?.id));
+  document.getElementById("quick-check-back")?.addEventListener("click", () => {
+    if (state.modal?.returnModal) {
+      state.modal = state.modal.returnModal;
+      renderModal();
+    } else closeModal();
+  });
+  document.querySelectorAll(".quick-apply-proxy").forEach(button => button.addEventListener("click", () => applyQuickCheckProxy(button.dataset.proxyId)));
   document.getElementById("confirm-delete-ip")?.addEventListener("click", deleteIPConfig);
   document.getElementById("account-form")?.addEventListener("submit", updateAccount);
   const brandingForm = document.getElementById("branding-form");
@@ -2488,12 +2623,184 @@ async function deleteNode() {
 }
 
 async function copyInstallCommand() {
-  const command = state.modal?.command || "";
+  const command = state.modal?.selfHostedCommand || state.modal?.command || "";
   try {
     if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(command);
     else { const input = document.createElement("textarea"); input.value = command; document.body.appendChild(input); input.select(); document.execCommand("copy"); input.remove(); }
     toast(t("copied"), "good");
   } catch (error) { toast(cleanErrorMessage(error.message), "error"); }
+}
+
+function selectBestProxyForService(service, proxies = proxyNodes()) {
+  const online = proxies.filter(isOnline);
+  const candidates = online.length ? online : proxies;
+  for (const node of candidates) {
+    const badge = proxyServiceBadgeText(node, service);
+    if (badge.startsWith("✓")) return nodeID(node.id);
+  }
+  for (const node of candidates) {
+    const badge = proxyServiceBadgeText(node, service);
+    if (!badge.startsWith("✗") && !badge.includes("送中")) return nodeID(node.id);
+  }
+  return nodeID(candidates[0]?.id);
+}
+
+function applyIPServicePreset(preset) {
+  if (state.modal?.type !== "ip-form" || state.modal.step !== 2) return;
+  if (preset === "clear") {
+    state.modal.routes = {};
+    renderModal();
+    return;
+  }
+  const aiMatchers = [/^chatgpt\b|openai/i, /^gemini$/i, /^google ai studio$/i, /^claude$/i, /^grok$/i];
+  const streamMatchers = [/^netflix$/i, /^disney\+$/i, /^youtube$/i, /^tiktok$/i, /^spotify$/i, /prime video/i];
+  const matchers = preset === "ai" ? aiMatchers : streamMatchers;
+  let added = 0;
+  for (const service of state.catalog) {
+    if (matchers.some(re => re.test(service.name))) {
+      if (!state.modal.routes[service.id]) {
+        const best = selectBestProxyForService(service) || state.modal.defaultProxy;
+        if (best) {
+          state.modal.routes[service.id] = best;
+          applyLinkedRouteProxy(service.id, best, false);
+          added++;
+        }
+      }
+    }
+  }
+  renderModal();
+  toast(state.lang === "zh" ? `已智能勾选 ${added} 项常用服务并优选可用解锁机` : `Selected ${added} services with recommended proxies`, "good");
+}
+
+function applyBulkProxyToSelected() {
+  if (state.modal?.type !== "ip-form" || state.modal.step !== 2) return;
+  const proxySelect = document.getElementById("ip-bulk-proxy");
+  const proxyId = proxySelect?.value || state.modal.defaultProxy;
+  if (!proxyId) return;
+  state.modal.bulkProxy = proxyId;
+  const ids = Object.keys(state.modal.routes);
+  if (!ids.length) {
+    toast(state.lang === "zh" ? "请先勾选至少一项服务" : "Select at least one service first", "warn");
+    return;
+  }
+  ids.forEach(id => { state.modal.routes[id] = proxyId; });
+  renderModal();
+  toast(state.lang === "zh" ? `已将 ${ids.length} 项服务统一切换到所选解锁机` : `Switched ${ids.length} services to the selected proxy`, "good");
+}
+
+async function healOrphanRoutes(removeOnly = false) {
+  const select = document.getElementById("orphan-target-proxy");
+  const replacement = removeOnly ? "" : String(select?.value || "");
+  if (!removeOnly && !replacement) {
+    toast(state.lang === "zh" ? "请先选择替代解锁机" : "Select a replacement proxy first", "warn");
+    return;
+  }
+  const confirmText = removeOnly
+    ? (state.lang === "zh" ? "确认从所有 IP 配置中清除指向已删除旧节点的路由？" : "Remove all routes pointing to deleted proxy nodes?")
+    : (state.lang === "zh" ? "确认将所有指向已删除旧节点的路由一键迁移到所选解锁机？" : "Migrate all stale routes to the selected proxy?");
+  if (!confirm(confirmText)) return;
+  try {
+    const res = await api("/enhancer/api/ip-configs/heal-orphans", {
+      method: "POST",
+      body: JSON.stringify({replacement_proxy_id: replacement, remove_only: removeOnly})
+    });
+    await loadAll(true);
+    toast(state.lang === "zh" ? `已修复 ${res.healed_configs || 0} 台目标机共 ${res.healed_routes || 0} 条失效路由` : `Fixed ${res.healed_routes || 0} stale routes`, "good");
+  } catch (error) {
+    toast(cleanErrorMessage(error.message), "error");
+  }
+}
+
+async function requestBatchNodeUpdate() {
+  if (!confirm(state.lang === "zh" ? "将对所有心跳正常且版本较旧的节点下发在线热更新任务（不影响业务流量）。继续吗？" : "Queue online updates for all eligible nodes?")) return;
+  try {
+    const res = await api("/enhancer/api/node-updates/batch", {method: "POST", body: "{}"});
+    const queuedCount = Array.isArray(res?.queued) ? res.queued.length : 0;
+    toast(queuedCount ? (state.lang === "zh" ? `已为 ${queuedCount} 个节点排入 ${res.version} 更新队列` : `Queued ${queuedCount} nodes for ${res.version}`) : (state.lang === "zh" ? "所有已纳管在线节点均已是最新版本" : "All enrolled online nodes are already up to date"), "good");
+    pollNodeInventory();
+  } catch (error) {
+    toast(cleanErrorMessage(error.message), "error");
+  }
+}
+
+function quickCheckModalHTML() {
+  const modal = state.modal;
+  const service = modal.service;
+  const targetConfig = modal.returnModal?.type === "ip-form" ? modal.returnModal.config : configForNode(selectedDNS());
+  const targetIP = modal.returnModal?.type === "ip-form" ? modal.returnModal.draft?.ip : (targetConfig?.ip || selectedDNS()?.public_ip || "");
+  const rows = modal.results || [];
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>⚡ ${state.lang === "zh" ? "全节点秒测" : "Instant Proxy Check"} · ${escapeHTML(displayServiceName(service))}</h2><p>${targetIP ? `${state.lang === "zh" ? "当前目标" : "Target"}: ${escapeHTML(targetIP)}` : (state.lang === "zh" ? "并发经各解锁机 443 出口实测真实解锁状态与延迟" : "Live parallel SNI probe across all unlock proxies")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body">${modal.busy ? `<div class="quick-check-loading"><div class="spinner"></div><span>${state.lang === "zh" ? "正在并发探测全部解锁机真实出口（约 1~3 秒）…" : "Probing all unlock proxies in parallel…"}</span></div>` : ""}${modal.error ? `<div class="form-error">${escapeHTML(modal.error)}</div>` : ""}${!modal.busy && rows.length ? `<div class="quick-check-list">${rows.map(item => {
+    const kind = item.status === "yes" ? "good" : item.status === "no" || item.status === "error" ? "bad" : "warn";
+    return `<div class="quick-check-row"><div class="quick-check-node"><strong>${escapeHTML(item.proxy_name || item.proxy_id)}</strong><small>${escapeHTML(item.proxy_ip || "-")}${item.country ? ` · ${escapeHTML(item.country)}` : ""}${item.latency_ms ? ` · ${item.latency_ms} ms` : ""}</small></div><span class="badge ${kind}">${escapeHTML(item.summary)}</span>${(modal.returnModal?.type === "ip-form" || targetConfig) ? `<button class="btn small ${item.status === "yes" ? "primary" : ""} quick-apply-proxy" type="button" data-proxy-id="${escapeHTML(item.proxy_id)}">${state.lang === "zh" ? "选用此节点" : "Use proxy"}</button>` : ""}</div>`;
+  }).join("")}</div>` : (!modal.busy && !modal.error ? `<div class="empty"><strong>${t("noProxy")}</strong></div>` : "")}</div><footer class="modal-foot"><div>${modal.returnModal ? `<button class="btn" type="button" id="quick-check-back">${t("back")}</button>` : ""}</div><div class="modal-foot-right"><button class="btn" type="button" id="quick-check-rerun" ${modal.busy ? "disabled" : ""}><i class="bi bi-arrow-clockwise"></i>${state.lang === "zh" ? "重新秒测" : "Re-test"}</button><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
+}
+
+async function openQuickCheck(serviceId, returnModal = null) {
+  const service = state.catalog.find(item => item.id === serviceId);
+  if (!service) return;
+  state.modal = {type: "quick-check", service, returnModal, busy: true, error: "", results: []};
+  renderModal();
+  await runQuickCheckNow(serviceId);
+}
+
+async function runQuickCheckNow(serviceId) {
+  const modal = state.modal;
+  if (!modal || modal.type !== "quick-check" || !serviceId) return;
+  modal.busy = true;
+  modal.error = "";
+  renderModal();
+  try {
+    const data = await api("/enhancer/api/quick-check", {method: "POST", body: JSON.stringify({service_id: serviceId}), timeoutMs: 15000});
+    if (state.modal !== modal) return;
+    const results = Array.isArray(data?.results) ? data.results : [];
+    const byProxy = new Map(results.map(item => [nodeID(item.proxy_id), item]));
+    state.quickChecks.set(serviceId, byProxy);
+    modal.results = results;
+    modal.busy = false;
+    renderModal();
+  } catch (error) {
+    if (state.modal !== modal) return;
+    modal.busy = false;
+    modal.error = cleanErrorMessage(error.message);
+    renderModal();
+  }
+}
+
+async function applyQuickCheckProxy(proxyId) {
+  const modal = state.modal;
+  if (!modal || modal.type !== "quick-check" || !proxyId) return;
+  const service = modal.service;
+  if (modal.returnModal?.type === "ip-form") {
+    const ipModal = modal.returnModal;
+    ipModal.routes[service.id] = proxyId;
+    applyLinkedRouteProxy(service.id, proxyId, false);
+    state.modal = ipModal;
+    renderModal();
+    toast(state.lang === "zh" ? `已为 ${displayServiceName(service)} 选定节点，点击保存即可生效` : "Proxy selected in form; click Save to apply", "good");
+    return;
+  }
+  const targetConfig = configForNode(selectedDNS());
+  if (!targetConfig) {
+    toast(state.lang === "zh" ? "请先选择一个已纳管的目标 IP" : "Select a managed target IP first", "warn");
+    return;
+  }
+  modal.busy = true;
+  renderModal();
+  try {
+    const nextRoutes = {...canonicalRoutesForCatalog(targetConfig.routes || {}), [service.id]: proxyId};
+    const updated = await api(`/enhancer/api/ip-configs/${encodeURIComponent(targetConfig.id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ip: targetConfig.ip, note: targetConfig.note || "", smart: targetConfig.smart !== false, routes: nextRoutes})
+    });
+    state.ipConfigs = state.ipConfigs.map(item => item.id === updated.id ? updated : item);
+    closeModal();
+    await loadAll(true);
+    toast(state.lang === "zh" ? `已将 ${targetConfig.ip} 的 ${displayServiceName(service)} 切换并下发` : "Route switched and delivered", "good");
+  } catch (error) {
+    modal.busy = false;
+    modal.error = cleanErrorMessage(error.message);
+    renderModal();
+  }
 }
 
 function mediaCheckFinished(job) { return job?.status === "completed" || job?.status === "failed"; }

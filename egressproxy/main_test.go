@@ -41,7 +41,7 @@ func TestTLSHostname(t *testing.T) {
 	}
 }
 
-func TestFamilyPolicyMatchesDomainSuffix(t *testing.T) {
+func TestFamilyPolicyMatchesDomainSuffixKeywordAndCIDR(t *testing.T) {
 	policy := newFamilyPolicy("")
 	policy.prefer6 = map[string]bool{"googleapis.com": true, "example.com": false}
 	if !policy.preferIPv6("generativelanguage.googleapis.com") {
@@ -50,16 +50,55 @@ func TestFamilyPolicyMatchesDomainSuffix(t *testing.T) {
 	if policy.preferIPv6("cdn.example.com") || policy.preferIPv6("unmanaged.test") {
 		t.Fatal("IPv4 must remain the default")
 	}
-}
 
-func TestFamilyPolicyRoutesSelectedDomainToProxyIPv4(t *testing.T) {
-	policy := newFamilyPolicy("")
+	_, twitterNet, _ := net.ParseCIDR("199.59.148.0/22")
 	policy.routeIPs = map[string]string{"openai.com": "203.0.113.40"}
+	policy.keywords = []keywordRoute{{keyword: "twitter", proxyIP: "203.0.113.41"}}
+	policy.cidrs = []cidrRoute{{net: twitterNet, proxyIP: "203.0.113.42"}}
+
 	if got := policy.routeIP("chat.openai.com"); got != "203.0.113.40" {
 		t.Fatalf("expected selected domain to use proxy IPv4, got %q", got)
 	}
+	if got := policy.routeDestination("api.my-twitter-cdn.net", nil); got != "203.0.113.41" {
+		t.Fatalf("expected keyword route to match, got %q", got)
+	}
+	if got := policy.routeDestination("", net.ParseIP("199.59.149.10")); got != "203.0.113.42" {
+		t.Fatalf("expected CIDR route to match, got %q", got)
+	}
 	if got := policy.routeIP("example.com"); got != "" {
 		t.Fatalf("unselected domain must remain direct, got %q", got)
+	}
+}
+
+func TestInspectProbeResponseDetectsModernGeminiAndGoogleCN(t *testing.T) {
+	sgBlocked := inspectProbeResponse("gemini.google.com", 200, "https://gemini.google.com/app",
+		[]byte(`... ,2,1,200,"CHN" ... "45631641\":false ...`))
+	if !sgBlocked.Blocked || sgBlocked.Region != "CHN" {
+		t.Fatalf("expected SG CN-mapped IPv4 Gemini response to be marked blocked, got %+v", sgBlocked)
+	}
+
+	hkBlocked := inspectProbeResponse("gemini.google.com", 200, "https://gemini.google.com/app",
+		[]byte(`... ,2,1,200,"HKG" ... "45631641\":false ...`))
+	if !hkBlocked.Blocked || hkBlocked.Region != "HKG" {
+		t.Fatalf("expected HK Gemini response to be marked blocked, got %+v", hkBlocked)
+	}
+
+	sgCleanV6 := inspectProbeResponse("gemini.google.com", 200, "https://gemini.google.com/",
+		[]byte(`... ,2,1,200,"SGP" ... "45631641\":true ...`))
+	if sgCleanV6.Blocked || sgCleanV6.Region != "SGP" {
+		t.Fatalf("expected clean SGP IPv6 Gemini response to be unblocked, got %+v", sgCleanV6)
+	}
+
+	if !preferIPv6Result(servicePolicy{IPv6Candidate: true}, sgBlocked, sgCleanV6) {
+		t.Fatal("expected blocked IPv4 + clean IPv6 to select IPv6")
+	}
+	if preferIPv6Result(servicePolicy{IPv6Candidate: true}, sgCleanV6, hkBlocked) {
+		t.Fatal("must not switch to blocked IPv6")
+	}
+
+	claudeBlocked := inspectProbeResponse("claude.ai", 200, "https://claude.com/app-unavailable-in-region#_", []byte("unavailable"))
+	if !claudeBlocked.Blocked {
+		t.Fatal("expected claude.com unavailable redirect to be marked blocked")
 	}
 }
 
@@ -87,6 +126,22 @@ func TestPreferIPv6DisabledByDefault(t *testing.T) {
 		probeResult{Reachable: true, Code: 403},
 		probeResult{Reachable: true, Code: 200}) {
 		t.Fatal("IPv4 must remain preferred unless IPv6 is explicitly enabled")
+	}
+}
+
+func TestReadInitialPreservesNonTLSBytes(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	go func() {
+		_, _ = client.Write([]byte("SSH-2.0-OpenSSH"))
+	}()
+	buf, err := readInitial(server, "443")
+	if err == nil {
+		t.Fatal("expected non-TLS preface to return an error")
+	}
+	if string(buf) != "SSH-2" {
+		t.Fatalf("expected 5 initial bytes to be preserved for passthrough, got %q", string(buf))
 	}
 }
 

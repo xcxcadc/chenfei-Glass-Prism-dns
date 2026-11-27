@@ -4,18 +4,45 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 const defaultCatalogURL = "https://raw.githubusercontent.com/1-stream/1stream-public-utils/main/stream.smartdns.list"
 
+func detectLocalPublicIPv4() string {
+	if envIP := strings.TrimSpace(os.Getenv("PRISM_PANEL_IPV4")); envIP != "" {
+		if parsed := net.ParseIP(envIP); parsed != nil && parsed.To4() != nil {
+			return parsed.To4().String()
+		}
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok || ipNet.IP == nil {
+			continue
+		}
+		v4 := ipNet.IP.To4()
+		if v4 == nil || !v4.IsGlobalUnicast() || v4.IsPrivate() || v4.IsLoopback() || v4.IsLinkLocalUnicast() {
+			continue
+		}
+		return v4.String()
+	}
+	return ""
+}
+
 func main() {
 	listen := flag.String("listen", "0.0.0.0:8080", "enhancer listen address")
 	upstream := flag.String("upstream", "http://127.0.0.1:18080", "Prism Controller URL")
 	dataDir := flag.String("data-dir", "/var/lib/prism-enhancer", "persistent data directory")
+	distDir := flag.String("dist-dir", "/opt/prism/dist", "self-hosted node distribution directory")
 	controllerDB := flag.String("controller-db", "/opt/prism/data.db", "Prism Controller SQLite database")
 	catalogURL := flag.String("catalog-url", defaultCatalogURL, "SmartDNS catalog URL")
 	flag.Parse()
@@ -53,6 +80,8 @@ func main() {
 	app.nodeLabels = nodeLabels
 	app.branding = branding
 	app.transport = transport
+	app.distDir = *distDir
+	app.panelIPv4 = detectLocalPublicIPv4()
 	app.nodeUpdates, err = newNodeUpdateStore(filepath.Join(*dataDir, "node-updates.json"))
 	if err != nil {
 		log.Fatalf("initialize node updates: %v", err)

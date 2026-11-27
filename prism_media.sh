@@ -2,6 +2,74 @@
 set +x
 set -Eeuo pipefail
 
+normalize_iso_region() {
+  case "${1:-}" in
+    SGP) printf 'SG' ;; JPN) printf 'JP' ;; USA) printf 'US' ;; GBR) printf 'GB' ;;
+    KOR) printf 'KR' ;; TWN) printf 'TW' ;; VNM) printf 'VN' ;; MYS) printf 'MY' ;;
+    THA) printf 'TH' ;; DEU) printf 'DE' ;; FRA) printf 'FR' ;; NLD) printf 'NL' ;;
+    AUS) printf 'AU' ;; CAN) printf 'CA' ;; IND) printf 'IN' ;; IDN) printf 'ID' ;;
+    PHL) printf 'PH' ;; HKG) printf 'HK' ;; CHN) printf 'CN' ;; MAC) printf 'MO' ;;
+    RUS) printf 'RU' ;; BLR) printf 'BY' ;; *) printf '%s' "${1:-}" ;;
+  esac
+}
+
+set_media_result() {
+  local label="$1" value="$2" updated
+  [[ -n "$value" ]] || return 0
+  updated=$(jq -c --arg platform "$label" --arg value "$value" '. + {($platform): $value}' <<<"$RESULTS") && RESULTS="$updated"
+}
+
+verify_live_platforms() {
+  [[ "$SCRIPT_URL" != file://* ]] || return 0
+  local ua='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+  local use_proxy_egress=false gemini_body='' region='' claude_info='' claude_code='' claude_url='' yt_body=''
+  local -a curl_gemini=() curl_claude=() curl_yt=()
+  if [[ "$ROLE" == proxy ]] && command -v ss >/dev/null 2>&1 && ss -lnt 2>/dev/null | grep -q ':19443 '; then
+    use_proxy_egress=true
+    curl_gemini=(--connect-to "gemini.google.com:443:127.0.0.1:19443" --connect-to "www.google.com:443:127.0.0.1:19443")
+    curl_claude=(--connect-to "claude.ai:443:127.0.0.1:19443" --connect-to "claude.com:443:127.0.0.1:19443")
+    curl_yt=(--connect-to "www.youtube.com:443:127.0.0.1:19443")
+  else
+    curl_gemini=(-4)
+    curl_claude=(-4)
+    curl_yt=(-4)
+  fi
+
+  gemini_body=$(curl -fsSL "${curl_gemini[@]}" --connect-timeout 5 --max-time 12 -A "$ua" 'https://gemini.google.com/app' 2>/dev/null || true)
+  if [[ -n "$gemini_body" ]]; then
+    if [[ "$gemini_body" =~ ,2,1,200,\"([A-Z]{2,3})\" ]]; then
+      region=$(normalize_iso_region "${BASH_REMATCH[1]}")
+    fi
+    if grep -Eq '"45631641":true|45631641\\":true|45631641,null,true' <<<"$gemini_body" &&
+       [[ ! "$region" =~ ^(CN|HK|MO|RU|BY)$ ]]; then
+      set_media_result 'Google Gemini' "Yes${region:+ (Region: $region)}"
+    elif grep -Eq '"45631641":false|45631641\\":false' <<<"$gemini_body" ||
+         [[ "$region" =~ ^(CN|HK|MO|RU|BY)$ ]]; then
+      set_media_result 'Google Gemini' "No${region:+ (Region: $region)}"
+    fi
+  fi
+
+  claude_info=$(curl -sSL "${curl_claude[@]}" --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}|%{url_effective}' -A "$ua" 'https://claude.ai/' 2>/dev/null || true)
+  claude_code="${claude_info%%|*}"
+  claude_url="${claude_info#*|}"
+  if [[ "$claude_url" == *unavailable-in-region* || "$claude_url" == *anthropic.com* ]]; then
+    set_media_result 'Claude' 'No'
+  elif [[ "$claude_code" =~ ^(200|301|302|303|307|308|403)$ && "$claude_url" == *claude.ai* ]]; then
+    set_media_result 'Claude' 'Yes'
+  fi
+
+  if $use_proxy_egress; then
+    yt_body=$(curl -fsSL "${curl_yt[@]}" --connect-timeout 5 --max-time 10 -A "$ua" 'https://www.youtube.com/premium' 2>/dev/null || true)
+    if [[ -n "$yt_body" ]]; then
+      if grep -Eqi 'YouTube Premium is not available in your country|"countryCode":"CN"|www\.google\.cn' <<<"$yt_body"; then
+        set_media_result 'YouTube Premium' 'No'
+      elif [[ "$yt_body" =~ \"countryCode\":\"([A-Z]{2})\" ]]; then
+        set_media_result 'YouTube Premium' "Yes (Region: ${BASH_REMATCH[1]})"
+      fi
+    fi
+  fi
+}
+
 ENV_FILE="${PRISM_MEDIA_ENV_FILE:-/etc/prismdns/transport.env}"
 CACHE_DIR="${PRISM_MEDIA_CACHE_DIR:-/var/lib/prism-media-check}"
 SCRIPT_URL="${PRISM_MEDIA_SCRIPT_URL:-http://check.unlock.media}"
@@ -317,11 +385,14 @@ run_worker() {
     SCRIPT_PID=''
   fi
   parse_output "$output" || true
+  verify_live_platforms || true
   if $timed_out; then
     post_worker report failed 'Official media script exceeded 15 minute safety limit' || true
     return 1
   fi
-  if ((exit_code != 0)); then
+  local result_count=0
+  result_count=$(jq 'length' <<<"$RESULTS" 2>/dev/null || echo 0)
+  if ((exit_code != 0 && result_count < 5)); then
     post_worker report failed "Official media script exited with status $exit_code" || true
     return 1
   fi

@@ -202,6 +202,15 @@ func (app *App) handleEnhancedNodes(writer http.ResponseWriter, request *http.Re
 		for _, node := range nodes {
 			app.nodeLabels.Overlay(node)
 			app.nodeUpdates.overlay(node)
+			if valueString(node["role"]) == "proxy" && app.mediaChecks != nil {
+				if job, ok := app.mediaChecks.Latest(valueString(node["id"]), ""); ok && len(job.Results) > 0 {
+					node["media_summary"] = map[string]any{
+						"status":     job.Status,
+						"updated_at": job.UpdatedAt,
+						"results":    job.Results,
+					}
+				}
+			}
 		}
 		writeJSON(writer, http.StatusOK, nodes)
 	case http.MethodPost:
@@ -232,6 +241,9 @@ func (app *App) handleEnhancedNode(writer http.ResponseWriter, request *http.Req
 		if err := app.nodeLabels.Delete(id); err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
+		}
+		if app.transport != nil {
+			_ = app.transport.DeleteProxy(id)
 		}
 		writer.WriteHeader(http.StatusNoContent)
 	default:

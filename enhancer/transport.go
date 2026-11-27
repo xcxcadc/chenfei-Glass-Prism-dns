@@ -311,6 +311,19 @@ func (store *TransportStore) saveLocked() error {
 	return nil
 }
 
+func (store *TransportStore) DeleteProxy(nodeID string) error {
+	if store == nil || nodeID == "" {
+		return nil
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if _, exists := store.proxies[nodeID]; !exists {
+		return nil
+	}
+	delete(store.proxies, nodeID)
+	return store.saveLocked()
+}
+
 func (app *App) handleProxyTransport(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		methodNotAllowed(writer, http.MethodPost)
@@ -345,8 +358,35 @@ func (app *App) handleProxyTransport(writer http.ResponseWriter, request *http.R
 		return
 	}
 	config := app.transport.ProxyConfig(node.ID, app.ipStore.Records())
+	if parsed := net.ParseIP(strings.TrimSpace(app.panelIPv4)); parsed != nil && parsed.To4() != nil {
+		panelV4 := parsed.To4().String()
+		if !contains(config.AuthorizedIPs, panelV4) {
+			config.AuthorizedIPs = append(config.AuthorizedIPs, panelV4)
+			sort.Strings(config.AuthorizedIPs)
+		}
+	}
 	config.EgressServices = app.proxyEgressServices(request.Context(), node.ID)
 	writeJSON(writer, http.StatusOK, config)
+}
+
+func serviceSupportsAdaptiveIPv6(service Service) bool {
+	key := strings.ToLower(strings.TrimSpace(service.Name))
+	for _, token := range []string{
+		"gemini", "ai studio", "google", "youtube", "claude", "chatgpt", "openai",
+		"grok", "copilot", "netflix", "disney", "tiktok", "spotify", "prime video", "dazn",
+	} {
+		if strings.Contains(key, token) {
+			return true
+		}
+	}
+	for _, domain := range service.Domains {
+		d := strings.ToLower(domain)
+		if strings.Contains(d, "google") || strings.Contains(d, "youtube") || strings.Contains(d, "googleapis") ||
+			strings.Contains(d, "openai") || strings.Contains(d, "chatgpt") || strings.Contains(d, "claude") || strings.Contains(d, "anthropic") {
+			return true
+		}
+	}
+	return false
 }
 
 func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []transportEgressService {
@@ -359,9 +399,18 @@ func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []trans
 		}
 	}
 	services := app.catalog.Snapshot(ctx, false).Services
-	result := make([]transportEgressService, 0, len(serviceIDs))
+	// Always include core Google/AI services in proxy egress policy so instant quick-checks
+	// and newly assigned clients benefit from adaptive IPv4/IPv6 anti-CN routing immediately.
+	result := make([]transportEgressService, 0, len(serviceIDs)+6)
 	for _, service := range services {
-		if _, selected := serviceIDs[service.ID]; !selected {
+		_, selected := serviceIDs[service.ID]
+		adaptiveCore := strings.EqualFold(service.Name, "Gemini") ||
+			strings.EqualFold(service.Name, "Google AI Studio") ||
+			strings.EqualFold(service.Name, "YouTube") ||
+			strings.EqualFold(service.Name, "Google Play Store") ||
+			strings.EqualFold(service.Name, "ChatGPT / OpenAI") ||
+			strings.EqualFold(service.Name, "Claude")
+		if !selected && !adaptiveCore {
 			continue
 		}
 		result = append(result, transportEgressService{
@@ -371,7 +420,7 @@ func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []trans
 			DomainKeywords: normalizeDomainKeywords(service.DomainKeywords),
 			CIDRs:          normalizeCIDRs(service.CIDRs),
 			ProbeDomains:   preferredProbeDomains(service),
-			IPv6Candidate:  false,
+			IPv6Candidate:  serviceSupportsAdaptiveIPv6(service),
 		})
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].ServiceID < result[right].ServiceID })

@@ -3,8 +3,8 @@
 set +x
 set -Eeuo pipefail
 
-VERSION="2.5.3"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.5.40}"
+VERSION="2.6.0"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.0}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -144,6 +144,17 @@ detect_architecture() {
   esac
 }
 
+download_dist_or_github() {
+  local filename="$1" github_url="$2" target="$3"
+  if [[ "${MASTER:-}" =~ ^https?://[^[:space:]@]+$ ]]; then
+    if curl -fsSL --connect-timeout 6 --max-time 90 "$MASTER/enhancer/dist/$filename" -o "$target" 2>/dev/null && [[ -s "$target" ]]; then
+      return 0
+    fi
+    rm -f -- "$target"
+  fi
+  curl -fL --retry 3 --connect-timeout 15 --max-time 120 -o "$target" "$github_url"
+}
+
 install_proxy_egress() {
   [[ "$ROLE" == "proxy" ]] || return 0
   local source="${PRISM_EGRESS_BINARY_FILE:-}" temporary architecture
@@ -152,14 +163,15 @@ install_proxy_egress() {
   else
     architecture=$(detect_architecture)
     temporary=$(mktemp)
-    curl -fL --retry 3 --connect-timeout 15 --max-time 120 \
-      -o "$temporary" \
-      "https://github.com/$EGRESS_REPO/releases/download/$SCRIPT_REF/prism-egress-proxy_linux_$architecture"
+    download_dist_or_github \
+      "prism-egress-proxy_linux_$architecture" \
+      "https://github.com/$EGRESS_REPO/releases/download/$SCRIPT_REF/prism-egress-proxy_linux_$architecture" \
+      "$temporary"
     source="$temporary"
   fi
   install -m 755 "$source" "$EGRESS_BINARY"
   [[ -z "${temporary:-}" ]] || rm -f "$temporary"
-  mkdir -p "$(dirname "$EGRESS_POLICY")"
+  mkdir -p "$(dirname "$EGRESS_POLICY")" "$STATE_DIR"
   if [[ ! -s "$EGRESS_POLICY" ]]; then
     printf '{"services":[]}\n' >"$EGRESS_POLICY"
     chmod 644 "$EGRESS_POLICY"
@@ -172,7 +184,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$EGRESS_BINARY --http-listen 127.0.0.1:$EGRESS_HTTP_PORT --tls-listen 127.0.0.1:$EGRESS_HTTPS_PORT --policy $EGRESS_POLICY
+ExecStart=$EGRESS_BINARY --mode proxy --http-listen 0.0.0.0:$EGRESS_HTTP_PORT --tls-listen 0.0.0.0:$EGRESS_HTTPS_PORT --policy $EGRESS_POLICY
 Restart=always
 RestartSec=2
 NoNewPrivileges=true
@@ -186,16 +198,18 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable --now "$EGRESS_SERVICE" >/dev/null
+  systemctl enable "$EGRESS_SERVICE" >/dev/null
+  systemctl restart "$EGRESS_SERVICE"
   for _ in {1..30}; do
     if systemctl is-active --quiet "$EGRESS_SERVICE" &&
       ss -lnt 2>/dev/null | awk -v http=":$EGRESS_HTTP_PORT" -v https=":$EGRESS_HTTPS_PORT" \
         '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'; then
+      printf '%s\n' "$VERSION" >"$STATE_DIR/egress-version"
       return 0
     fi
     sleep 0.2
   done
-  fail "adaptive egress did not open its loopback listeners"
+  fail "adaptive egress did not open its listeners"
 }
 
 install_client_egress() {
@@ -206,14 +220,15 @@ install_client_egress() {
   else
     architecture=$(detect_architecture)
     temporary=$(mktemp)
-    curl -fL --retry 3 --connect-timeout 15 --max-time 120 \
-      -o "$temporary" \
-      "https://github.com/$EGRESS_REPO/releases/download/$SCRIPT_REF/prism-egress-proxy_linux_$architecture"
+    download_dist_or_github \
+      "prism-egress-proxy_linux_$architecture" \
+      "https://github.com/$EGRESS_REPO/releases/download/$SCRIPT_REF/prism-egress-proxy_linux_$architecture" \
+      "$temporary"
     source="$temporary"
   fi
   install -m 755 "$source" "$EGRESS_BINARY"
   [[ -z "${temporary:-}" ]] || rm -f "$temporary"
-  mkdir -p "$(dirname "$CLIENT_EGRESS_POLICY")"
+  mkdir -p "$(dirname "$CLIENT_EGRESS_POLICY")" "$STATE_DIR"
   if [[ ! -s "$CLIENT_EGRESS_POLICY" ]]; then
     printf '{"services":[]}\n' >"$CLIENT_EGRESS_POLICY"
     chmod 644 "$CLIENT_EGRESS_POLICY"
@@ -226,7 +241,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$EGRESS_BINARY --http-listen 127.0.0.1:$CLIENT_EGRESS_HTTP_PORT --tls-listen 127.0.0.1:$CLIENT_EGRESS_HTTPS_PORT --policy $CLIENT_EGRESS_POLICY
+ExecStart=$EGRESS_BINARY --mode client --http-listen 127.0.0.1:$CLIENT_EGRESS_HTTP_PORT --tls-listen 127.0.0.1:$CLIENT_EGRESS_HTTPS_PORT --policy $CLIENT_EGRESS_POLICY
 Restart=always
 RestartSec=2s
 NoNewPrivileges=true
@@ -240,11 +255,13 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable --now "$CLIENT_EGRESS_SERVICE" >/dev/null
+  systemctl enable "$CLIENT_EGRESS_SERVICE" >/dev/null
+  systemctl restart "$CLIENT_EGRESS_SERVICE"
   for _ in {1..30}; do
     if systemctl is-active --quiet "$CLIENT_EGRESS_SERVICE" &&
       ss -lnt 2>/dev/null | awk -v http=":$CLIENT_EGRESS_HTTP_PORT" -v https=":$CLIENT_EGRESS_HTTPS_PORT" \
         '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'; then
+      printf '%s\n' "$VERSION" >"$STATE_DIR/client-egress-version"
       return 0
     fi
     sleep 0.2
@@ -255,6 +272,8 @@ EOF
 client_egress_ready() {
   [[ "$ROLE" == "client" ]] || return 0
   [[ -x "$EGRESS_BINARY" ]] &&
+    [[ -f "$STATE_DIR/client-egress-version" && "$(<"$STATE_DIR/client-egress-version")" == "$VERSION" ]] &&
+    grep -Fq -- '--mode client' "/etc/systemd/system/$CLIENT_EGRESS_SERVICE" 2>/dev/null &&
     systemctl is-active --quiet "$CLIENT_EGRESS_SERVICE" 2>/dev/null &&
     ss -lnt 2>/dev/null | awk -v http=":$CLIENT_EGRESS_HTTP_PORT" -v https=":$CLIENT_EGRESS_HTTPS_PORT" \
       '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'
@@ -263,6 +282,8 @@ client_egress_ready() {
 proxy_egress_ready() {
   [[ "$ROLE" == "proxy" ]] || return 0
   [[ -x "$EGRESS_BINARY" ]] &&
+    [[ -f "$STATE_DIR/egress-version" && "$(<"$STATE_DIR/egress-version")" == "$VERSION" ]] &&
+    grep -Fq -- '--mode proxy' "/etc/systemd/system/$EGRESS_SERVICE" 2>/dev/null &&
     systemctl is-active --quiet "$EGRESS_SERVICE" 2>/dev/null &&
     ss -lnt 2>/dev/null | awk -v http=":$EGRESS_HTTP_PORT" -v https=":$EGRESS_HTTPS_PORT" \
       '$4 ~ http "$" {h=1} $4 ~ https "$" {s=1} END {exit !(h && s)}'
@@ -398,8 +419,11 @@ apply_client_egress_policy() {
 }
 
 apply_proxy_authorization() {
-  local response="$1" temporary
+  local response="$1" temporary use_egress=false
   local -a clients4=()
+  if proxy_egress_ready; then
+    use_egress=true
+  fi
   while IFS= read -r address; do
     [[ -n "$address" ]] || continue
     if [[ "$address" != *:* ]]; then
@@ -418,15 +442,22 @@ apply_proxy_authorization() {
     echo ' }'
     echo '  chain input {'
     echo '    type filter hook input priority -25; policy accept;'
-    echo '    iifname "lo" tcp dport { 53, 80, 443 } accept'
+    printf '    iifname "lo" tcp dport { 53, 80, 443, %s, %s } accept\n' "$EGRESS_HTTP_PORT" "$EGRESS_HTTPS_PORT"
     echo '    iifname "lo" udp dport 53 accept'
-    echo '    ip saddr @clients4 tcp dport { 53, 80, 443 } accept'
+    printf '    ip saddr @clients4 tcp dport { 53, 80, 443, %s, %s } accept\n' "$EGRESS_HTTP_PORT" "$EGRESS_HTTPS_PORT"
     echo '    ip saddr @clients4 udp dport 53 accept'
-    echo '    meta nfproto ipv4 tcp dport { 53, 80, 443 } drop'
+    printf '    meta nfproto ipv4 tcp dport { 53, 80, 443, %s, %s } drop\n' "$EGRESS_HTTP_PORT" "$EGRESS_HTTPS_PORT"
     echo '    meta nfproto ipv4 udp dport 53 drop'
-    echo '    meta nfproto ipv6 tcp dport 53 drop'
+    printf '    meta nfproto ipv6 tcp dport { 53, %s, %s } drop\n' "$EGRESS_HTTP_PORT" "$EGRESS_HTTPS_PORT"
     echo '    meta nfproto ipv6 udp dport 53 drop'
     echo '  }'
+    if $use_egress; then
+      echo '  chain prerouting {'
+      echo '    type nat hook prerouting priority -100; policy accept;'
+      printf '    ip saddr @clients4 tcp dport 80 redirect to :%s\n' "$EGRESS_HTTP_PORT"
+      printf '    ip saddr @clients4 tcp dport 443 redirect to :%s\n' "$EGRESS_HTTPS_PORT"
+      echo '  }'
+    fi
     echo '}'
   } >"$temporary"
   nft -c -f "$temporary"
@@ -435,14 +466,14 @@ apply_proxy_authorization() {
 }
 
 collect_transport_cgroups() {
-  local unit descriptor control_group path
+  local unit descriptor control_group path container_id container_desc container_pid cg_rel
   while IFS= read -r unit; do
     [[ -n "$unit" ]] || continue
     case "$unit" in
       prism*|docker*|containerd*|ssh*|nginx*|komari*|flux*) continue ;;
     esac
     descriptor=$(systemctl show "$unit" -p ExecStart --value 2>/dev/null || true)
-    if ! printf '%s\n' "$unit $descriptor" | grep -Eqi 'xray|xrayr|v2ray|v2bx|v2node|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|clash|mihomo|brook|naiveproxy'; then
+    if ! printf '%s\n' "$unit $descriptor" | grep -Eqi 'xray|xrayr|v2ray|v2bx|v2node|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|soga|clash|mihomo|brook|naiveproxy'; then
       continue
     fi
     control_group=$(systemctl show "$unit" -p ControlGroup --value 2>/dev/null || true)
@@ -451,6 +482,17 @@ collect_transport_cgroups() {
     [[ -d "$path" ]] || continue
     stat -c '%i' "$path" 2>/dev/null || true
   done < <(systemctl list-units --type=service --state=running --no-legend --no-pager 2>/dev/null | awk '{print $1}' | sort -u)
+  if command -v docker >/dev/null 2>&1; then
+    while IFS='|' read -r container_id container_desc; do
+      [[ -n "$container_id" ]] || continue
+      printf '%s\n' "$container_desc" | grep -Eqi 'xray|xrayr|v2ray|v2bx|v2node|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|soga|clash|mihomo|brook|naiveproxy' || continue
+      container_pid=$(docker inspect -f '{{.State.Pid}}' "$container_id" 2>/dev/null || true)
+      [[ "$container_pid" =~ ^[1-9][0-9]*$ && -r "/proc/$container_pid/cgroup" ]] || continue
+      cg_rel=$(awk -F: 'NR==1 {print $3}' "/proc/$container_pid/cgroup" 2>/dev/null || true)
+      [[ "$cg_rel" == /* && -d "/sys/fs/cgroup${cg_rel}" ]] || continue
+      stat -c '%i' "/sys/fs/cgroup${cg_rel}" 2>/dev/null || true
+    done < <(docker ps --format '{{.ID}}|{{.Image}} {{.Names}} {{.Command}}' 2>/dev/null || true)
+  fi
 }
 
 apply_client_egress_rules() {
@@ -459,7 +501,7 @@ apply_client_egress_rules() {
   local -a cgroups=()
   service_count=$(jq -er '(.egress_services // []) | if type == "array" then length else error("invalid egress services") end' <<<"$1") ||
     fail "invalid client egress configuration"
-  if [[ "$TRANSPORT_MODE" == "direct" && "$service_count" != 0 ]]; then
+  if [[ ( "${TRANSPORT_MODE:-direct}" == "direct" || "${TRANSPORT_MODE:-direct}" == "encrypted" ) && "$service_count" != 0 ]]; then
     mapfile -t cgroups < <(collect_transport_cgroups | sort -u)
   fi
   ((${#cgroups[@]} > 0)) || {
@@ -475,7 +517,7 @@ apply_client_egress_rules() {
     fi
     echo 'table inet prism_client_egress {'
     echo '  chain redirect_output {'
-    echo '    type nat hook output priority -90; policy accept;'
+    echo '    type nat hook output priority -110; policy accept;'
     for cgroup_id in "${cgroups[@]}"; do
       printf '    meta cgroup %s tcp dport 80 redirect to :%s\n' "$cgroup_id" "$CLIENT_EGRESS_HTTP_PORT"
       printf '    meta cgroup %s tcp dport 443 redirect to :%s\n' "$cgroup_id" "$CLIENT_EGRESS_HTTPS_PORT"
@@ -877,8 +919,10 @@ install_media_worker() {
   if [[ -z "$installer" ]]; then
     temporary=$(mktemp /run/prism-media-installer.XXXXXX)
     installer="$temporary"
-    if ! curl -fsSL --retry 2 --connect-timeout 8 --max-time 30 \
-      "https://raw.githubusercontent.com/$EGRESS_REPO/refs/tags/$SCRIPT_REF/prism_media.sh" -o "$installer"; then
+    if ! download_dist_or_github \
+      "prism_media.sh" \
+      "https://raw.githubusercontent.com/$EGRESS_REPO/refs/tags/$SCRIPT_REF/prism_media.sh" \
+      "$installer"; then
       rm -f "$temporary"
       fail "could not download the IPv4 media check worker"
     fi

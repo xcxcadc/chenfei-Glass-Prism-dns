@@ -2,7 +2,7 @@
 
 set -Eeuo pipefail
 
-VERSION="1.5.40"
+VERSION="1.6.0"
 STATE_DIR="/var/lib/prismdns"
 BACKUP_DIR="$STATE_DIR/backups"
 BACKUP_RETENTION="${PRISM_DNS_BACKUP_RETENTION:-12}"
@@ -164,7 +164,7 @@ install_client_transport() {
   local installer_url="$1" mode="${2:-install}" installer="${PRISM_TRANSPORT_INSTALLER_FILE:-}" temporary=""
   info "安装 Prism SNI 解锁传输..."
   if [[ -z "$installer" ]]; then
-    [[ "$installer_url" =~ ^https://[^[:space:]]+$ ]] || fail "面板未返回有效的 HTTPS 传输脚本地址。"
+    [[ "$installer_url" =~ ^https?://[^[:space:]]+$ ]] || fail "面板未返回有效的传输脚本地址。"
     temporary=$(mktemp /run/prism-transport-installer.XXXXXX)
     installer="$temporary"
     curl -fsSL --connect-timeout 8 --max-time 30 "$installer_url" -o "$installer" || fail "无法获取传输脚本。"
@@ -1073,14 +1073,14 @@ LOCAL_DNS_NFT
   fi
 }
 collect_dns_guard_cgroups() {
-  local unit descriptor control_group path
+  local unit descriptor control_group path container_id container_desc container_pid cg_rel
   while IFS= read -r unit; do
     [[ -n "$unit" ]] || continue
     case "$unit" in
       prism*|docker*|containerd*|ssh*|nginx*|komari*|flux*) continue ;;
     esac
     descriptor=$(systemctl show "$unit" -p ExecStart --value 2>/dev/null || true)
-    if ! printf '%s\n' "$unit $descriptor" | grep -Eqi 'xray|xrayr|v2ray|v2bx|v2node|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|clash|mihomo|brook|naiveproxy'; then
+    if ! printf '%s\n' "$unit $descriptor" | grep -Eqi 'xray|xrayr|v2ray|v2bx|v2node|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|soga|clash|mihomo|brook|naiveproxy'; then
       continue
     fi
     control_group=$(systemctl show "$unit" -p ControlGroup --value 2>/dev/null || true)
@@ -1089,6 +1089,17 @@ collect_dns_guard_cgroups() {
     [[ -d "$path" ]] || continue
     printf '%s\n' "$control_group"
   done < <(systemctl list-units --type=service --state=running --no-legend --no-pager 2>/dev/null | awk '{print $1}' | sort -u)
+  if command -v docker >/dev/null 2>&1; then
+    while IFS='|' read -r container_id container_desc; do
+      [[ -n "$container_id" ]] || continue
+      printf '%s\n' "$container_desc" | grep -Eqi 'xray|xrayr|v2ray|v2bx|v2node|sing-box|hysteria|tuic|trojan|shadowsocks|ss-server|soga|clash|mihomo|brook|naiveproxy' || continue
+      container_pid=$(docker inspect -f '{{.State.Pid}}' "$container_id" 2>/dev/null || true)
+      [[ "$container_pid" =~ ^[1-9][0-9]*$ && -r "/proc/$container_pid/cgroup" ]] || continue
+      cg_rel=$(awk -F: 'NR==1 {print $3}' "/proc/$container_pid/cgroup" 2>/dev/null || true)
+      [[ "$cg_rel" == /* && -d "/sys/fs/cgroup${cg_rel}" ]] || continue
+      printf '%s\n' "$cg_rel"
+    done < <(docker ps --format '{{.ID}}|{{.Image}} {{.Names}} {{.Command}}' 2>/dev/null || true)
+  fi
 }
 clear_dns_guard_rules() {
   local firewall chain

@@ -56,14 +56,25 @@ inventory() {
 }
 
 refresh_release() {
-  local version="$1" current="$2" staging="$3" filename
-  tls_request "$staging/release.json" --header 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/$NODE_UPDATE_REPO/releases/tags/$version" || return 1
-  jq -e --arg version "$version" \
-    '.tag_name == $version and .immutable == true and .draft == false and .prerelease == false' \
-    "$staging/release.json" >/dev/null 2>&1 || return 1
+  local version="$1" current="$2" staging="$3" filename from_dist=false
+  if tls_request "$staging/release.json" --header 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/$NODE_UPDATE_REPO/releases/tags/$version"; then
+    jq -e --arg version "$version" \
+      '.tag_name == $version and .immutable == true and .draft == false and .prerelease == false' \
+      "$staging/release.json" >/dev/null 2>&1 || return 1
+  elif tls_request "$staging/manifest.json" "$MASTER/enhancer/dist/manifest.json" &&
+       jq -e --arg version "$version" '.version == $version and (.files | has("prism_transport.sh") and has("prism_media.sh") and has("prism_node_update.sh"))' \
+       "$staging/manifest.json" >/dev/null 2>&1; then
+    from_dist=true
+  else
+    return 1
+  fi
   for filename in prism_transport.sh prism_media.sh prism_node_update.sh; do
-    tls_request "$staging/$filename" "https://raw.githubusercontent.com/$NODE_UPDATE_REPO/refs/tags/$version/$filename" || return 1
+    if $from_dist; then
+      tls_request "$staging/$filename" "$MASTER/enhancer/dist/$filename" || return 1
+    else
+      tls_request "$staging/$filename" "https://raw.githubusercontent.com/$NODE_UPDATE_REPO/refs/tags/$version/$filename" || return 1
+    fi
     [[ -s "$staging/$filename" ]] && bash -n "$staging/$filename" >/dev/null 2>&1 || return 1
   done
   env -i PATH="$PATH" PRISM_SCRIPT_REF="$version" PRISM_NODE_UPDATE_EXPECTED_VERSION="$current" \

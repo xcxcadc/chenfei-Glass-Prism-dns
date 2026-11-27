@@ -283,8 +283,8 @@ func (app *App) handleBootstrap(writer http.ResponseWriter, request *http.Reques
 		"traffic_peers":              app.effectiveTrafficPeers(record),
 		"health_probes":              app.healthProbes(request.Context(), record),
 		"service_audit_requested_at": record.ServiceAuditRequestedAt,
-		"agent_installer":            prismRawURL("agent_install.sh"),
-		"transport_installer":        prismRawURL("prism_transport.sh"),
+		"agent_installer":            app.distOrRawURL(request, "agent_install.sh"),
+		"transport_installer":        app.distOrRawURL(request, "prism_transport.sh"),
 		"source_ref":                 prismSourceRef,
 	})
 }

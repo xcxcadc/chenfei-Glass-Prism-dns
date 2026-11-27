@@ -154,10 +154,13 @@ func (app *App) handleNodeRelease(writer http.ResponseWriter, request *http.Requ
 		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "不可变正式版本暂不可用"})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]string{"version": prismSourceRef})
+	writeJSON(writer, http.StatusOK, map[string]any{"version": prismSourceRef, "self_hosted": app.hasSelfHostedRelease()})
 }
 
 func (app *App) nodeReleaseAvailable(ctx context.Context) bool {
+	if app.hasSelfHostedRelease() {
+		return true
+	}
 	store := app.nodeUpdates
 	store.mu.Lock()
 	if time.Now().Before(store.releaseUntil) {

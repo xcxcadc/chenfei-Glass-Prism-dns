@@ -40,6 +40,8 @@ type App struct {
 	indexHTML    []byte
 	appJS        []byte
 	controllerDB string
+	distDir      string
+	panelIPv4    string
 }
 
 func NewApp(upstreamURL string, catalog *CatalogManager, store *CustomServiceStore, ipStore *IPConfigStore, client *http.Client, controllerDB ...string) (*App, error) {
@@ -156,10 +158,13 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/nodes/", app.handleEnhancedNode)
 	mux.HandleFunc("/enhancer/api/node-release", app.handleNodeRelease)
 	mux.HandleFunc("/enhancer/api/node-updates", app.handleNodeUpdates)
+	mux.HandleFunc("/enhancer/api/node-updates/batch", app.handleBatchNodeUpdates)
 	mux.HandleFunc("/enhancer/api/node-updates/worker", app.handleNodeUpdateWorker)
+	mux.HandleFunc("/enhancer/api/quick-check", app.handleQuickCheck)
 	mux.HandleFunc("/enhancer/api/ip-configs", app.handleIPConfigs)
 	mux.HandleFunc("/enhancer/api/ip-configs/export", app.handleIPConfigExport)
 	mux.HandleFunc("/enhancer/api/ip-configs/import", app.handleIPConfigImport)
+	mux.HandleFunc("/enhancer/api/ip-configs/heal-orphans", app.handleHealOrphans)
 	mux.HandleFunc("/enhancer/api/ip-configs/", app.handleIPConfig)
 	mux.HandleFunc("/enhancer/api/bootstrap/", app.handleBootstrap)
 	mux.HandleFunc("/enhancer/api/transport/proxy", app.handleProxyTransport)
@@ -170,6 +175,7 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/media-checks/worker", app.handleMediaCheckWorker)
 	mux.HandleFunc("/enhancer/api/media-checks/", app.handleMediaCheck)
 	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)
+	mux.HandleFunc("/enhancer/dist/", app.handleDist)
 	mux.HandleFunc("/enhancer/rules/", app.handleRuleSet)
 	mux.HandleFunc("/enhancer/icons/", app.handleServiceIcon)
 	mux.HandleFunc("/assets/app.js", app.handleAppJS)
@@ -228,6 +234,7 @@ func (app *App) handleHealth(writer http.ResponseWriter, request *http.Request) 
 		"custom_count":               len(app.store.List()),
 		"controller_target":          app.upstream.String(),
 		"ui_version":                 uiVersion,
+		"self_hosted_dist":           app.hasSelfHostedRelease(),
 		"authorization_mode":         "panel_allowlist",
 		"authorization_sync_seconds": 5,
 	})
