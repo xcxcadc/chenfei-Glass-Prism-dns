@@ -1517,6 +1517,74 @@ body {
   padding: 4px 8px;
   font-size: 11px;
 }
+.warp-status-banner.starting {
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.08);
+}
+.ip-service-remedy {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid rgba(217, 119, 6, 0.38);
+  border-radius: 9px;
+  background: rgba(217, 119, 6, 0.08);
+  font-size: 11px;
+}
+.ip-service-remedy strong {
+  color: var(--warn);
+  font-size: 11px;
+}
+.remedy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.quick-check-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+.quick-check-summary.good {
+  border-color: rgba(22, 163, 74, 0.32);
+  background: rgba(22, 163, 74, 0.07);
+}
+.quick-check-summary.warn {
+  border-color: rgba(217, 119, 6, 0.38);
+  background: rgba(217, 119, 6, 0.08);
+}
+.quick-check-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.remedy-inline-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  padding: 2px 7px;
+  border: 1px solid rgba(217, 119, 6, 0.45);
+  border-radius: 999px;
+  background: rgba(217, 119, 6, 0.1);
+  color: var(--warn);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.remedy-inline-pill:hover {
+  background: rgba(217, 119, 6, 0.18);
+}
 @media (max-width: 720px) {
   .warp-service-grid { grid-template-columns: 1fr; }
 }

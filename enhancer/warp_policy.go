@@ -281,9 +281,11 @@ func (app *App) handleWarpPolicies(writer http.ResponseWriter, request *http.Req
 			return
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{
-			"proxy_id":   payload.ProxyID,
-			"services":   updated,
-			"warp_ready": app.transport.ProxyWarpReady(payload.ProxyID),
+			"proxy_id":          payload.ProxyID,
+			"services":          updated,
+			"warp_ready":        app.transport.ProxyWarpReady(payload.ProxyID),
+			"warp_provisioning": app.transport.ProxyWarpProvisioning(payload.ProxyID),
+			"warp_desired":      len(updated) > 0,
 		})
 	default:
 		methodNotAllowed(writer, http.MethodGet, http.MethodPut, http.MethodPost)

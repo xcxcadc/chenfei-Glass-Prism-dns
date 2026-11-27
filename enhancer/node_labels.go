@@ -215,10 +215,12 @@ func (app *App) handleEnhancedNodes(writer http.ResponseWriter, request *http.Re
 				}
 				if app.transport != nil {
 					node["warp_ready"] = app.transport.ProxyWarpReady(nodeID)
+					node["warp_provisioning"] = app.transport.ProxyWarpProvisioning(nodeID)
 				}
 				if app.warpPolicies != nil {
 					if ws := app.warpPolicies.ForProxy(nodeID); len(ws) > 0 {
 						node["warp_services"] = ws
+						node["warp_desired"] = true
 					}
 				}
 			}

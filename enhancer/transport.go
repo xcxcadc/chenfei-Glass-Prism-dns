@@ -22,12 +22,13 @@ import (
 const transportFreshness = 90 * time.Second
 
 type proxyTransportRecord struct {
-	NodeID      string    `json:"node_id"`
-	Endpoint    string    `json:"endpoint"`
-	SSHHostKey  string    `json:"ssh_host_key"`
-	EgressReady bool      `json:"egress_ready,omitempty"`
-	WarpReady   bool      `json:"warp_ready,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	NodeID           string    `json:"node_id"`
+	Endpoint         string    `json:"endpoint"`
+	SSHHostKey       string    `json:"ssh_host_key"`
+	EgressReady      bool      `json:"egress_ready,omitempty"`
+	WarpReady        bool      `json:"warp_ready,omitempty"`
+	WarpProvisioning bool      `json:"warp_provisioning,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type clientTransportRecord struct {
@@ -50,12 +51,13 @@ type TransportStore struct {
 }
 
 type proxyTransportRequest struct {
-	Secret      string `json:"secret"`
-	SSHHostKey  string `json:"ssh_host_key"`
-	EgressReady bool   `json:"egress_ready,omitempty"`
-	WarpReady   bool   `json:"warp_ready,omitempty"`
-	PublicKey   string `json:"public_key,omitempty"`
-	ListenPort  int    `json:"listen_port,omitempty"`
+	Secret           string `json:"secret"`
+	SSHHostKey       string `json:"ssh_host_key"`
+	EgressReady      bool   `json:"egress_ready,omitempty"`
+	WarpReady        bool   `json:"warp_ready,omitempty"`
+	WarpProvisioning bool   `json:"warp_provisioning,omitempty"`
+	PublicKey        string `json:"public_key,omitempty"`
+	ListenPort       int    `json:"listen_port,omitempty"`
 }
 
 type clientTransportRequest struct {
@@ -97,6 +99,7 @@ type transportConfig struct {
 	Peers          []transportPeer          `json:"peers"`
 	AuthorizedIPs  []string                 `json:"authorized_ips"`
 	EgressServices []transportEgressService `json:"egress_services,omitempty"`
+	WarpDesired    bool                     `json:"warp_desired"`
 }
 
 type controllerNode struct {
@@ -314,7 +317,7 @@ func (store *TransportStore) saveLocked() error {
 	return nil
 }
 
-func (store *TransportStore) SetProxyWarpReady(nodeID string, ready bool) {
+func (store *TransportStore) SetProxyWarpState(nodeID string, ready, provisioning bool) {
 	if store == nil || nodeID == "" {
 		return
 	}
@@ -322,6 +325,7 @@ func (store *TransportStore) SetProxyWarpReady(nodeID string, ready bool) {
 	defer store.mu.Unlock()
 	if rec, exists := store.proxies[nodeID]; exists {
 		rec.WarpReady = ready
+		rec.WarpProvisioning = provisioning
 		store.proxies[nodeID] = rec
 	}
 }
@@ -334,6 +338,16 @@ func (store *TransportStore) ProxyWarpReady(nodeID string) bool {
 	defer store.mu.RUnlock()
 	rec, exists := store.proxies[nodeID]
 	return exists && transportRecordFresh(rec.UpdatedAt) && rec.WarpReady
+}
+
+func (store *TransportStore) ProxyWarpProvisioning(nodeID string) bool {
+	if store == nil || nodeID == "" {
+		return false
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	rec, exists := store.proxies[nodeID]
+	return exists && transportRecordFresh(rec.UpdatedAt) && rec.WarpProvisioning
 }
 
 func (store *TransportStore) WarpReadyMap() map[string]bool {
@@ -397,7 +411,7 @@ func (app *App) handleProxyTransport(writer http.ResponseWriter, request *http.R
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	app.transport.SetProxyWarpReady(node.ID, payload.WarpReady)
+	app.transport.SetProxyWarpState(node.ID, payload.WarpReady, payload.WarpProvisioning)
 	config := app.transport.ProxyConfig(node.ID, app.ipStore.Records())
 	if parsed := net.ParseIP(strings.TrimSpace(app.panelIPv4)); parsed != nil && parsed.To4() != nil {
 		panelV4 := parsed.To4().String()
@@ -407,6 +421,7 @@ func (app *App) handleProxyTransport(writer http.ResponseWriter, request *http.R
 		}
 	}
 	config.EgressServices = app.proxyEgressServices(request.Context(), node.ID)
+	config.WarpDesired = app.warpPolicies != nil && len(app.warpPolicies.ForProxy(node.ID)) > 0
 	writeJSON(writer, http.StatusOK, config)
 }
 

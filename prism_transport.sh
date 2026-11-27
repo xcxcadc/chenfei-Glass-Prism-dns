@@ -3,8 +3,8 @@
 set +x
 set -Eeuo pipefail
 
-VERSION="2.6.1"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.1}"
+VERSION="2.6.2"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.2}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -343,8 +343,57 @@ proxy_warp_ready() {
   ss -lnt 2>/dev/null | awk '$4 ~ /(127\.0\.0\.1|\[::1\]):40000$/ {found=1} END {exit !found}'
 }
 
+proxy_warp_provisioning() {
+  systemctl is-active --quiet prism-warp-bootstrap.service 2>/dev/null
+}
+
+reconcile_local_warp() {
+  [[ "$ROLE" == "proxy" ]] || return 0
+  local response="$1" desired
+  desired=$(jq -r '.warp_desired // false' <<<"$response" 2>/dev/null || echo false)
+  if [[ "$desired" == "true" ]]; then
+    if proxy_warp_ready; then
+      return 0
+    fi
+    if [[ -f /etc/systemd/system/prism-warp.service && -s /etc/prism-warp/wireproxy.conf ]]; then
+      systemctl enable --now prism-warp.service >/dev/null 2>&1 || true
+      for _ in {1..15}; do
+        if proxy_warp_ready; then
+          systemctl kill -s HUP "$EGRESS_SERVICE" >/dev/null 2>&1 || true
+          log "auto-started local WARP service (127.0.0.1:40000)"
+          return 0
+        fi
+        sleep 0.25
+      done
+    fi
+    if proxy_warp_provisioning; then
+      return 0
+    fi
+    log "panel requested WARP routing; auto-provisioning local non-global WARP in background..."
+    local master_url="$MASTER"
+    systemd-run --unit=prism-warp-bootstrap --quiet --collect \
+      --property=TimeoutStartSec=120 \
+      /bin/bash -c "
+        set -euo pipefail
+        if ! command -v dns >/dev/null 2>&1 || ! grep -q 'cmd_warp' /usr/local/bin/dns 2>/dev/null; then
+          curl -fsSL --connect-timeout 8 --max-time 30 '${master_url}/enhancer/dist/dns.sh' -o /tmp/prism-dns-auto.sh || \
+          curl -fsSL --connect-timeout 10 --max-time 30 'https://raw.githubusercontent.com/${EGRESS_REPO}/${SCRIPT_REF}/dns.sh' -o /tmp/prism-dns-auto.sh
+          install -m 0755 /tmp/prism-dns-auto.sh /usr/local/bin/dns
+          rm -f /tmp/prism-dns-auto.sh
+        fi
+        /usr/local/bin/dns warp enable
+        systemctl kill -s HUP '$EGRESS_SERVICE' >/dev/null 2>&1 || true
+      " >/dev/null 2>&1 || true
+  else
+    if systemctl is-active --quiet prism-warp.service 2>/dev/null || systemctl is-enabled --quiet prism-warp.service 2>/dev/null; then
+      systemctl disable --now prism-warp.service >/dev/null 2>&1 || true
+      log "auto-stopped local WARP service (no services configured for WARP)"
+    fi
+  fi
+}
+
 proxy_registration() {
-  local host_key body egress_ready=false warp_ready=false
+  local host_key body egress_ready=false warp_ready=false warp_provisioning=false
   ssh-keygen -A >/dev/null 2>&1 || true
   host_key=$(awk '{print $1" "$2}' /etc/ssh/ssh_host_ed25519_key.pub)
   if proxy_egress_ready; then
@@ -353,12 +402,16 @@ proxy_registration() {
   if proxy_warp_ready; then
     warp_ready=true
   fi
+  if proxy_warp_provisioning; then
+    warp_provisioning=true
+  fi
   body=$(jq -nc \
     --arg secret "$CREDENTIAL" \
     --arg ssh_host_key "$host_key" \
     --argjson egress_ready "$egress_ready" \
     --argjson warp_ready "$warp_ready" \
-    '{secret:$secret,ssh_host_key:$ssh_host_key,egress_ready:$egress_ready,warp_ready:$warp_ready}')
+    --argjson warp_provisioning "$warp_provisioning" \
+    '{secret:$secret,ssh_host_key:$ssh_host_key,egress_ready:$egress_ready,warp_ready:$warp_ready,warp_provisioning:$warp_provisioning}')
   post_json "/enhancer/api/transport/proxy" "$body"
 }
 
@@ -552,6 +605,7 @@ sync_proxy() {
   jq -e '.role == "proxy" and (.peers | type == "array") and (.authorized_ips | type == "array")' <<<"$response" >/dev/null
   apply_authorized_keys "$response"
   apply_proxy_authorization "$response"
+  reconcile_local_warp "$response"
   apply_egress_policy "$response"
   log "proxy transport synchronized: $(jq '.authorized_ips | length' <<<"$response") authorized IPs, $(jq '.peers | length' <<<"$response") encrypted clients"
 }
