@@ -1184,7 +1184,7 @@ function serviceTableRowHTML(service) {
   const domainAction = `<button class="btn small icon service-domains-open" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("viewDomains"))}"><i class="bi bi-pencil-square"></i></button>`;
   const deleteAction = `<button class="btn small icon danger service-delete${service.custom ? " service-custom-delete" : ""}" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("deleteService"))}"><i class="bi bi-trash3"></i></button>`;
   const routeNodeCell = node
-    ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}</strong><small>${escapeHTML(proxyServiceBadgeText(node, service) || node.country || node.public_ip || node.address || "-")}</small></span></div>`
+    ? `<div class="route-node-cell"><span class="country-chip">${escapeHTML((node.country || "--").slice(0, 3).toUpperCase())}</span><span><strong>${escapeHTML(node.name)}${nodeWarpMode(node, service.id) ? ` <span class="warp-inline-tag">☁ ${escapeHTML(warpModeShortLabel(nodeWarpMode(node, service.id)))}</span>` : ""}</strong><small>${escapeHTML(proxyServiceBadgeText(node, service) || node.country || node.public_ip || node.address || "-")}</small></span></div>`
     : orphanRoute
       ? `<span class="badge bad">${state.lang === "zh" ? "⚠ 旧节点已删" : "⚠ Deleted node"}</span>`
       : `<span class="muted-cell">${t("notConfigured")}</span>`;
@@ -1372,31 +1372,52 @@ function nodeManagementHTML(node) {
     ${submitError ? `<small class="node-update-error" role="status">${t("nodeUpdateSubmitFailed")}: ${escapeHTML(submitError)}</small>` : ""}</div></div>`;
 }
 
+function nodeWarpMode(node, serviceId) {
+  if (!node || !serviceId) return "";
+  return String(node.warp_services?.[serviceId] || "");
+}
+
+function warpModeShortLabel(mode) {
+  const m = String(mode || "").toLowerCase();
+  if (m === "warp6") return "WARP v6";
+  if (m === "warp4") return "WARP v4";
+  if (m === "warp") return "WARP";
+  if (m === "auto") return state.lang === "zh" ? "自动防送中" : "Auto";
+  return "";
+}
+
 function proxyCapabilityChipsHTML(node) {
   if (node?.role !== "proxy") return "";
   const results = node.media_summary?.results || state.mediaChecks.get(`node:${nodeID(node.id)}`)?.job?.results;
-  if (!results || typeof results !== "object") return "";
-  const items = [
-    ["Google Gemini", "Gemini"],
-    ["ChatGPT", "ChatGPT"],
-    ["Claude", "Claude"],
-    ["Netflix", "Netflix"],
-    ["Disney+", "Disney+"],
-    ["YouTube Premium", "YouTube"]
-  ];
   const chips = [];
-  for (const [key, shortName] of items) {
-    const raw = String(results[key] || "").trim();
-    if (!raw) continue;
-    const parsed = mediaRawState(raw);
-    const regionMatch = /Region:\s*([A-Za-z]{2,3})/i.exec(raw) || /\(([A-Za-z]{2,3})\)/.exec(raw);
-    const region = regionMatch ? ` ${regionMatch[1].toUpperCase()}` : "";
-    const icon = parsed.kind === "good" ? "✓" : parsed.kind === "bad" ? "✗" : "·";
-    chips.push(`<span class="cap-chip ${parsed.kind}" title="${escapeHTML(`${key}: ${raw}`)}">${icon} ${escapeHTML(shortName)}${escapeHTML(region)}</span>`);
+  const warpCount = Object.keys(node.warp_services || {}).length;
+  if (node.warp_ready) {
+    chips.push(`<span class="cap-chip warp" title="${escapeHTML(state.lang === "zh" ? "本机 WARP 本地 SOCKS5 (127.0.0.1:40000) 已就绪，可按服务独立分流" : "Local WARP SOCKS5 ready")}">☁ WARP${warpCount ? ` · ${warpCount}项` : " 就绪"}</span>`);
+  } else if (warpCount > 0) {
+    chips.push(`<span class="cap-chip warn" title="${escapeHTML(state.lang === "zh" ? "已配置 WARP 分流策略，但解锁机尚未启用 WARP（执行 dns warp enable）" : "WARP configured but not running on proxy")}">☁ WARP 未启动 (${warpCount})</span>`);
   }
-  const play = String(results["Google Play Store"] || "").trim();
-  if (/^China\b/i.test(play)) {
-    chips.push(`<span class="cap-chip warn" title="${escapeHTML(`Google Play Store: ${play}（已启用 IPv6 双栈防送中自适应分流）`)}">⚡ IPv6防送中</span>`);
+  if (results && typeof results === "object") {
+    const items = [
+      ["Google Gemini", "Gemini"],
+      ["ChatGPT", "ChatGPT"],
+      ["Claude", "Claude"],
+      ["Netflix", "Netflix"],
+      ["Disney+", "Disney+"],
+      ["YouTube Premium", "YouTube"]
+    ];
+    for (const [key, shortName] of items) {
+      const raw = String(results[key] || "").trim();
+      if (!raw) continue;
+      const parsed = mediaRawState(raw);
+      const regionMatch = /Region:\s*([A-Za-z]{2,3})/i.exec(raw) || /\(([A-Za-z]{2,3})\)/.exec(raw);
+      const region = regionMatch ? ` ${regionMatch[1].toUpperCase()}` : "";
+      const icon = parsed.kind === "good" ? "✓" : parsed.kind === "bad" ? "✗" : "·";
+      chips.push(`<span class="cap-chip ${parsed.kind}" title="${escapeHTML(`${key}: ${raw}`)}">${icon} ${escapeHTML(shortName)}${escapeHTML(region)}</span>`);
+    }
+    const play = String(results["Google Play Store"] || "").trim();
+    if (/^China\b/i.test(play) && !node.warp_ready) {
+      chips.push(`<span class="cap-chip warn" title="${escapeHTML(`Google Play Store: ${play}`)}">⚠ IPv4送中</span>`);
+    }
   }
   return chips.length ? `<div class="proxy-capability-strip">${chips.join("")}</div>` : "";
 }
@@ -1415,7 +1436,7 @@ function nodeListHTML() {
       <div class="node-meta"><div><span>${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></div><div><span>${t("country")}</span><strong>${escapeHTML(node.country || "-")}</strong></div><div><span>${t("priority")}</span><strong>${node.priority || "-"}</strong></div><div><span>${node.role === "dns" ? t("clientState") : t("mediaNodeSelfCheck")}</span><strong ${node.role === "proxy" ? `data-media-node-id="${escapeHTML(nodeID(node.id))}"` : ""} title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.detail)}</strong></div></div>
       ${proxyCapabilityChipsHTML(node)}
       ${nodeManagementHTML(node)}
-       <div class="node-actions"><button class="btn small node-install" data-node-id="${escapeHTML(nodeID(node.id))}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${escapeHTML(nodeID(node.id))}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}${node.role === "proxy" ? `<button class="btn small node-test" data-node-id="${escapeHTML(nodeID(node.id))}" title="${t("mediaNodeHint")}">${t("triggerUnlock")}</button>` : ""}<button class="btn small node-edit" data-node-id="${escapeHTML(nodeID(node.id))}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${escapeHTML(nodeID(node.id))}">${t("deleteNode")}</button></div></article>`;
+       <div class="node-actions"><button class="btn small node-install" data-node-id="${escapeHTML(nodeID(node.id))}">${t("showInstallCommand")}</button>${node.role === "dns" && !configForNode(node) ? `<button class="btn small primary node-manage-ip" data-node-id="${escapeHTML(nodeID(node.id))}">${state.lang === "zh" ? "接入 IP 服务" : "Configure IP services"}</button>` : ""}${node.role === "proxy" ? `<button class="btn small node-warp" data-node-id="${escapeHTML(nodeID(node.id))}"><i class="bi bi-cloud-check"></i>${state.lang === "zh" ? "WARP 分流" : "WARP Routing"}</button><button class="btn small node-test" data-node-id="${escapeHTML(nodeID(node.id))}" title="${t("mediaNodeHint")}">${t("triggerUnlock")}</button>` : ""}<button class="btn small node-edit" data-node-id="${escapeHTML(nodeID(node.id))}">${t("editNode")}</button><button class="btn small danger node-delete" data-node-id="${escapeHTML(nodeID(node.id))}">${t("deleteNode")}</button></div></article>`;
   }).join("")}</section>`;
 }
 
@@ -1612,6 +1633,7 @@ function bindContent() {
        if (button.matches(".service-domains-open")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) openServiceDomains(service.id); return; }
        if (button.matches(".service-delete")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) deleteService(service); return; }
       if (button.matches(".node-test")) { event.preventDefault(); triggerNodeCheck(button.dataset.nodeId); return; }
+      if (button.matches(".node-warp")) { event.preventDefault(); openWarpManager(button.dataset.nodeId); return; }
       if (button.matches(".node-install")) { event.preventDefault(); openInstallCommand(button.dataset.nodeId); return; }
       if (button.matches(".node-manage-ip")) { event.preventDefault(); const existing = configForNode(node); openIPForm(existing, existing ? 2 : 1, node); return; }
       if (button.matches(".node-edit")) { event.preventDefault(); openNodeForm(node); return; }
@@ -1860,6 +1882,7 @@ function renderModal() {
   if (state.modal.type === "account") root.innerHTML = accountModalHTML();
   if (state.modal.type === "branding") root.innerHTML = brandingModalHTML();
   if (state.modal.type === "quick-check") root.innerHTML = quickCheckModalHTML();
+  if (state.modal.type === "warp-manager") root.innerHTML = warpManagerHTML();
   bindModal();
   markLoadedServiceIcons(root);
   if (state.modal.type === "ip-form" && state.modal.step === 2) updateIPSaveControls(state.modal);
@@ -1966,7 +1989,16 @@ function ipFormHTML() {
     const proxyExists = proxies.some(node => nodeID(node.id) === nodeID(selectedProxy));
     const canAudit = canAuditIPRoute(modal, service) && proxyExists;
     const audit = checked && !proxyExists ? {kind:"bad", label:state.lang === "zh" ? "旧节点已删" : "Deleted node", detail:selectedProxy} : ipDraftAuditState(modal, service);
-    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${checked && !proxyExists ? `<option value="${escapeHTML(selectedProxy)}" selected>${state.lang === "zh" ? "⚠ 已删除旧节点（请重选）" : "⚠ Deleted node (reselect)"}</option>` : ""}${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(proxyOptionLabel(node, service))}</option>`).join("")}</select><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small icon ip-service-quick" type="button" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "⚡ 秒测所有解锁机" : "⚡ Quick check proxies"}"><i class="bi bi-lightning-charge-fill"></i></button><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "目标实测" : "Target test"}</button></div></div></article>`;
+    const selectedProxyNode = proxies.find(node => nodeID(node.id) === nodeID(selectedProxy));
+    const currentWarp = checked && selectedProxyNode ? nodeWarpMode(selectedProxyNode, service.id) : "";
+    const warpOptions = [
+      ["", state.lang === "zh" ? "出口：原生直连" : "Egress: Native"],
+      ["warp", state.lang === "zh" ? "出口：☁ WARP 智能" : "Egress: ☁ WARP Smart"],
+      ["warp6", state.lang === "zh" ? "出口：☁ WARP IPv6" : "Egress: ☁ WARP IPv6"],
+      ["warp4", state.lang === "zh" ? "出口：☁ WARP IPv4" : "Egress: ☁ WARP IPv4"],
+      ["auto", state.lang === "zh" ? "出口：⚡ 自动防送中" : "Egress: ⚡ Auto Fallback"]
+    ];
+    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${checked && !proxyExists ? `<option value="${escapeHTML(selectedProxy)}" selected>${state.lang === "zh" ? "⚠ 已删除旧节点（请重选）" : "⚠ Deleted node (reselect)"}</option>` : ""}${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(proxyOptionLabel(node, service))}</option>`).join("")}</select><div class="ip-warp-row" ${checked && proxyExists ? "" : "hidden"}><select class="select ip-service-warp ${currentWarp ? "warp-active" : ""}" data-service-id="${escapeHTML(service.id)}" data-proxy-id="${escapeHTML(selectedProxy)}" title="${escapeHTML(selectedProxyNode?.warp_ready ? (state.lang === "zh" ? "实时切换该解锁机此服务的 WARP 出口（不影响其他服务）" : "Switch WARP egress for this service on the selected proxy") : (state.lang === "zh" ? "可先预设策略；需在该解锁机执行 dns warp enable 启用 WARP" : "Run dns warp enable on this proxy to activate WARP"))}">${warpOptions.map(([val, lbl]) => `<option value="${val}" ${val === currentWarp ? "selected" : ""}>${escapeHTML(lbl)}</option>`).join("")}</select>${selectedProxyNode?.warp_ready ? `<span class="warp-dot ready" title="WARP 在线"></span>` : `<span class="warp-dot off" title="${state.lang === "zh" ? "该解锁机未安装 WARP（执行 dns warp enable）" : "WARP not installed on proxy"}"></span>`}</div><div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small icon ip-service-quick" type="button" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "⚡ 秒测所有解锁机" : "⚡ Quick check proxies"}"><i class="bi bi-lightning-charge-fill"></i></button><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "目标实测" : "Target test"}</button></div></div></article>`;
   }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 自动同步配置；实测只更新结果，不会改动您选择的节点" : "The Agent syncs configuration; audits update reports without changing your selected node"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!canSaveIPConfig(modal) ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
 }
 
@@ -2036,6 +2068,17 @@ function bindModal() {
     }
     option?.classList.toggle("selected", input.checked);
     if (select) select.disabled = !input.checked;
+    const warpSelect = option?.querySelector(".ip-service-warp");
+    if (warpSelect) {
+      warpSelect.disabled = !input.checked;
+      if (input.checked) {
+        const pid = state.modal.routes[input.dataset.serviceId] || "";
+        warpSelect.dataset.proxyId = pid;
+        warpSelect.value = proxyWarpMode(pid, input.dataset.serviceId);
+        const dot = option?.querySelector(".warp-dot");
+        if (dot) dot.className = `warp-dot ${proxyWarpReady(pid) ? "good" : "warn"}`;
+      }
+    }
     if (audit) audit.hidden = !input.checked;
     const selectedCount = Object.keys(state.modal.routes).length;
     const count = document.getElementById("ip-selected-count");
@@ -2045,14 +2088,42 @@ function bindModal() {
     updateIPAuditControls(state.modal);
   }));
   document.querySelectorAll(".ip-service-proxy").forEach(select => select.addEventListener("change", () => {
-    if (select.closest(".ip-service-option")?.querySelector(".ip-service-check")?.checked) {
+    const option = select.closest(".ip-service-option");
+    if (option?.querySelector(".ip-service-check")?.checked) {
       state.modal.routes[select.dataset.serviceId] = select.value;
       applyLinkedRouteProxy(select.dataset.serviceId, select.value, true);
+      const warpSelect = option.querySelector(".ip-service-warp");
+      if (warpSelect) {
+        warpSelect.dataset.proxyId = select.value;
+        warpSelect.value = proxyWarpMode(select.value, select.dataset.serviceId);
+      }
+      const dot = option.querySelector(".warp-dot");
+      if (dot) dot.className = `warp-dot ${proxyWarpReady(select.value) ? "good" : "warn"}`;
       updateIPAuditControls(state.modal);
     }
   }));
   document.querySelectorAll(".ip-service-audit").forEach(button => button.addEventListener("click", () => triggerIPServiceAudit(button.dataset.serviceId)));
   document.querySelectorAll(".ip-service-quick").forEach(button => button.addEventListener("click", () => openQuickCheck(button.dataset.serviceId, state.modal)));
+  document.querySelectorAll(".ip-service-warp").forEach(select => select.addEventListener("change", () => {
+    const serviceId = select.dataset.serviceId;
+    const proxyId = state.modal?.routes?.[serviceId] || select.dataset.proxyId;
+    if (proxyId && serviceId) updateSingleWarpPolicy(proxyId, serviceId, select.value, select);
+  }));
+  document.getElementById("warp-service-search")?.addEventListener("input", event => {
+    if (state.modal?.type !== "warp-manager") return;
+    state.modal.search = event.target.value;
+    filterWarpManagerRows();
+  });
+  document.querySelectorAll(".warp-manager-select").forEach(select => select.addEventListener("change", () => {
+    if (state.modal?.type !== "warp-manager") return;
+    updateSingleWarpPolicy(state.modal.nodeId, select.dataset.serviceId, select.value, select);
+  }));
+  document.getElementById("warp-preset-google")?.addEventListener("click", () => applyWarpGooglePreset(state.modal?.nodeId));
+  document.getElementById("warp-preset-clear")?.addEventListener("click", () => clearAllWarpPolicies(state.modal?.nodeId));
+  document.getElementById("copy-warp-cmd")?.addEventListener("click", () => {
+    const cmd = "dns warp enable";
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(cmd).then(() => toast(t("copied"), "good"));
+  });
   document.querySelectorAll("[data-ip-preset]").forEach(button => button.addEventListener("click", () => applyIPServicePreset(button.dataset.ipPreset)));
   document.getElementById("ip-apply-bulk-proxy")?.addEventListener("click", applyBulkProxyToSelected);
   document.getElementById("quick-check-rerun")?.addEventListener("click", () => runQuickCheckNow(state.modal?.service?.id));
@@ -2718,6 +2789,110 @@ async function requestBatchNodeUpdate() {
     const queuedCount = Array.isArray(res?.queued) ? res.queued.length : 0;
     toast(queuedCount ? (state.lang === "zh" ? `已为 ${queuedCount} 个节点排入 ${res.version} 更新队列` : `Queued ${queuedCount} nodes for ${res.version}`) : (state.lang === "zh" ? "所有已纳管在线节点均已是最新版本" : "All enrolled online nodes are already up to date"), "good");
     pollNodeInventory();
+  } catch (error) {
+    toast(cleanErrorMessage(error.message), "error");
+  }
+}
+
+function openWarpManager(nodeId) {
+  const node = state.nodes.find(item => nodeID(item.id) === nodeID(nodeId));
+  if (!node) return;
+  state.modal = {type: "warp-manager", nodeId: nodeID(node.id), search: "", busy: false};
+  renderModal();
+}
+
+function warpManagerHTML() {
+  const modal = state.modal;
+  const node = state.nodes.find(item => nodeID(item.id) === nodeID(modal.nodeId));
+  if (!node) return "";
+  const policies = node.warp_services || {};
+  const enabledCount = Object.keys(policies).length;
+  const warpReady = Boolean(node.warp_ready);
+  const modeOptions = [
+    ["", state.lang === "zh" ? "原生直连（默认）" : "Native Direct"],
+    ["warp", state.lang === "zh" ? "☁ WARP 智能优选" : "☁ WARP Smart"],
+    ["warp6", state.lang === "zh" ? "☁ WARP IPv6" : "☁ WARP IPv6"],
+    ["warp4", state.lang === "zh" ? "☁ WARP IPv4" : "☁ WARP IPv4"],
+    ["auto", state.lang === "zh" ? "⚡ 自动防送中兜底" : "⚡ Auto Fallback"]
+  ];
+  const sorted = [...state.catalog].sort((a, b) => {
+    const wa = policies[a.id] ? 0 : 1;
+    const wb = policies[b.id] ? 0 : 1;
+    if (wa !== wb) return wa - wb;
+    return displayServiceName(a).localeCompare(displayServiceName(b));
+  });
+  return `<div class="modal-backdrop"><section class="modal ip-modal panel"><header class="modal-head"><div><h2>☁ ${state.lang === "zh" ? "按服务 WARP 分流管理" : "Per-Service WARP Routing"} · ${escapeHTML(node.name)}</h2><p>${escapeHTML(node.public_ip || node.address || "-")} · ${state.lang === "zh" ? `已单独配置 ${enabledCount} 项服务（仅对所选服务生效，绝不影响其他服务原生解锁）` : `${enabledCount} services configured (isolated per service)`}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><div class="warp-status-banner ${warpReady ? "ready" : "off"}"><div><strong>${warpReady ? (state.lang === "zh" ? "本地 WARP 出口已就绪 (127.0.0.1:40000)" : "Local WARP egress ready (127.0.0.1:40000)") : (state.lang === "zh" ? "该解锁机尚未启动 WARP 本地分流服务" : "WARP local proxy is not running on this node")}</strong><span>${warpReady ? (state.lang === "zh" ? "下方任意开关修改后 5 秒内自动热生效，无需重启节点或修改全局路由。" : "Changes hot-reload within 5 seconds without touching other services.") : (state.lang === "zh" ? "请在该解锁机以 root 执行：dns warp enable（纯本地代理，不改系统默认路由）" : "Run as root on this proxy: dns warp enable")}</span></div><div class="inline-actions">${!warpReady ? `<button class="btn small" type="button" id="copy-warp-cmd"><i class="bi bi-clipboard"></i>${state.lang === "zh" ? "复制 dns warp enable" : "Copy command"}</button>` : ""}<button class="btn small primary" type="button" id="warp-preset-google"><i class="bi bi-stars"></i>${state.lang === "zh" ? "Google / Gemini 全家桶走 WARP" : "Google / Gemini via WARP"}</button><button class="btn small danger" type="button" id="warp-preset-clear" ${enabledCount ? "" : "disabled"}>${state.lang === "zh" ? "全部恢复原生" : "Reset all"}</button></div></div><input class="input" id="warp-service-search" value="${escapeHTML(modal.search || "")}" placeholder="${state.lang === "zh" ? "搜索任意服务（如 Gemini、YouTube、ChatGPT、Netflix、自定义服务…）" : "Search any service..."}" autocomplete="off"><div class="warp-service-grid">${sorted.map(service => {
+    const mode = String(policies[service.id] || "");
+    return `<div class="warp-service-item ${mode ? "active" : ""}" data-service-id="${escapeHTML(service.id)}"><div class="warp-service-info">${serviceIconHTML(service)}<div><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></div></div><select class="select compact-select warp-manager-select ${mode ? "warp-active" : ""}" data-service-id="${escapeHTML(service.id)}">${modeOptions.map(([val, lbl]) => `<option value="${val}" ${val === mode ? "selected" : ""}>${escapeHTML(lbl)}</option>`).join("")}</select></div>`;
+  }).join("")}</div></div><footer class="modal-foot"><span class="hint">${state.lang === "zh" ? "提示：所有服务默认走原生直连，仅为您单独勾选的服务切换 WARP，实时同步且互不影响。" : "All services stay native by default; only explicitly enabled services use WARP."}</span><div class="modal-foot-right"><button class="btn primary modal-close" type="button">${t("close")}</button></div></footer></section></div>`;
+}
+
+function filterWarpManagerRows() {
+  if (state.modal?.type !== "warp-manager") return;
+  const query = String(state.modal.search || "").trim().toLowerCase();
+  document.querySelectorAll(".warp-service-item").forEach(row => {
+    const svc = state.catalog.find(item => item.id === row.dataset.serviceId);
+    row.hidden = !!query && !(svc && serviceMatches(svc, query));
+  });
+}
+
+async function updateSingleWarpPolicy(proxyId, serviceId, mode, selectEl = null) {
+  if (selectEl) selectEl.disabled = true;
+  try {
+    const res = await api("/enhancer/api/warp-policies", {
+      method: "PUT",
+      body: JSON.stringify({proxy_id: nodeID(proxyId), service_id: serviceId, mode})
+    });
+    state.nodes = state.nodes.map(item => nodeID(item.id) === nodeID(proxyId) ? {...item, warp_services: res.services || {}, warp_ready: res.warp_ready ?? item.warp_ready} : item);
+    if (selectEl) {
+      selectEl.classList.toggle("warp-active", Boolean(mode));
+      selectEl.closest(".warp-service-item")?.classList.toggle("active", Boolean(mode));
+    }
+    const label = mode ? warpModeShortLabel(mode) : (state.lang === "zh" ? "原生直连" : "Native");
+    const tip = res.warp_ready || !mode
+      ? (state.lang === "zh" ? `已切换为「${label}」，5 秒内自动热生效` : `Switched to ${label}; applies within 5s`)
+      : (state.lang === "zh" ? `已预设为「${label}」，请在该解锁机执行 dns warp enable` : `Saved ${label}; run dns warp enable on proxy`);
+    toast(tip, "good");
+    if (state.modal?.type === "warp-manager") renderModal();
+    else refreshNodeInventoryUI();
+  } catch (error) {
+    toast(cleanErrorMessage(error.message), "error");
+  } finally {
+    if (selectEl) selectEl.disabled = false;
+  }
+}
+
+async function applyWarpGooglePreset(proxyId) {
+  if (!proxyId) return;
+  const targets = {};
+  for (const service of state.catalog) {
+    if (/^(gemini|google ai studio|youtube|google play store)$/i.test(service.name)) {
+      targets[service.id] = "warp";
+    }
+  }
+  try {
+    const res = await api("/enhancer/api/warp-policies", {
+      method: "PUT",
+      body: JSON.stringify({proxy_id: nodeID(proxyId), services: targets, replace: false})
+    });
+    state.nodes = state.nodes.map(item => nodeID(item.id) === nodeID(proxyId) ? {...item, warp_services: res.services || {}, warp_ready: res.warp_ready ?? item.warp_ready} : item);
+    toast(state.lang === "zh" ? `已将 Google / Gemini 全家桶设为 WARP 智能分流（5 秒内热生效）` : "Google / Gemini services set to WARP", "good");
+    renderModal();
+  } catch (error) {
+    toast(cleanErrorMessage(error.message), "error");
+  }
+}
+
+async function clearAllWarpPolicies(proxyId) {
+  if (!proxyId || !confirm(state.lang === "zh" ? "确认将该解锁机的所有服务全部恢复为原生直连？" : "Reset all services on this proxy to native direct?")) return;
+  try {
+    const res = await api("/enhancer/api/warp-policies", {
+      method: "PUT",
+      body: JSON.stringify({proxy_id: nodeID(proxyId), services: {}, replace: true})
+    });
+    state.nodes = state.nodes.map(item => nodeID(item.id) === nodeID(proxyId) ? {...item, warp_services: res.services || {}, warp_ready: res.warp_ready ?? item.warp_ready} : item);
+    toast(state.lang === "zh" ? "已全部恢复原生直连" : "Reset all to native direct", "good");
+    renderModal();
   } catch (error) {
     toast(cleanErrorMessage(error.message), "error");
   }

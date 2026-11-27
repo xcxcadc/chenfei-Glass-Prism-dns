@@ -26,6 +26,7 @@ type proxyTransportRecord struct {
 	Endpoint    string    `json:"endpoint"`
 	SSHHostKey  string    `json:"ssh_host_key"`
 	EgressReady bool      `json:"egress_ready,omitempty"`
+	WarpReady   bool      `json:"warp_ready,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
@@ -52,6 +53,7 @@ type proxyTransportRequest struct {
 	Secret      string `json:"secret"`
 	SSHHostKey  string `json:"ssh_host_key"`
 	EgressReady bool   `json:"egress_ready,omitempty"`
+	WarpReady   bool   `json:"warp_ready,omitempty"`
 	PublicKey   string `json:"public_key,omitempty"`
 	ListenPort  int    `json:"listen_port,omitempty"`
 }
@@ -86,6 +88,7 @@ type transportEgressService struct {
 	CIDRs          []string `json:"cidrs,omitempty"`
 	ProbeDomains   []string `json:"probe_domains"`
 	IPv6Candidate  bool     `json:"ipv6_candidate,omitempty"`
+	EgressMode     string   `json:"egress_mode,omitempty"`
 }
 
 type transportConfig struct {
@@ -311,6 +314,43 @@ func (store *TransportStore) saveLocked() error {
 	return nil
 }
 
+func (store *TransportStore) SetProxyWarpReady(nodeID string, ready bool) {
+	if store == nil || nodeID == "" {
+		return
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if rec, exists := store.proxies[nodeID]; exists {
+		rec.WarpReady = ready
+		store.proxies[nodeID] = rec
+	}
+}
+
+func (store *TransportStore) ProxyWarpReady(nodeID string) bool {
+	if store == nil || nodeID == "" {
+		return false
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	rec, exists := store.proxies[nodeID]
+	return exists && transportRecordFresh(rec.UpdatedAt) && rec.WarpReady
+}
+
+func (store *TransportStore) WarpReadyMap() map[string]bool {
+	result := make(map[string]bool)
+	if store == nil {
+		return result
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	for id, rec := range store.proxies {
+		if transportRecordFresh(rec.UpdatedAt) && rec.WarpReady {
+			result[id] = true
+		}
+	}
+	return result
+}
+
 func (store *TransportStore) DeleteProxy(nodeID string) error {
 	if store == nil || nodeID == "" {
 		return nil
@@ -357,6 +397,7 @@ func (app *App) handleProxyTransport(writer http.ResponseWriter, request *http.R
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	app.transport.SetProxyWarpReady(node.ID, payload.WarpReady)
 	config := app.transport.ProxyConfig(node.ID, app.ipStore.Records())
 	if parsed := net.ParseIP(strings.TrimSpace(app.panelIPv4)); parsed != nil && parsed.To4() != nil {
 		panelV4 := parsed.To4().String()
@@ -398,19 +439,20 @@ func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []trans
 			}
 		}
 	}
+	warpMap := app.warpPolicies.ForProxy(proxyID)
 	services := app.catalog.Snapshot(ctx, false).Services
-	// Always include core Google/AI services in proxy egress policy so instant quick-checks
-	// and newly assigned clients benefit from adaptive IPv4/IPv6 anti-CN routing immediately.
-	result := make([]transportEgressService, 0, len(serviceIDs)+6)
+	// Include: (1) client-routed services, (2) core Google/AI services, (3) ANY service with an explicit WARP policy on this proxy.
+	result := make([]transportEgressService, 0, len(serviceIDs)+len(warpMap)+6)
 	for _, service := range services {
 		_, selected := serviceIDs[service.ID]
+		warpMode := warpMap[service.ID]
 		adaptiveCore := strings.EqualFold(service.Name, "Gemini") ||
 			strings.EqualFold(service.Name, "Google AI Studio") ||
 			strings.EqualFold(service.Name, "YouTube") ||
 			strings.EqualFold(service.Name, "Google Play Store") ||
 			strings.EqualFold(service.Name, "ChatGPT / OpenAI") ||
 			strings.EqualFold(service.Name, "Claude")
-		if !selected && !adaptiveCore {
+		if !selected && !adaptiveCore && warpMode == "" {
 			continue
 		}
 		result = append(result, transportEgressService{
@@ -421,6 +463,7 @@ func (app *App) proxyEgressServices(ctx context.Context, proxyID string) []trans
 			CIDRs:          normalizeCIDRs(service.CIDRs),
 			ProbeDomains:   preferredProbeDomains(service),
 			IPv6Candidate:  serviceSupportsAdaptiveIPv6(service),
+			EgressMode:     warpMode,
 		})
 	}
 	sort.Slice(result, func(left, right int) bool { return result[left].ServiceID < result[right].ServiceID })

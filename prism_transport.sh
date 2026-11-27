@@ -3,8 +3,8 @@
 set +x
 set -Eeuo pipefail
 
-VERSION="2.6.0"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.0}"
+VERSION="2.6.1"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.1}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -184,7 +184,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=$EGRESS_BINARY --mode proxy --http-listen 0.0.0.0:$EGRESS_HTTP_PORT --tls-listen 0.0.0.0:$EGRESS_HTTPS_PORT --policy $EGRESS_POLICY
+ExecStart=$EGRESS_BINARY --mode proxy --warp-socks 127.0.0.1:40000 --http-listen 0.0.0.0:$EGRESS_HTTP_PORT --tls-listen 0.0.0.0:$EGRESS_HTTPS_PORT --policy $EGRESS_POLICY
 Restart=always
 RestartSec=2
 NoNewPrivileges=true
@@ -339,18 +339,26 @@ post_json() {
   return 1
 }
 
+proxy_warp_ready() {
+  ss -lnt 2>/dev/null | awk '$4 ~ /(127\.0\.0\.1|\[::1\]):40000$/ {found=1} END {exit !found}'
+}
+
 proxy_registration() {
-  local host_key body egress_ready=false
+  local host_key body egress_ready=false warp_ready=false
   ssh-keygen -A >/dev/null 2>&1 || true
   host_key=$(awk '{print $1" "$2}' /etc/ssh/ssh_host_ed25519_key.pub)
   if proxy_egress_ready; then
     egress_ready=true
   fi
+  if proxy_warp_ready; then
+    warp_ready=true
+  fi
   body=$(jq -nc \
     --arg secret "$CREDENTIAL" \
     --arg ssh_host_key "$host_key" \
     --argjson egress_ready "$egress_ready" \
-    '{secret:$secret,ssh_host_key:$ssh_host_key,egress_ready:$egress_ready}')
+    --argjson warp_ready "$warp_ready" \
+    '{secret:$secret,ssh_host_key:$ssh_host_key,egress_ready:$egress_ready,warp_ready:$warp_ready}')
   post_json "/enhancer/api/transport/proxy" "$body"
 }
 

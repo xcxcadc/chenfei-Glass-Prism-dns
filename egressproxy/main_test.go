@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"io"
 	"net"
@@ -149,8 +150,89 @@ func TestNormalizeServices(t *testing.T) {
 	services := normalizeServices([]servicePolicy{{
 		ID: " gemini ", Name: " Gemini ", Domains: []string{"*.Google.com", "google.com", ""},
 		ProbeDomains: []string{"Gemini.Google.com"},
+		EgressMode:   " WARP6 ",
 	}})
-	if len(services) != 1 || services[0].Domains[0] != "google.com" {
+	if len(services) != 1 || services[0].Domains[0] != "google.com" || services[0].EgressMode != "warp6" {
 		t.Fatalf("unexpected normalized services: %#v", services)
+	}
+}
+
+func TestEgressModeIsolationAndSuffixMatching(t *testing.T) {
+	policy := newFamilyPolicy("")
+	policy.egressModes = map[string]string{
+		"gemini.google.com": "warp",
+		"netflix.com":       "warp6",
+		"claude.ai":         "direct",
+	}
+	if got := policy.egressModeFor("gemini.google.com"); got != "warp" {
+		t.Fatalf("expected gemini.google.com -> warp, got %q", got)
+	}
+	if got := policy.egressModeFor("api.netflix.com"); got != "warp6" {
+		t.Fatalf("expected api.netflix.com -> warp6, got %q", got)
+	}
+	if got := policy.egressModeFor("claude.ai"); got != "direct" {
+		t.Fatalf("expected claude.ai -> direct, got %q", got)
+	}
+	if got := policy.egressModeFor("disneyplus.com"); got != "" {
+		t.Fatalf("unconfigured domain must remain native direct, got %q", got)
+	}
+}
+
+func TestDialSOCKS5DomainConnect(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	receivedTarget := make(chan string, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 3)
+		if _, err := io.ReadFull(conn, buf); err != nil {
+			return
+		}
+		// Reply: SOCKS5, no auth
+		_, _ = conn.Write([]byte{0x05, 0x00})
+		reqHead := make([]byte, 5)
+		if _, err := io.ReadFull(conn, reqHead); err != nil {
+			return
+		}
+		if reqHead[3] == 0x03 {
+			hostLen := int(reqHead[4])
+			rest := make([]byte, hostLen+2)
+			if _, err := io.ReadFull(conn, rest); err != nil {
+				return
+			}
+			port := int(rest[hostLen])<<8 | int(rest[hostLen+1])
+			receivedTarget <- string(rest[:hostLen]) + ":" + string(rune('0'+port/100))
+		}
+		// Reply success with 0.0.0.0:0
+		_, _ = conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+		_, _ = conn.Write([]byte("OK"))
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := dialSOCKS5(ctx, listener.Addr().String(), "gemini.google.com", "443")
+	if err != nil {
+		t.Fatalf("dialSOCKS5 failed: %v", err)
+	}
+	defer conn.Close()
+	reply := make([]byte, 2)
+	if _, err := io.ReadFull(conn, reply); err != nil || string(reply) != "OK" {
+		t.Fatalf("unexpected SOCKS5 tunneled reply %q: %v", string(reply), err)
+	}
+	select {
+	case got := <-receivedTarget:
+		if got != "gemini.google.com:4" {
+			t.Fatalf("unexpected target sent to SOCKS5: %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for SOCKS5 request")
 	}
 }

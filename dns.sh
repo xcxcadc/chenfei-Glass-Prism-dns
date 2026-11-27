@@ -8,7 +8,7 @@
 #   3. 只处理 Prism 自有的服务、nft 表和 iptables 链，不触碰 V2bX、XrayR、Docker、nginx 等业务。
 set -Eeuo pipefail
 
-PRISMCTL_VERSION="1.6.0"
+PRISMCTL_VERSION="1.6.1"
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 SCRIPT_REF="${PRISM_SCRIPT_REF:-v${PRISMCTL_VERSION}}"
 ETC_DIR="${PRISMCTL_ETC_DIR:-/etc/prismdns}"
@@ -34,6 +34,7 @@ dns ${PRISMCTL_VERSION} —— Prism DNS 综合控制脚本
   upgrade   [panel|proxy|client]   升级到最新正式版（省略角色时自动判断）
   uninstall [panel|proxy|client]   卸载（省略角色时自动判断）
   mode      [direct|encrypted]     查看或切换传输模式
+  warp      <enable|disable|status> 管理解锁机本地 WARP 分流出口（127.0.0.1:40000，不改系统路由）
   status                           查看本机角色、版本、服务和传输状态
   logs [名称]                      查看日志（agent egress client-egress dns route-sync transport tunnel traffic media controller enhancer all）；-n 行数 -f 跟踪 --errors 只看警告错误
   doctor                           诊断常见故障（防火墙、出口 IP、SNI 过滤等）
@@ -283,6 +284,128 @@ cmd_uninstall() {
     bash "$script" "${args[@]}"
   done
   ok "卸载完成。"
+}
+
+# ---------------------------------------------------------------- 本地 WARP 分流出口
+cmd_warp() {
+  local action="${1:-status}" arch wgcf_bin="/usr/local/bin/wgcf" wp_bin="/usr/local/bin/wireproxy"
+  local warp_dir="/var/lib/prism-warp" warp_conf="$ETC_DIR/warp.conf" warp_unit="/etc/systemd/system/prism-warp.service"
+  case "$action" in
+    enable|install|start)
+      case "$(uname -m)" in
+        x86_64|amd64) arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) fail "不支持的架构: $(uname -m)" ;;
+      esac
+      info "正在部署轻量级非全局 WARP 本地 SOCKS5 (127.0.0.1:40000)..."
+      mkdir -p "$warp_dir" "$ETC_DIR"
+      chmod 700 "$warp_dir"
+      if [[ ! -x "$wp_bin" ]]; then
+        local wp_tmp
+        wp_tmp=$(mktemp -d /tmp/prism-wp.XXXXXX)
+        curl -fsSL --connect-timeout 10 --max-time 60 \
+          "https://github.com/octeep/wireproxy/releases/download/v1.0.9/wireproxy_linux_${arch}.tar.gz" -o "$wp_tmp/wp.tgz" \
+          || { rm -rf "$wp_tmp"; fail "下载 wireproxy 失败"; }
+        tar -xzf "$wp_tmp/wp.tgz" -C "$wp_tmp" wireproxy
+        install -m 755 "$wp_tmp/wireproxy" "$wp_bin"
+        rm -rf "$wp_tmp"
+      fi
+      if [[ ! -s "$warp_conf" ]]; then
+        if [[ ! -x "$wgcf_bin" ]]; then
+          curl -fsSL --connect-timeout 10 --max-time 60 \
+            "https://github.com/ViRb3/wgcf/releases/download/v2.2.22/wgcf_2.2.22_linux_${arch}" -o "$wgcf_bin.tmp" \
+            || fail "下载 wgcf 失败"
+          install -m 755 "$wgcf_bin.tmp" "$wgcf_bin"
+          rm -f "$wgcf_bin.tmp"
+        fi
+        info "注册免费 Cloudflare WARP 账号并生成 WireGuard 凭证..."
+        (
+          cd "$warp_dir"
+          [[ -s wgcf-account.toml ]] || "$wgcf_bin" register --accept-tos >/dev/null
+          "$wgcf_bin" generate >/dev/null
+        )
+        local priv addr4 addr6 pub
+        priv=$(sed -n 's/^PrivateKey = //p' "$warp_dir/wgcf-profile.conf" | tr -d '\r')
+        addr4=$(sed -n 's/^Address = \([0-9./]*\).*/\1/p' "$warp_dir/wgcf-profile.conf" | head -n1 | tr -d '\r')
+        addr6=$(sed -n 's/^Address = \([0-9a-fA-F:/]*\).*/\1/p' "$warp_dir/wgcf-profile.conf" | grep ':' | head -n1 | tr -d '\r')
+        pub=$(sed -n 's/^PublicKey = //p' "$warp_dir/wgcf-profile.conf" | tr -d '\r')
+        [[ -n "$priv" && -n "$addr4" && -n "$pub" ]] || fail "解析 WARP 配置失败"
+        umask 077
+        cat >"$warp_conf" <<EOF
+[Interface]
+PrivateKey = $priv
+Address = $addr4
+${addr6:+Address = $addr6}
+DNS = 1.1.1.1
+MTU = 1280
+
+[Peer]
+PublicKey = $pub
+Endpoint = 162.159.192.1:2408
+KeepAlive = 25
+
+[Socks5]
+BindAddress = 127.0.0.1:40000
+EOF
+        chmod 600 "$warp_conf"
+      fi
+      cat >"$warp_unit" <<EOF
+[Unit]
+Description=Prism local non-global Cloudflare WARP SOCKS5 (127.0.0.1:40000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$wp_bin -c $warp_conf
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+      systemctl daemon-reload
+      systemctl enable --now prism-warp.service >/dev/null
+      local ready=false _
+      for _ in {1..20}; do
+        if ss -lnt 2>/dev/null | grep -Eq '127\.0\.0\.1:40000([[:space:]]|$)'; then ready=true; break; fi
+        sleep 0.3
+      done
+      [[ "$ready" == true ]] || fail "prism-warp.service 启动后未监听 127.0.0.1:40000"
+      if [[ -x "$LIB_DIR/prism_transport.sh" ]]; then
+        "$LIB_DIR/prism_transport.sh" --sync >/dev/null 2>&1 || true
+      fi
+      ok "本地 WARP 分流服务已就绪 (127.0.0.1:40000)，不会影响宿主机默认路由及其他原生解锁。现在可在面板为任意服务单独勾选 WARP！"
+      cmd_warp status
+      ;;
+    disable|uninstall|stop)
+      systemctl disable --now prism-warp.service >/dev/null 2>&1 || true
+      rm -f "$warp_unit"
+      systemctl daemon-reload
+      if [[ -x "$LIB_DIR/prism_transport.sh" ]]; then
+        "$LIB_DIR/prism_transport.sh" --sync >/dev/null 2>&1 || true
+      fi
+      ok "已关闭本地 WARP 分流服务（凭证保留在 $warp_conf）。"
+      ;;
+    status)
+      printf 'WARP 服务状态: %s\n' "$(systemctl is-active prism-warp.service 2>/dev/null || echo inactive)"
+      if ss -lnt 2>/dev/null | grep -Eq '127\.0\.0\.1:40000([[:space:]]|$)'; then
+        local cf4 cf6 cf_v6
+        cf4=$(curl -sS --socks5-hostname 127.0.0.1:40000 --max-time 6 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -E '^(ip|loc|warp)=' | tr '\n' ' ' || true)
+        printf '  WARP IPv4 出口: %s\n' "${cf4:-不可达}"
+        cf_v6=$(getent ahostsv6 www.cloudflare.com 2>/dev/null | awk 'NR==1{print $1}' || true)
+        if [[ -n "$cf_v6" ]]; then
+          cf6=$(curl -sS --socks5 127.0.0.1:40000 --resolve "www.cloudflare.com:443:[$cf_v6]" --max-time 6 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | grep -E '^(ip|loc|warp)=' | tr '\n' ' ' || true)
+          printf '  WARP IPv6 出口: %s\n' "${cf6:-不可达}"
+        fi
+      fi
+      ;;
+    *) fail "warp 子命令用法: dns warp <enable|disable|status>" ;;
+  esac
 }
 
 # ---------------------------------------------------------------- 传输模式
@@ -743,7 +866,7 @@ main() {
   case "$command" in
     help|-h|--help) usage; return 0 ;;
     version|-v|--version) echo "dns ${PRISMCTL_VERSION}"; return 0 ;;
-    menu|install|upgrade|update|uninstall|remove|mode|status|doctor|logs|log|self-install|self-update) ;;
+    menu|install|upgrade|update|uninstall|remove|mode|warp|status|doctor|logs|log|self-install|self-update) ;;
     *) fail "未知命令: ${command}（运行 dns help 查看用法）" ;;
   esac
 
@@ -784,6 +907,7 @@ main() {
     upgrade|update) cmd_upgrade "${positional[0]:-}" ;;
     uninstall|remove) cmd_uninstall "${positional[0]:-}" ;;
     mode) cmd_mode "${positional[0]:-${OPT_MODE:-}}" ;;
+    warp) cmd_warp "${positional[0]:-status}" ;;
     status) cmd_status ;;
     doctor) cmd_doctor ;;
     logs|log) cmd_logs "${positional[0]:-}" ;;

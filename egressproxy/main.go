@@ -54,7 +54,15 @@ type servicePolicy struct {
 	ProxyIP        string   `json:"proxy_ip,omitempty"`
 	ProbeDomains   []string `json:"probe_domains"`
 	IPv6Candidate  bool     `json:"ipv6_candidate,omitempty"`
+	EgressMode     string   `json:"egress_mode,omitempty"`
 }
+
+const (
+	egressNative4 = ""
+	egressNative6 = "native6"
+	egressWarp6   = "warp6"
+	egressWarp4   = "warp4"
+)
 
 type policyConfig struct {
 	Services []servicePolicy `json:"services"`
@@ -80,10 +88,12 @@ type keywordRoute struct {
 type familyPolicy struct {
 	mu           sync.RWMutex
 	path         string
+	warpSocks    string
 	hash         string
 	services     []servicePolicy
 	prefer6      map[string]bool
 	allow6       map[string]bool
+	egressModes  map[string]string
 	routeIPs     map[string]string
 	keywords     []keywordRoute
 	cidrs        []cidrRoute
@@ -96,10 +106,28 @@ func newFamilyPolicy(path string) *familyPolicy {
 		path:         path,
 		prefer6:      make(map[string]bool),
 		allow6:       make(map[string]bool),
+		egressModes:  make(map[string]string),
 		routeIPs:     make(map[string]string),
 		knownProxies: make(map[string]struct{}),
 		refresh:      make(chan struct{}, 1),
 	}
+}
+
+func (policy *familyPolicy) egressModeFor(host string) string {
+	host = normalizeHost(host)
+	policy.mu.RLock()
+	defer policy.mu.RUnlock()
+	for candidate := host; candidate != ""; {
+		if mode, exists := policy.egressModes[candidate]; exists && mode != "" {
+			return mode
+		}
+		index := strings.IndexByte(candidate, '.')
+		if index < 0 {
+			break
+		}
+		candidate = candidate[index+1:]
+	}
+	return egressNative4
 }
 
 func (policy *familyPolicy) preferIPv6(host string) bool {
@@ -227,8 +255,10 @@ func (policy *familyPolicy) refreshNow(ctx context.Context) {
 	policy.mu.Lock()
 	unchanged := hash == policy.hash
 	previousPrefer6 := policy.prefer6
+	previousModes := policy.egressModes
 	initial := make(map[string]bool)
 	allow6 := make(map[string]bool)
+	initialModes := make(map[string]string)
 	routeIPs := make(map[string]string)
 	knownProxies := make(map[string]struct{})
 	var keywords []keywordRoute
@@ -242,6 +272,7 @@ func (policy *familyPolicy) refreshNow(ctx context.Context) {
 			knownProxies[proxyIP] = struct{}{}
 			hasClientRoutes = true
 		}
+		explicitMode := strings.ToLower(strings.TrimSpace(service.EgressMode))
 		for _, domain := range service.Domains {
 			if service.IPv6Candidate && previousPrefer6[domain] {
 				initial[domain] = true
@@ -252,6 +283,26 @@ func (policy *familyPolicy) refreshNow(ctx context.Context) {
 				allow6[domain] = true
 			} else if _, exists := allow6[domain]; !exists {
 				allow6[domain] = false
+			}
+			switch explicitMode {
+			case egressWarp6:
+				initialModes[domain] = egressWarp6
+			case egressWarp4:
+				initialModes[domain] = egressWarp4
+			case "warp":
+				if prev := previousModes[domain]; prev == egressWarp6 || prev == egressWarp4 {
+					initialModes[domain] = prev
+				} else {
+					initialModes[domain] = egressWarp6
+				}
+			case "auto":
+				if prev := previousModes[domain]; prev != "" {
+					initialModes[domain] = prev
+				}
+			default:
+				if service.IPv6Candidate && previousPrefer6[domain] {
+					initialModes[domain] = egressNative6
+				}
 			}
 			if proxyIP != "" {
 				routeIPs[domain] = proxyIP
@@ -273,6 +324,7 @@ func (policy *familyPolicy) refreshNow(ctx context.Context) {
 	policy.services = services
 	policy.prefer6 = initial
 	policy.allow6 = allow6
+	policy.egressModes = initialModes
 	policy.routeIPs = routeIPs
 	policy.keywords = keywords
 	policy.cidrs = cidrs
@@ -280,10 +332,10 @@ func (policy *familyPolicy) refreshNow(ctx context.Context) {
 	policy.mu.Unlock()
 
 	if !unchanged {
-		log.Printf("loaded %d egress service policies (client_routes=%t)", len(services), hasClientRoutes)
+		log.Printf("loaded %d egress service policies (client_routes=%t, warp_socks=%q)", len(services), hasClientRoutes, policy.warpSocks)
 	}
 
-	// Client-side policies forward to ProxyIPv4 and do not need local IPv4/IPv6 probing.
+	// Client-side policies forward to ProxyIPv4 and do not need local IPv4/IPv6/WARP probing.
 	if hasClientRoutes {
 		return
 	}
@@ -293,8 +345,10 @@ func (policy *familyPolicy) refreshNow(ctx context.Context) {
 func (policy *familyPolicy) evaluate(ctx context.Context, hash string, services []servicePolicy) {
 	type result struct {
 		service servicePolicy
+		mode    string
 		prefer6 bool
 	}
+	warpUp := warpSocksReachable(ctx, policy.warpSocks)
 	results := make(chan result, len(services))
 	workers := make(chan struct{}, 4)
 	var waitGroup sync.WaitGroup
@@ -303,34 +357,77 @@ func (policy *familyPolicy) evaluate(ctx context.Context, hash string, services 
 		waitGroup.Add(1)
 		go func() {
 			defer waitGroup.Done()
+			explicit := strings.ToLower(strings.TrimSpace(service.EgressMode))
+			switch explicit {
+			case egressWarp6:
+				results <- result{service: service, mode: egressWarp6}
+				return
+			case egressWarp4:
+				results <- result{service: service, mode: egressWarp4}
+				return
+			case "warp":
+				if !warpUp {
+					results <- result{service: service, mode: egressWarp6}
+					return
+				}
+				workers <- struct{}{}
+				defer func() { <-workers }()
+				chosen := evaluateWarpChoice(ctx, service, policy.warpSocks)
+				results <- result{service: service, mode: chosen}
+				return
+			case "auto":
+				workers <- struct{}{}
+				defer func() { <-workers }()
+				chosen := evaluateAutoService(ctx, service, policy.warpSocks, warpUp)
+				results <- result{service: service, mode: chosen, prefer6: chosen == egressNative6}
+				return
+			}
 			if !service.IPv6Candidate {
-				results <- result{service: service, prefer6: false}
+				results <- result{service: service, mode: egressNative4, prefer6: false}
 				return
 			}
 			workers <- struct{}{}
 			defer func() { <-workers }()
-			results <- result{service: service, prefer6: evaluateService(ctx, service)}
+			p6 := evaluateService(ctx, service)
+			m := egressNative4
+			if p6 {
+				m = egressNative6
+			}
+			results <- result{service: service, mode: m, prefer6: p6}
 		}()
 	}
 	waitGroup.Wait()
 	close(results)
-	next := make(map[string]bool)
+	nextPrefer6 := make(map[string]bool)
+	nextModes := make(map[string]string)
 	for item := range results {
 		for _, domain := range item.service.Domains {
 			if item.prefer6 {
-				next[domain] = true
-			} else if _, exists := next[domain]; !exists {
-				next[domain] = false
+				nextPrefer6[domain] = true
+			} else if _, exists := nextPrefer6[domain]; !exists {
+				nextPrefer6[domain] = false
+			}
+			if item.mode == egressWarp6 || item.mode == egressWarp4 {
+				nextModes[domain] = item.mode
+			} else if item.mode != "" {
+				if cur := nextModes[domain]; cur != egressWarp6 && cur != egressWarp4 {
+					nextModes[domain] = item.mode
+				}
 			}
 		}
-		if item.service.IPv6Candidate {
-			log.Printf("egress family service=%q ipv6=%t", item.service.Name, item.prefer6)
+		if item.service.IPv6Candidate || item.service.EgressMode != "" {
+			modeLabel := item.mode
+			if modeLabel == "" {
+				modeLabel = "native4"
+			}
+			log.Printf("egress route service=%q policy=%q selected=%s", item.service.Name, item.service.EgressMode, modeLabel)
 		}
 	}
 	policy.mu.Lock()
 	defer policy.mu.Unlock()
 	if policy.hash == hash {
-		policy.prefer6 = next
+		policy.prefer6 = nextPrefer6
+		policy.egressModes = nextModes
 	}
 }
 
@@ -339,6 +436,7 @@ func normalizeServices(services []servicePolicy) []servicePolicy {
 	for _, service := range services {
 		service.ID = strings.TrimSpace(service.ID)
 		service.Name = strings.TrimSpace(service.Name)
+		service.EgressMode = strings.ToLower(strings.TrimSpace(service.EgressMode))
 		service.Domains = normalizeDomains(service.Domains)
 		service.ProbeDomains = normalizeDomains(service.ProbeDomains)
 		service.DomainKeywords = normalizeKeywords(service.DomainKeywords)
@@ -495,6 +593,119 @@ func probeURLForDomain(domain string) (string, string) {
 	default:
 		return domain, "https://" + domain + "/"
 	}
+}
+
+func probeDomainViaWARP(ctx context.Context, domain, warpSocks, family string) probeResult {
+	dialDomain, targetURL := probeURLForDomain(domain)
+	transport := &http.Transport{
+		Proxy:               nil,
+		DisableKeepAlives:   true,
+		TLSHandshakeTimeout: 6 * time.Second,
+		DialContext: func(dialContext context.Context, _, address string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			if host == "" {
+				host = dialDomain
+			}
+			return dialViaWARP(dialContext, warpSocks, host, port, family)
+		},
+	}
+	client := &http.Client{Transport: transport, Timeout: 12 * time.Second}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return probeResult{}
+	}
+	request.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	request.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	response, err := client.Do(request)
+	if err != nil {
+		return probeResult{}
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(response.Body, probeBodyLimit))
+	finalURL := ""
+	if response.Request != nil && response.Request.URL != nil {
+		finalURL = response.Request.URL.String()
+	}
+	return inspectProbeResponse(dialDomain, response.StatusCode, finalURL, body)
+}
+
+func probeResultHealthy(r probeResult) bool {
+	if !r.Reachable || r.Blocked {
+		return false
+	}
+	if r.Region == "CHN" || r.Region == "CN" {
+		return false
+	}
+	return r.Code >= 200 && r.Code < 400
+}
+
+// evaluateWarpChoice selects between WARP IPv6 (preferred when clean) and WARP IPv4.
+func evaluateWarpChoice(ctx context.Context, service servicePolicy, warpSocks string) string {
+	targets := representativeProbeTargets(service)
+	if len(targets) == 0 {
+		return egressWarp6
+	}
+	domain := targets[0]
+	probeCtx, cancel := context.WithTimeout(ctx, 14*time.Second)
+	defer cancel()
+	var w6, w4 probeResult
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); w6 = probeDomainViaWARP(probeCtx, domain, warpSocks, "ipv6") }()
+	go func() { defer wg.Done(); w4 = probeDomainViaWARP(probeCtx, domain, warpSocks, "ipv4") }()
+	wg.Wait()
+	log.Printf("probe warp service=%q domain=%s w6={ok:%t code:%d blocked:%t region:%s} w4={ok:%t code:%d blocked:%t region:%s}",
+		service.Name, domain,
+		w6.Reachable, w6.Code, w6.Blocked, w6.Region,
+		w4.Reachable, w4.Code, w4.Blocked, w4.Region)
+	if probeResultHealthy(w6) {
+		return egressWarp6
+	}
+	if probeResultHealthy(w4) {
+		return egressWarp4
+	}
+	if w6.Reachable && !w6.Blocked {
+		return egressWarp6
+	}
+	if w4.Reachable && !w4.Blocked {
+		return egressWarp4
+	}
+	return egressWarp6
+}
+
+// evaluateAutoService runs 4-tier adaptive selection: native IPv4 -> native IPv6 -> WARP IPv6 -> WARP IPv4.
+func evaluateAutoService(ctx context.Context, service servicePolicy, warpSocks string, warpUp bool) string {
+	targets := representativeProbeTargets(service)
+	if len(targets) == 0 {
+		return egressNative4
+	}
+	domain := targets[0]
+	probeCtx, cancel := context.WithTimeout(ctx, 14*time.Second)
+	var v4, v6 probeResult
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); v4 = probeDomain(probeCtx, domain, false) }()
+	go func() { defer wg.Done(); v6 = probeDomain(probeCtx, domain, true) }()
+	wg.Wait()
+	cancel()
+	log.Printf("probe auto service=%q domain=%s v4={ok:%t code:%d blocked:%t region:%s} v6={ok:%t code:%d blocked:%t region:%s}",
+		service.Name, domain,
+		v4.Reachable, v4.Code, v4.Blocked, v4.Region,
+		v6.Reachable, v6.Code, v6.Blocked, v6.Region)
+	if probeResultHealthy(v4) {
+		return egressNative4
+	}
+	if preferIPv6Result(servicePolicy{IPv6Candidate: true}, v4, v6) {
+		return egressNative6
+	}
+	if warpUp {
+		choice := evaluateWarpChoice(ctx, service, warpSocks)
+		return choice
+	}
+	return egressNative4
 }
 
 func probeDomain(ctx context.Context, domain string, ipv6 bool) probeResult {
@@ -668,14 +879,29 @@ func (server *proxyServer) handle(client net.Conn, port string, hostname func([]
 		return
 	}
 
-	// Proxy mode: smart IPv4/IPv6 egress selection
-	prefer6 := server.policy.preferIPv6(host)
-	allow6 := prefer6 || server.policy.allowIPv6Fallback(host)
+	// Proxy mode: per-service WARP or smart native IPv4/IPv6 egress selection
+	egressMode := server.policy.egressModeFor(host)
+	var upstream net.Conn
+	var err error
 	ctx, cancel := context.WithTimeout(context.Background(), server.dialTimeout)
-	upstream, err := dialHost(ctx, host, port, prefer6, !allow6, allow6, "")
+	if (egressMode == egressWarp6 || egressMode == egressWarp4) && server.policy.warpSocks != "" {
+		family := "ipv6"
+		if egressMode == egressWarp4 {
+			family = "ipv4"
+		}
+		upstream, err = dialViaWARP(ctx, server.policy.warpSocks, host, port, family)
+		if err != nil {
+			log.Printf("warp dial %s:%s (%s) failed, falling back to native: %v", host, port, egressMode, err)
+		}
+	}
+	if upstream == nil {
+		prefer6 := egressMode == egressNative6 || server.policy.preferIPv6(host)
+		allow6 := prefer6 || server.policy.allowIPv6Fallback(host)
+		upstream, err = dialHost(ctx, host, port, prefer6, !allow6, allow6, "")
+	}
 	cancel()
 	if err != nil {
-		log.Printf("dial %s:%s (prefer6=%t): %v", host, port, prefer6, err)
+		log.Printf("dial %s:%s (mode=%s): %v", host, port, egressMode, err)
 		return
 	}
 	defer upstream.Close()
@@ -921,12 +1147,13 @@ func validateListenAddress(address string, allowWildcard bool) error {
 }
 
 func main() {
-	var tlsListen, httpListen, policyFile, mode string
+	var tlsListen, httpListen, policyFile, mode, warpSocks string
 	var dialTimeout time.Duration
 	flag.StringVar(&tlsListen, "tls-listen", "127.0.0.1:19443", "TLS SNI listen address")
 	flag.StringVar(&httpListen, "http-listen", "127.0.0.1:19080", "HTTP Host listen address")
 	flag.StringVar(&policyFile, "policy", "/etc/prismdns/egress-policy.json", "service egress policy file")
 	flag.StringVar(&mode, "mode", "auto", "operating mode: auto, proxy, or client")
+	flag.StringVar(&warpSocks, "warp-socks", "127.0.0.1:40000", "local WARP/SOCKS5 proxy address for per-service WARP routing")
 	flag.DurationVar(&dialTimeout, "dial-timeout", 20*time.Second, "upstream dial timeout")
 	flag.Parse()
 
@@ -954,6 +1181,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	policy := newFamilyPolicy(policyFile)
+	policy.warpSocks = strings.TrimSpace(warpSocks)
 	go policy.run(ctx)
 	hup := make(chan os.Signal, 1)
 	signal.Notify(hup, syscall.SIGHUP)

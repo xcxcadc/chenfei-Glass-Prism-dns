@@ -90,6 +90,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("initialize media checks: %v", err)
 	}
+	app.warpPolicies, err = NewWarpPolicyStore(filepath.Join(*dataDir, "warp-policies.json"))
+	if err != nil {
+		log.Fatalf("initialize warp policies: %v", err)
+	}
 	app.icons = newServiceIconCache(filepath.Join(*dataDir, "icon-cache"))
 	catalogSnapshot := catalog.Snapshot(context.Background(), false)
 	go func(services []Service) {

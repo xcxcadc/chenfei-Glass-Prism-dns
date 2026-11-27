@@ -202,12 +202,23 @@ func (app *App) handleEnhancedNodes(writer http.ResponseWriter, request *http.Re
 		for _, node := range nodes {
 			app.nodeLabels.Overlay(node)
 			app.nodeUpdates.overlay(node)
-			if valueString(node["role"]) == "proxy" && app.mediaChecks != nil {
-				if job, ok := app.mediaChecks.Latest(valueString(node["id"]), ""); ok && len(job.Results) > 0 {
-					node["media_summary"] = map[string]any{
-						"status":     job.Status,
-						"updated_at": job.UpdatedAt,
-						"results":    job.Results,
+			if valueString(node["role"]) == "proxy" {
+				nodeID := valueString(node["id"])
+				if app.mediaChecks != nil {
+					if job, ok := app.mediaChecks.Latest(nodeID, ""); ok && len(job.Results) > 0 {
+						node["media_summary"] = map[string]any{
+							"status":     job.Status,
+							"updated_at": job.UpdatedAt,
+							"results":    job.Results,
+						}
+					}
+				}
+				if app.transport != nil {
+					node["warp_ready"] = app.transport.ProxyWarpReady(nodeID)
+				}
+				if app.warpPolicies != nil {
+					if ws := app.warpPolicies.ForProxy(nodeID); len(ws) > 0 {
+						node["warp_services"] = ws
 					}
 				}
 			}
@@ -244,6 +255,9 @@ func (app *App) handleEnhancedNode(writer http.ResponseWriter, request *http.Req
 		}
 		if app.transport != nil {
 			_ = app.transport.DeleteProxy(id)
+		}
+		if app.warpPolicies != nil {
+			_ = app.warpPolicies.DeleteProxy(id)
 		}
 		writer.WriteHeader(http.StatusNoContent)
 	default:
