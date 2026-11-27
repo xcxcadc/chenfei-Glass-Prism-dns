@@ -100,6 +100,7 @@ type transportConfig struct {
 	AuthorizedIPs  []string                 `json:"authorized_ips"`
 	EgressServices []transportEgressService `json:"egress_services,omitempty"`
 	WarpDesired    bool                     `json:"warp_desired"`
+	NativeProbes   []NativeProbeTask        `json:"native_probes,omitempty"`
 }
 
 type controllerNode struct {
@@ -555,6 +556,9 @@ func (app *App) handleClientTransport(writer http.ResponseWriter, request *http.
 	}
 	config := app.transport.ClientConfig(record)
 	config.EgressServices = app.clientEgressServices(request.Context(), record)
+	if app.nativeChecks != nil {
+		config.NativeProbes = app.nativeChecks.PendingForClient(record.ID)
+	}
 	writeJSON(writer, http.StatusOK, config)
 }
 

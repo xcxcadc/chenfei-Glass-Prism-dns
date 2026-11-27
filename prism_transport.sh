@@ -3,8 +3,8 @@
 set +x
 set -Eeuo pipefail
 
-VERSION="2.6.3"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.3}"
+VERSION="2.6.4"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.4}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
@@ -814,11 +814,58 @@ tunnel_ready() {
     tunnel_port_ready "$proxy_ip" 443
 }
 
+run_client_native_probes() {
+  [[ "$ROLE" == "client" ]] || return 0
+  local response="$1" count task task_id svc_id domain probe_url real_ip tmp_body meta code final_url time_sec latency_ms snippet err_msg payload
+  count=$(jq '(.native_probes // []) | length' <<<"$response" 2>/dev/null || echo 0)
+  [[ "$count" -gt 0 ]] || return 0
+  while IFS= read -r task; do
+    [[ -n "$task" ]] || continue
+    task_id=$(jq -r '.task_id // ""' <<<"$task")
+    svc_id=$(jq -r '.service_id // ""' <<<"$task")
+    domain=$(jq -r '.domain // ""' <<<"$task")
+    probe_url=$(jq -r '.probe_url // ""' <<<"$task")
+    [[ -n "$svc_id" && -n "$domain" && -n "$probe_url" ]] || continue
+    real_ip=$(curl -4 -fsS --connect-timeout 3 --max-time 5 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=${domain}&type=A" 2>/dev/null | jq -r '[.Answer[]? | select(.type==1) | .data][0] // empty' 2>/dev/null || true)
+    if [[ -z "$real_ip" ]]; then
+      real_ip=$(curl -4 -fsS --connect-timeout 3 --max-time 5 -H 'accept: application/dns-json' "https://8.8.8.8/resolve?name=${domain}&type=A" 2>/dev/null | jq -r '[.Answer[]? | select(.type==1) | .data][0] // empty' 2>/dev/null || true)
+    fi
+    tmp_body=$(mktemp)
+    code=0; final_url="$probe_url"; latency_ms=0; err_msg=""
+    if [[ -n "$real_ip" ]]; then
+      meta=$(curl -4 -sS -L --connect-timeout 4 --max-time 7 --resolve "${domain}:443:${real_ip}" \
+        -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' \
+        -H 'Accept-Language: en-US,en;q=0.9' \
+        -o "$tmp_body" -w '%{http_code}|%{url_effective}|%{time_total}' "$probe_url" 2>/dev/null) || err_msg="原生直连超时或连接失败"
+      if [[ -z "$err_msg" ]]; then
+        IFS='|' read -r code final_url time_sec <<<"$meta"
+        latency_ms=$(awk -v t="${time_sec:-0}" 'BEGIN{printf "%d", t*1000}')
+      fi
+    else
+      err_msg="公网 DNS 解析失败"
+    fi
+    snippet=$(head -c 262144 "$tmp_body" 2>/dev/null | tr -d '\000' || true)
+    rm -f "$tmp_body"
+    payload=$(jq -nc \
+      --arg token "$CREDENTIAL" \
+      --arg task_id "$task_id" \
+      --arg service_id "$svc_id" \
+      --argjson http_code "${code:-0}" \
+      --arg final_url "$final_url" \
+      --arg body_snippet "$snippet" \
+      --argjson latency_ms "${latency_ms:-0}" \
+      --arg error "$err_msg" \
+      '{token:$token,task_id:$task_id,service_id:$service_id,http_code:$http_code,final_url:$final_url,body_snippet:$body_snippet,latency_ms:$latency_ms,error:$error}')
+    post_json "/enhancer/api/client-native-check/report" "$payload" >/dev/null 2>&1 || true
+  done < <(jq -c '.native_probes[]?' <<<"$response")
+}
+
 sync_client() {
   local response peer proxy_id ready_json old_ready="[]" old_current="[]" current_json changed_ready=false changed_current=false
   local -a ready=() current=()
   response=$(client_registration)
   jq -e '.role == "client" and (.peers | type == "array")' <<<"$response" >/dev/null
+  run_client_native_probes "$response"
   apply_client_egress_policy "$response"
   while IFS= read -r peer; do
     [[ -n "$peer" ]] || continue
@@ -923,7 +970,7 @@ Description=Refresh Prism encrypted SNI transport
 
 [Timer]
 OnActiveSec=5s
-OnUnitInactiveSec=10s
+OnUnitInactiveSec=5s
 AccuracySec=1s
 Persistent=true
 

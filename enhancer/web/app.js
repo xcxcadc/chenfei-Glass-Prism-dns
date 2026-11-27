@@ -2040,6 +2040,12 @@ function ipFormHTML() {
     const currentWarp = checked && selectedProxyNode ? nodeWarpMode(selectedProxyNode, service.id) : "";
     const avail = checked && selectedProxyNode ? serviceProxyAvailability(selectedProxyNode, service) : null;
     const altProxies = avail?.state === "bad" ? availableProxiesForService(service, selectedProxy) : [];
+    const nativeEntry = checked && modal.config?.id ? getClientNativeEntry(modal.config.id, service.id) : null;
+    const nativeBannerHTML = nativeEntry?.status === "pending"
+      ? `<div class="ip-service-remedy" style="border-color:rgba(37,99,235,.32);background:rgba(37,99,235,.07)"><strong style="color:var(--accent)">⏳ ${escapeHTML(state.lang === "zh" ? `正在通过被解锁机 (${draft.ip}) 原生直连测试 ${displayServiceName(service)}…` : `Testing native direct on ${draft.ip}…`)}</strong></div>`
+      : nativeEntry?.result?.status === "yes"
+        ? `<div class="ip-service-remedy" style="border-color:rgba(22,163,74,.35);background:rgba(22,163,74,.08)"><strong style="color:var(--good)">✅ ${escapeHTML(state.lang === "zh" ? `推荐原生直连：被解锁机 (${draft.ip}) 本身即可解锁（${nativeEntry.result.summary}${nativeEntry.result.latency_ms ? ` · ${nativeEntry.result.latency_ms}ms` : ""}），无需占用解锁机` : `Native direct available (${nativeEntry.result.summary}); direct recommended`)}</strong><div class="remedy-actions"><button class="btn small primary ip-remedy-direct" type="button" data-service-id="${escapeHTML(service.id)}">${state.lang === "zh" ? "采用原生直连（取消代理分流）" : "Use native direct"}</button></div></div>`
+        : "";
     const warpOptions = [
       ["", state.lang === "zh" ? "出口：原生直连" : "Egress: Native"],
       ["warp", state.lang === "zh" ? "出口：☁ WARP 智能" : "Egress: ☁ WARP Smart"],
@@ -2048,7 +2054,7 @@ function ipFormHTML() {
       ["auto", state.lang === "zh" ? "出口：⚡ 自动防送中" : "Egress: ⚡ Auto Fallback"]
     ];
     const remedyHTML = avail?.state === "bad" ? `<div class="ip-service-remedy"><strong>⚠ ${escapeHTML(state.lang === "zh" ? `${selectedProxyNode.name} 原生不可用此服务（${avail.label}）` : `${selectedProxyNode.name} cannot unlock this service natively`)}</strong><div class="remedy-actions">${altProxies.slice(0, 3).map(({node: alt, avail: altAvail}) => `<button class="btn small primary ip-remedy-switch" type="button" data-service-id="${escapeHTML(service.id)}" data-proxy-id="${escapeHTML(nodeID(alt.id))}">${state.lang === "zh" ? "切至" : "Switch to"} ${escapeHTML(alt.name)}${altAvail.viaWarp ? " (WARP)" : ""}</button>`).join("")}<button class="btn small ip-remedy-warp" type="button" data-service-id="${escapeHTML(service.id)}" data-proxy-id="${escapeHTML(selectedProxy)}">☁ ${state.lang === "zh" ? `在 ${selectedProxyNode.name} 开启 WARP 解锁` : `Enable WARP on ${selectedProxyNode.name}`}</button></div></div>` : "";
-    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${checked && !proxyExists ? `<option value="${escapeHTML(selectedProxy)}" selected>${state.lang === "zh" ? "⚠ 已删除旧节点（请重选）" : "⚠ Deleted node (reselect)"}</option>` : ""}${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(proxyOptionLabel(node, service))}</option>`).join("")}</select><div class="ip-warp-row" ${checked && proxyExists ? "" : "hidden"}><select class="select ip-service-warp ${currentWarp ? "warp-active" : ""}" data-service-id="${escapeHTML(service.id)}" data-proxy-id="${escapeHTML(selectedProxy)}" title="${escapeHTML(state.lang === "zh" ? "开启任意服务 WARP 后，解锁机将自动启用非全局 WARP；全部恢复原生后自动关闭" : "Enabling WARP auto-starts local non-global WARP on the proxy")}">${warpOptions.map(([val, lbl]) => `<option value="${val}" ${val === currentWarp ? "selected" : ""}>${escapeHTML(lbl)}</option>`).join("")}</select>${selectedProxyNode?.warp_ready ? `<span class="warp-dot ready" title="WARP 运行中"></span>` : `<span class="warp-dot off" title="${state.lang === "zh" ? "当前未运行 WARP（勾选后自动开启）" : "WARP idle (auto-starts when enabled)"}"></span>`}</div>${remedyHTML}<div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small icon ip-service-quick" type="button" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "⚡ 秒测所有解锁机" : "⚡ Quick check proxies"}"><i class="bi bi-lightning-charge-fill"></i></button><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "目标实测" : "Target test"}</button></div></div></article>`;
+    return `<article class="ip-service-option ${checked ? "selected" : ""}" data-service-id="${escapeHTML(service.id)}"><label><input type="checkbox" class="ip-service-check" data-service-id="${escapeHTML(service.id)}" ${checked ? "checked" : ""}>${serviceIconHTML(service)}<span class="ip-service-name"><strong>${escapeHTML(displayServiceName(service))}</strong><small>${escapeHTML(displayCategory(service.category))}</small></span></label><select class="select ip-service-proxy" data-service-id="${escapeHTML(service.id)}" ${checked ? "" : "disabled"}>${checked && !proxyExists ? `<option value="${escapeHTML(selectedProxy)}" selected>${state.lang === "zh" ? "⚠ 已删除旧节点（请重选）" : "⚠ Deleted node (reselect)"}</option>` : ""}${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(selectedProxy || modal.defaultProxy) ? "selected" : ""}>${escapeHTML(proxyOptionLabel(node, service))}</option>`).join("")}</select><div class="ip-warp-row" ${checked && proxyExists ? "" : "hidden"}><select class="select ip-service-warp ${currentWarp ? "warp-active" : ""}" data-service-id="${escapeHTML(service.id)}" data-proxy-id="${escapeHTML(selectedProxy)}" title="${escapeHTML(state.lang === "zh" ? "开启任意服务 WARP 后，解锁机将自动启用非全局 WARP；全部恢复原生后自动关闭" : "Enabling WARP auto-starts local non-global WARP on the proxy")}">${warpOptions.map(([val, lbl]) => `<option value="${val}" ${val === currentWarp ? "selected" : ""}>${escapeHTML(lbl)}</option>`).join("")}</select>${selectedProxyNode?.warp_ready ? `<span class="warp-dot ready" title="WARP 运行中"></span>` : `<span class="warp-dot off" title="${state.lang === "zh" ? "当前未运行 WARP（勾选后自动开启）" : "WARP idle (auto-starts when enabled)"}"></span>`}</div>${nativeBannerHTML}${remedyHTML}<div class="service-audit" ${checked ? "" : "hidden"}><div class="service-audit-copy"><span>${t("actualAudit")}</span><small>${state.lang === "zh" ? "只报告结果，不自动切换节点" : "Report only; routing never changes automatically"}</small></div><div class="service-audit-actions"><span class="badge ${audit.kind}" title="${escapeHTML(audit.detail)}">${escapeHTML(audit.label)}</span><button class="btn small icon ip-service-quick" type="button" data-service-id="${escapeHTML(service.id)}" title="${state.lang === "zh" ? "⚡ 秒测所有解锁机" : "⚡ Quick check proxies"}"><i class="bi bi-lightning-charge-fill"></i></button><button class="btn small ip-service-audit" type="button" data-service-id="${escapeHTML(service.id)}" ${canAudit ? "" : "disabled"} title="${canAudit ? "" : escapeHTML(state.lang === "zh" ? "请先保存并安装客户端" : "Save and install the client first")}">${state.lang === "zh" ? "目标实测" : "Target test"}</button></div></div></article>`;
   }).join("")}</div><div class="empty" id="ip-service-filter-empty" hidden><strong>${t("noServices")}</strong></div><div class="form-error">${escapeHTML(modal.error || "")}</div></div><footer class="modal-foot delivery-foot"><button class="btn" id="ip-back" type="button">${t("back")}</button><div class="delivery-impact"><strong>${state.lang === "zh" ? "保存后自动下发" : "Automatic delivery after save"}</strong><span>${state.lang === "zh" ? "Agent 自动同步配置；实测只更新结果，不会改动您选择的节点" : "The Agent syncs configuration; audits update reports without changing your selected node"}</span></div><div class="modal-foot-right"><button class="btn modal-close" type="button">${t("cancel")}</button><button class="btn primary" id="ip-save-config" type="submit" ${!canSaveIPConfig(modal) ? "disabled" : ""}>${state.lang === "zh" ? "保存并自动下发" : "Save and deliver"}</button></div></footer></form></div>`;
 }
 
@@ -2113,6 +2119,9 @@ function bindModal() {
       state.modal.routes[input.dataset.serviceId] = linkedProxy || select?.value || state.modal.defaultProxy;
       if (select) select.value = state.modal.routes[input.dataset.serviceId];
       applyLinkedRouteProxy(input.dataset.serviceId, state.modal.routes[input.dataset.serviceId]);
+      if (state.modal.config?.id) {
+        requestClientNativeCheck(state.modal.config.id, input.dataset.serviceId, false);
+      }
     } else {
       delete state.modal.routes[input.dataset.serviceId];
     }
@@ -2169,6 +2178,15 @@ function bindModal() {
     renderModal();
     toast(state.lang === "zh" ? "已切换至可用解锁机，保存后自动下发" : "Switched to available proxy; click Save to apply", "good");
   }));
+  document.querySelectorAll(".ip-remedy-direct").forEach(button => button.addEventListener("click", () => {
+    if (state.modal?.type !== "ip-form") return;
+    const serviceId = button.dataset.serviceId;
+    if (!serviceId) return;
+    delete state.modal.routes[serviceId];
+    renderModal();
+    toast(state.lang === "zh" ? "已改为原生直连（取消代理分流），点击保存即可生效" : "Switched to native direct; click Save to apply", "good");
+  }));
+  document.querySelectorAll(".quick-apply-direct").forEach(button => button.addEventListener("click", () => applyQuickCheckDirect()));
   document.querySelectorAll(".ip-remedy-warp").forEach(button => button.addEventListener("click", async () => {
     const serviceId = button.dataset.serviceId;
     const proxyId = button.dataset.proxyId;
@@ -3038,6 +3056,84 @@ async function clearAllWarpPolicies(proxyId) {
   }
 }
 
+const clientNativeCache = new Map();
+
+function getClientNativeEntry(configId, serviceId) {
+  if (!configId || !serviceId) return null;
+  return clientNativeCache.get(`${configId}|${serviceId}`) || null;
+}
+
+async function requestClientNativeCheck(configId, serviceId, force = false) {
+  if (!configId || !serviceId) return null;
+  const key = `${configId}|${serviceId}`;
+  const existing = clientNativeCache.get(key);
+  if (!force && existing?.status === "ready" && existing.result) return existing.result;
+  if (!force && existing?.status === "pending") return null;
+  clientNativeCache.set(key, {status: "pending", result: null});
+  if (state.modal?.type === "quick-check" || state.modal?.type === "ip-form") renderModal();
+  try {
+    const res = await api("/enhancer/api/client-native-check", {
+      method: "POST",
+      body: JSON.stringify({config_id: configId, service_id: serviceId, force})
+    });
+    if (res?.status === "ready" && res.result) {
+      clientNativeCache.set(key, {status: "ready", result: res.result});
+      if (state.modal?.type === "quick-check" || state.modal?.type === "ip-form") renderModal();
+      return res.result;
+    }
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 1600));
+      const poll = await api(`/enhancer/api/client-native-check?config_id=${encodeURIComponent(configId)}&service_id=${encodeURIComponent(serviceId)}`);
+      if (poll?.status === "ready" && poll.result) {
+        clientNativeCache.set(key, {status: "ready", result: poll.result});
+        if (state.modal?.type === "quick-check" || state.modal?.type === "ip-form") renderModal();
+        return poll.result;
+      }
+      if (poll?.status === "idle") break;
+    }
+    clientNativeCache.set(key, {status: "timeout", result: null});
+    if (state.modal?.type === "quick-check" || state.modal?.type === "ip-form") renderModal();
+  } catch {
+    clientNativeCache.set(key, {status: "error", result: null});
+    if (state.modal?.type === "quick-check" || state.modal?.type === "ip-form") renderModal();
+  }
+  return null;
+}
+
+async function applyQuickCheckDirect() {
+  const modal = state.modal;
+  if (!modal || modal.type !== "quick-check") return;
+  const service = modal.service;
+  if (modal.returnModal?.type === "ip-form") {
+    const ipModal = modal.returnModal;
+    delete ipModal.routes[service.id];
+    state.modal = ipModal;
+    renderModal();
+    toast(state.lang === "zh" ? `已为 ${displayServiceName(service)} 采用原生直连，点击保存即可生效` : "Switched to native direct in form; click Save", "good");
+    return;
+  }
+  const targetConfig = configForNode(selectedDNS());
+  if (!targetConfig) return;
+  modal.busy = true;
+  renderModal();
+  try {
+    const nextRoutes = {...canonicalRoutesForCatalog(targetConfig.routes || {})};
+    delete nextRoutes[service.id];
+    const updated = await api(`/enhancer/api/ip-configs/${encodeURIComponent(targetConfig.id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ip: targetConfig.ip, note: targetConfig.note || "", smart: targetConfig.smart !== false, routes: nextRoutes})
+    });
+    state.ipConfigs = state.ipConfigs.map(item => item.id === updated.id ? updated : item);
+    closeModal();
+    await loadAll(true);
+    toast(state.lang === "zh" ? `已为 ${targetConfig.ip} 的 ${displayServiceName(service)} 切换为原生直连并下发` : "Switched to native direct and delivered", "good");
+  } catch (error) {
+    modal.busy = false;
+    modal.error = cleanErrorMessage(error.message);
+    renderModal();
+  }
+}
+
 function quickCheckModalHTML() {
   const modal = state.modal;
   const service = modal.service;
@@ -3050,17 +3146,28 @@ function quickCheckModalHTML() {
   const goodRows = rows.filter(item => item.status === "yes");
   const currentRow = currentProxyId ? rows.find(item => nodeID(item.proxy_id) === currentProxyId) : null;
   const canApply = Boolean(modal.returnModal?.type === "ip-form" || targetConfig);
+  const nativeEntry = targetConfig?.id ? getClientNativeEntry(targetConfig.id, service.id) : null;
+  let nativeCardHTML = "";
+  if (targetConfig?.id) {
+    if (nativeEntry?.status === "pending") {
+      nativeCardHTML = `<div class="quick-check-summary" style="border-color:rgba(37,99,235,.32);background:rgba(37,99,235,.07)"><strong>⏳ ${escapeHTML(state.lang === "zh" ? `正在通过被解锁机 (${targetIP}) 进行原生直连测试…` : `Testing native direct on client (${targetIP})…`)}</strong><span>${escapeHTML(state.lang === "zh" ? "自动绕过本机代理 DNS，实测该机本身是否可直接解锁此服务（约 2~6 秒）。" : "Bypassing local proxy DNS to test the client's own native IP.")}</span></div>`;
+    } else if (nativeEntry?.result?.status === "yes") {
+      nativeCardHTML = `<div class="quick-check-summary good"><strong>✅ ${escapeHTML(state.lang === "zh" ? `推荐通过原生直连：被解锁机 (${targetIP}) 本身即可解锁 ${displayServiceName(service)}` : `Native direct recommended: ${targetIP} unlocks ${displayServiceName(service)} directly`)}</strong><span>${escapeHTML(`${nativeEntry.result.summary}${nativeEntry.result.latency_ms ? ` · ${nativeEntry.result.latency_ms} ms` : ""} — 建议直接走本机原生出口，延迟更低且不占用解锁机流量。`)}</span>${canApply ? `<div class="remedy-actions"><button class="btn small primary quick-apply-direct" type="button">${state.lang === "zh" ? "采用原生直连（移出解锁机分流）" : "Use native direct"}</button></div>` : ""}</div>`;
+    } else if (nativeEntry?.result) {
+      nativeCardHTML = `<div class="quick-check-summary warn"><strong>⚠ ${escapeHTML(state.lang === "zh" ? `被解锁机 (${targetIP}) 原生直连不可用（${nativeEntry.result.summary}）` : `Native direct unavailable on ${targetIP} (${nativeEntry.result.summary})`)}</strong><span>${escapeHTML(state.lang === "zh" ? (goodRows.length ? "建议直接选用下方推荐的可用解锁机，或为任意解锁机一键开启 WARP 解锁。" : "建议为下方任意解锁机点击「☁ 开启 WARP 解锁」，机器端会自动启用非全局 WARP。") : "Recommend selecting an available unlock proxy below or enabling WARP.")}</span>${canApply && goodRows.length ? `<div class="remedy-actions">${goodRows.slice(0, 3).map(item => `<button class="btn small primary quick-apply-proxy" type="button" data-proxy-id="${escapeHTML(item.proxy_id)}">${state.lang === "zh" ? "推荐解锁机：" : "Use "}${escapeHTML(item.proxy_name)}${item.region ? ` (${escapeHTML(item.region)})` : ""}</button>`).join("")}</div>` : ""}</div>`;
+    }
+  }
   let summaryHTML = "";
   if (!modal.busy && rows.length) {
     if (currentRow && currentRow.status !== "yes") {
       summaryHTML = `<div class="quick-check-summary warn"><strong>⚠ ${escapeHTML(state.lang === "zh" ? `当前解锁机 (${currentRow.proxy_name}) 无法解锁 ${displayServiceName(service)}` : `Current proxy (${currentRow.proxy_name}) cannot unlock ${displayServiceName(service)}`)}</strong><span>${escapeHTML(state.lang === "zh" ? (goodRows.length ? `推荐直接一键切换至下方可用解锁机，或点击「☁ 开启 WARP 解锁」自动在 ${currentRow.proxy_name} 上启用非全局 WARP。` : `当前所有解锁机原生均不可用，可直接点击下方任意节点的「☁ 开启 WARP 解锁」，机器端将自动启用非全局 WARP。`) : (goodRows.length ? "Switch to an available proxy below, or enable WARP on the current proxy." : "Enable WARP on any proxy below to unlock automatically."))}</span><div class="remedy-actions">${canApply ? goodRows.slice(0, 3).map(item => `<button class="btn small primary quick-apply-proxy" type="button" data-proxy-id="${escapeHTML(item.proxy_id)}">${state.lang === "zh" ? "推荐切换：" : "Use "}${escapeHTML(item.proxy_name)}${item.region ? ` (${escapeHTML(item.region)})` : ""}</button>`).join("") : ""}<button class="btn small quick-enable-warp" type="button" data-proxy-id="${escapeHTML(currentRow.proxy_id)}">☁ ${state.lang === "zh" ? `为 ${currentRow.proxy_name} 开启 WARP 解锁` : `Enable WARP on ${currentRow.proxy_name}`}</button></div></div>`;
-    } else if (goodRows.length) {
+    } else if (!nativeCardHTML && goodRows.length) {
       summaryHTML = `<div class="quick-check-summary good"><strong>✅ ${escapeHTML(state.lang === "zh" ? `共检测到 ${goodRows.length}/${rows.length} 台解锁机可直接解锁 ${displayServiceName(service)}` : `${goodRows.length}/${rows.length} proxies can unlock ${displayServiceName(service)}`)}</strong><span>${escapeHTML(state.lang === "zh" ? "不可用的节点也可点击右侧「☁ 开启 WARP 解锁」，机器端会自动启用非全局 WARP。" : "Unavailable proxies can also be unlocked via one-click WARP.")}</span></div>`;
-    } else {
+    } else if (!goodRows.length) {
       summaryHTML = `<div class="quick-check-summary warn"><strong>⚠ ${escapeHTML(state.lang === "zh" ? `当前无解锁机可直接解锁 ${displayServiceName(service)}` : `No proxy currently unlocks ${displayServiceName(service)}`)}</strong><span>${escapeHTML(state.lang === "zh" ? "请点击下方任意解锁机的「☁ 开启 WARP 解锁」，机器端将在后台自动开启非全局 WARP，约 10 秒后点击「重新秒测」验证。" : "Click Enable WARP on any proxy below; local WARP starts automatically.")}</span></div>`;
     }
   }
-  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>⚡ ${state.lang === "zh" ? "全节点秒测与闭环修复" : "Instant Check & Remediation"} · ${escapeHTML(displayServiceName(service))}</h2><p>${targetIP ? `${state.lang === "zh" ? "当前目标" : "Target"}: ${escapeHTML(targetIP)}` : (state.lang === "zh" ? "并发经各解锁机 443 出口实测真实解锁状态与延迟" : "Live parallel SNI probe across all unlock proxies")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body">${modal.busy ? `<div class="quick-check-loading"><div class="spinner"></div><span>${state.lang === "zh" ? "正在并发探测全部解锁机真实出口（约 1~3 秒）…" : "Probing all unlock proxies in parallel…"}</span></div>` : ""}${modal.error ? `<div class="form-error">${escapeHTML(modal.error)}</div>` : ""}${summaryHTML}${!modal.busy && rows.length ? `<div class="quick-check-list">${rows.map(item => {
+  return `<div class="modal-backdrop"><section class="modal medium panel"><header class="modal-head"><div><h2>⚡ ${state.lang === "zh" ? "原生直连检测 & 全节点秒测" : "Native Direct & Proxy Check"} · ${escapeHTML(displayServiceName(service))}</h2><p>${targetIP ? `${state.lang === "zh" ? "当前被解锁机" : "Target client"}: ${escapeHTML(targetIP)}` : (state.lang === "zh" ? "并发经各解锁机 443 出口实测真实解锁状态与延迟" : "Live parallel SNI probe across all unlock proxies")}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body">${nativeCardHTML}${modal.busy ? `<div class="quick-check-loading"><div class="spinner"></div><span>${state.lang === "zh" ? "正在并发探测全部解锁机真实出口（约 1~3 秒）…" : "Probing all unlock proxies in parallel…"}</span></div>` : ""}${modal.error ? `<div class="form-error">${escapeHTML(modal.error)}</div>` : ""}${summaryHTML}${!modal.busy && rows.length ? `<div class="quick-check-list">${rows.map(item => {
     const kind = item.status === "yes" ? "good" : item.status === "no" || item.status === "error" ? "bad" : "warn";
     const proxyNode = state.nodes.find(n => nodeID(n.id) === nodeID(item.proxy_id));
     const hasWarp = Boolean(proxyNode && nodeWarpMode(proxyNode, service.id));
@@ -3074,6 +3181,10 @@ async function openQuickCheck(serviceId, returnModal = null) {
   if (!service) return;
   state.modal = {type: "quick-check", service, returnModal, busy: true, error: "", results: []};
   renderModal();
+  const targetConfig = returnModal?.type === "ip-form" ? returnModal.config : configForNode(selectedDNS());
+  if (targetConfig?.id) {
+    requestClientNativeCheck(targetConfig.id, serviceId, false);
+  }
   await runQuickCheckNow(serviceId);
 }
 
