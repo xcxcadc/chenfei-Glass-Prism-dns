@@ -5,7 +5,7 @@ set -e
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 REPO="${PRISM_AGENT_REPO:-mslxi/Liquid-Glass-Prism-dns}"
 PINNED_STABLE_TAG="${PRISM_AGENT_TAG:-v1.2.1}"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.2}"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v1.6.3}"
 BINARY_NAME="prism-agent"
 INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="prism-agent"
@@ -144,18 +144,29 @@ uninstall_agent() {
 }
 
 ensure_dependencies() {
-    command -v ss >/dev/null 2>&1 && return 0
+    local need_ss=false need_curl=false
+    command -v ss >/dev/null 2>&1 || need_ss=true
+    command -v curl >/dev/null 2>&1 || need_curl=true
+    if [ "$need_ss" = false ] && [ "$need_curl" = false ]; then
+        return 0
+    fi
 
-    step "Installing Agent listener dependencies..."
+    step "Installing multi-OS dependencies (curl / iproute2)..."
     if command -v apt-get >/dev/null 2>&1; then
-        apt-get update -qq
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iproute2
+        apt-get update -qq || true
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iproute2 curl ca-certificates
     elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y iproute
+        dnf install -y -q iproute curl ca-certificates
     elif command -v yum >/dev/null 2>&1; then
-        yum install -y iproute
+        yum install -y -q iproute curl ca-certificates
+    elif command -v apk >/dev/null 2>&1; then
+        apk add --no-cache iproute2 curl ca-certificates bash
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm iproute2 curl ca-certificates
+    elif command -v zypper >/dev/null 2>&1; then
+        zypper --non-interactive install iproute2 curl ca-certificates
     else
-        error "Missing ss; install iproute2 or iproute before installing the Agent."
+        error "Missing ss/curl; please install iproute2 and curl first."
     fi
 
     command -v ss >/dev/null 2>&1 || error "ss is still unavailable after dependency installation."
@@ -335,10 +346,54 @@ backup_and_stop_conflicting_service() {
     systemctl disable --now "$unit" >/dev/null 2>&1 || true
 }
 
+release_systemd_resolved() {
+    local stub_busy=false
+    if ss -lntup 2>/dev/null | grep -Eq '127\.0\.0\.53(%lo)?:53|systemd-resolve'; then
+        stub_busy=true
+    elif systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+        stub_busy=true
+    fi
+    if [ "$stub_busy" = false ]; then
+        return 0
+    fi
+
+    local stamp backup
+    stamp=$(date +%Y%m%d-%H%M%S)
+    backup="$CONFLICT_BACKUP_DIR/$stamp-systemd-resolved"
+    mkdir -p "$backup" /etc/systemd/resolved.conf.d
+    cp -a /etc/resolv.conf "$backup/resolv.conf.bak" 2>/dev/null || true
+    cp -a /etc/systemd/resolved.conf "$backup/resolved.conf.bak" 2>/dev/null || true
+
+    warn "Detected systemd-resolved occupying port 53 (Ubuntu/Debian/Fedora default). Disabling DNSStubListener... (backup: $backup)"
+    cat > /etc/systemd/resolved.conf.d/99-prism-dns.conf <<'EOF'
+[Resolve]
+DNSStubListener=no
+EOF
+    systemctl restart systemd-resolved >/dev/null 2>&1 || systemctl disable --now systemd-resolved >/dev/null 2>&1 || true
+
+    # Wait briefly; if port 53 is still held by systemd-resolved, stop it completely
+    sleep 1
+    if ss -lntup 2>/dev/null | grep -Eq '127\.0\.0\.53(%lo)?:53|systemd-resolve'; then
+        systemctl disable --now systemd-resolved >/dev/null 2>&1 || true
+    fi
+
+    # Replace systemd-resolved stub symlink so host DNS remains working
+    if [ -L /etc/resolv.conf ] || grep -q '127\.0\.0\.53' /etc/resolv.conf 2>/dev/null; then
+        chattr -i /etc/resolv.conf 2>/dev/null || true
+        rm -f /etc/resolv.conf
+        cat > /etc/resolv.conf <<'EOF'
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+EOF
+    fi
+}
+
 prepare_legacy_conflicts() {
-    step "Checking DNS/proxy port conflicts..."
-    backup_and_stop_conflicting_service dnsmasq
-    backup_and_stop_conflicting_service sniproxy
+    step "Checking DNS/proxy port conflicts (multi-OS)..."
+    release_systemd_resolved
+    for svc in dnsmasq sniproxy unbound named bind9 smartdns; do
+        backup_and_stop_conflicting_service "$svc"
+    done
 }
 
 listener_owned_by_agent() {
@@ -365,6 +420,10 @@ start_service() {
         LOGS=$(journalctl -u "$SERVICE_NAME" --since "$AGENT_STARTED_AT" --no-pager 2>/dev/null || true)
         if echo "$LOGS" | grep -q "DNS Server Started" && listener_owned_by_agent 53; then
             AGENT_MODE="dns"
+            if [ -f /etc/resolv.conf ] && ! grep -Eq '^\s*nameserver\s+127\.0\.0\.1\b' /etc/resolv.conf 2>/dev/null; then
+                chattr -i /etc/resolv.conf 2>/dev/null || true
+                printf 'nameserver 127.0.0.1\nnameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf
+            fi
             return 0
         fi
         if echo "$LOGS" | grep -q "Proxy Server Started" && listener_owned_by_agent 80 && listener_owned_by_agent 443; then
@@ -390,6 +449,7 @@ install_proxy_transport() {
     if [ -n "${PRISM_TRANSPORT_INSTALLER_FILE:-}" ]; then
         installer="$PRISM_TRANSPORT_INSTALLER_FILE"
     else
+        curl -fsSL --connect-timeout 6 --max-time 30 "${MASTER_ADDR%/}/enhancer/dist/prism_transport.sh" -o "$installer" 2>/dev/null || \
         curl -fsSL "$TRANSPORT_URL" -o "$installer"
     fi
     chmod +x "$installer"

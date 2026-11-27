@@ -179,6 +179,8 @@ func (app *App) Handler() http.Handler {
 	mux.HandleFunc("/enhancer/api/media-checks/", app.handleMediaCheck)
 	mux.HandleFunc("/enhancer/api/traffic/", app.handleTrafficClear)
 	mux.HandleFunc("/enhancer/dist/", app.handleDist)
+	mux.HandleFunc("/enhancer/i/", app.handleShortInstall)
+	mux.HandleFunc("/i/", app.handleShortInstall)
 	mux.HandleFunc("/enhancer/rules/", app.handleRuleSet)
 	mux.HandleFunc("/enhancer/icons/", app.handleServiceIcon)
 	mux.HandleFunc("/assets/app.js", app.handleAppJS)

@@ -1,5 +1,23 @@
 # chenfei Glass Prism DNS
 
+## ⚡ 极简一键安装与节点对接（兼容 Debian / Ubuntu / CentOS / Rocky / Alma / Fedora / Alpine）
+
+**1. 一键安装面板 / 打开综合控制菜单（无需进程替换，兼容 `sudo` 与各类 Shell）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xcxcadc/chenfei-Glass-Prism-dns/main/i.sh | bash
+```
+
+**2. 一键对接任意解锁机或被解锁机（直接复制面板生成的短链即可，免 GitHub、自动释放 53 端口）：**
+
+```bash
+curl -fsSL https://你的面板域名/i/<节点密钥或Token> | bash
+```
+
+> 面板自动识别该凭证属于**解锁机 (Proxy)**、**受管 IP 被解锁机**还是**手动 DNS 节点**，自动处理 Ubuntu/Debian/Fedora 的 `systemd-resolved`、CentOS/Alpine 依赖以及 53 端口冲突，一条短命令完成全部对接。
+
+---
+
 YouTube 页面能打开但视频一直转圈、Play 商店打不开时，见 [v1.5.32 修复说明](CHANGELOG_v1.5.32.md)：部分机房会过滤明文 SNI，需启用加密传输模式。
 
 新增节点出现“任务失败 · 已返回项目 0”时，见 [v1.5.30 修复与升级说明](CHANGELOG_v1.5.30.md)。

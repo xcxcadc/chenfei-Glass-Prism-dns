@@ -1839,17 +1839,16 @@ function openIPForm(config = null, step = config ? 2 : 1, existingNode = null, s
   if (config?.id) syncMediaCheck(mediaCheckRecord({config_id:nodeID(config.id)}), "read");
 }
 function ipScriptCommand(config) {
-  return `wget -qO- ${prismRawURL("prismdns.sh")} | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click --non-interactive`;
+  return `curl -fsSL ${prismRawURL("prismdns.sh")} | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click --non-interactive`;
 }
 function selfHostedIPScriptCommand(config) {
-  return `curl -fsSL ${prismDistURL("prismdns.sh")} | sudo bash -s -- --master ${location.origin} --token ${config.enrollment_token} --one-click --non-interactive`;
+  return `curl -fsSL ${location.origin}/i/${encodeURIComponent(config.enrollment_token)} | bash`;
 }
 function selfHostedInstallCommand(node, smartMode) {
   const managedConfig = state.ipConfigs.find(config => nodeID(config.dns_node_id) === nodeID(node.id));
   if (node.role === "dns" && managedConfig) return selfHostedIPScriptCommand(managedConfig);
-  const smart = node.role === "dns" && smartMode === "smart" ? " --smart" : "";
-  const ip = node.role === "proxy" && node.public_ip ? ` --ip "${node.public_ip.replace(/"/g, "")}"` : "";
-  return `curl -fsSL ${prismDistURL("agent_install.sh")} | bash -s -- --master ${location.origin} --secret ${node.secret || "<secret>"}${smart}${ip}`;
+  const cred = node.secret || "<secret>";
+  return `curl -fsSL ${location.origin}/i/${encodeURIComponent(cred)} | bash`;
 }
 function openIPScript(id) {
   const config = state.ipConfigs.find(item => item.id === id);
@@ -2752,7 +2751,7 @@ async function createNode(draft) {
   try {
     const node = await api("/enhancer/api/nodes", {method:"POST", body:JSON.stringify(payload)});
     const created = node && typeof node === "object" ? {...payload, ...node} : payload;
-    state.modal = {type:"install-command", node:created, command:installCommand(created, state.modal.smartMode)};
+    state.modal = {type:"install-command", node:created, command:installCommand(created, state.modal.smartMode), selfHostedCommand:selfHostedInstallCommand(created, state.modal.smartMode)};
     await loadAll(true);
     renderModal();
     toast(t("saved"), "good");
