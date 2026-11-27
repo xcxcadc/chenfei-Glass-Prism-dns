@@ -204,7 +204,7 @@ func newProxySNIClient(proxyIP string, timeout time.Duration) *http.Client {
 			tlsConn := tls.Client(rawConn, &tls.Config{
 				ServerName: host,
 				MinVersion: tls.VersionTLS12,
-				NextProtos: []string{"h2", "http/1.1"},
+				NextProtos: []string{"http/1.1"},
 			})
 			if err := tlsConn.HandshakeContext(ctx); err != nil {
 				_ = rawConn.Close()
