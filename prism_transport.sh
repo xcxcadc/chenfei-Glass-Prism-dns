@@ -1001,6 +1001,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
 ExecStart=$INSTALL_PATH --sync
 EOF
   if [[ "$ROLE" == "proxy" ]]; then
@@ -1009,9 +1012,9 @@ EOF
 Description=Refresh Prism encrypted SNI transport
 
 [Timer]
-OnActiveSec=5s
-OnUnitInactiveSec=5s
-AccuracySec=1s
+OnActiveSec=10s
+OnUnitInactiveSec=15s
+AccuracySec=2s
 Persistent=true
 
 [Install]
@@ -1023,9 +1026,9 @@ EOF
 Description=Refresh Prism encrypted SNI transport
 
 [Timer]
-OnActiveSec=5s
-OnUnitInactiveSec=5s
-AccuracySec=1s
+OnActiveSec=15s
+OnUnitInactiveSec=45s
+AccuracySec=5s
 Persistent=true
 
 [Install]

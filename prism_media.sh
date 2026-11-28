@@ -440,8 +440,8 @@ Description=Prism DNS media check job poller
 
 [Timer]
 OnBootSec=15s
-OnUnitInactiveSec=5s
-AccuracySec=1s
+OnUnitInactiveSec=25s
+AccuracySec=3s
 Unit=prism-media-check.service
 
 [Install]

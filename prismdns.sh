@@ -1471,8 +1471,8 @@ Description=Check Prism DNS route changes every 10 seconds
 
 [Timer]
 OnBootSec=10s
-OnUnitActiveSec=10s
-AccuracySec=1s
+OnUnitActiveSec=30s
+AccuracySec=5s
 Persistent=true
 
 [Install]
