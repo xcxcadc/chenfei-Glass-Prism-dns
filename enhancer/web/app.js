@@ -1,6 +1,6 @@
 const translations = {
   zh: {
-    title: "Prism DNS 中文增强版", online: "控制器已连接", loginTitle: "登录 Prism Gateway", loginHint: "使用 Controller 管理员账号登录",
+    title: "Prism DNS", online: "控制器已连接", loginTitle: "登录 Prism Gateway", loginHint: "使用 Controller 管理员账号登录",
     username: "用户名", password: "密码", login: "登录", loggingIn: "正在登录...", services: "服务编排", nodes: "节点管理", ipConfigs: "IP 配置",
     search: "搜索服务或域名", allCategories: "全部分类", dnsClient: "DNS 节点", selectDNS: "请选择 DNS 节点", addService: "新增服务",
     addNode: "新增节点", refresh: "刷新", logout: "退出", totalServices: "服务数量", configured: "已配置", proxyNodes: "解锁机",

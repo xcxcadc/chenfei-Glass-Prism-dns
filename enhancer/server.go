@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"io/fs"
 	"log"
@@ -224,8 +225,16 @@ func (app *App) handleRoot(writer http.ResponseWriter, request *http.Request) {
 	if request.URL.Path == "/" && request.Method == http.MethodGet {
 		setNoCacheHeaders(writer)
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		title := strings.TrimSpace(app.branding.Get().BrowserTitle)
+		if title == "" {
+			title = strings.TrimSpace(app.branding.Get().SiteName)
+		}
+		if title == "" {
+			title = "Prism DNS"
+		}
+		rendered := bytes.ReplaceAll(app.indexHTML, []byte("__PRISM_BROWSER_TITLE__"), []byte(html.EscapeString(title)))
 		writer.WriteHeader(http.StatusOK)
-		_, _ = writer.Write(app.indexHTML)
+		_, _ = writer.Write(rendered)
 		return
 	}
 	app.proxy.ServeHTTP(writer, request)
