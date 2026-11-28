@@ -84,7 +84,7 @@ func nativeProbeTarget(service Service) (domain, probeURL string) {
 	case strings.Contains(nameLower, "threads"):
 		return "www.threads.net", "https://www.threads.net/robots.txt"
 	case strings.Contains(nameLower, "whatsapp"):
-		return "www.whatsapp.com", "https://www.whatsapp.com/"
+		return "www.whatsapp.com", "https://www.whatsapp.com/robots.txt"
 	case strings.Contains(nameLower, "telegram"):
 		return "telegram.org", "https://telegram.org/"
 	case strings.Contains(nameLower, "discord"):

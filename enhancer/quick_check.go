@@ -406,7 +406,7 @@ func runProxyQuickProbe(ctx context.Context, proxyIP string, service Service) qu
 		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
 
 	case strings.Contains(key, "whatsapp"):
-		code, _, _, err := fetchViaProxySNI(ctx, client, "https://www.whatsapp.com/")
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://www.whatsapp.com/robots.txt")
 		if err != nil {
 			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
 		}
