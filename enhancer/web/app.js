@@ -1045,12 +1045,49 @@ function render() {
 
 function loginHTML() {
   const loginTitle = state.lang === "zh" ? `登录 ${siteName()}` : `Sign in to ${siteName()}`;
-  return `<main class="login-wrap"><section class="login-box panel"><h1>${escapeHTML(loginTitle)}</h1><p>${escapeHTML(t("loginHint"))}</p>
-    <form class="form-stack" id="login-form"><div class="field"><label>${t("username")}</label><input class="input" name="username" autocomplete="username" required></div>
-    <div class="field"><label>${t("password")}</label><input class="input" type="password" name="password" autocomplete="current-password" required></div>
-    <div class="form-error"></div><button class="btn primary" type="submit">${t("login")}</button></form></section></main>`;
+  const subtitle = state.lang === "zh" ? "Apple Liquid Glass 2.0 · 全局流媒体与 AI 智能解锁控制台" : "Apple Liquid Glass 2.0 · Global Streaming & AI Unlock Console";
+  return `<main class="login-wrap lg2-login">
+    <div class="lg2-orb lg2-orb-1" aria-hidden="true"></div>
+    <div class="lg2-orb lg2-orb-2" aria-hidden="true"></div>
+    <div class="lg2-orb lg2-orb-3" aria-hidden="true"></div>
+    <div class="lg2-login-topbar">
+      <button class="btn small lg2-glass-pill" id="login-theme-toggle" type="button" title="${t("theme")}"><i class="bi ${state.theme === "light" ? "bi-moon-stars" : "bi-sun"}" aria-hidden="true"></i><span>${state.theme === "light" ? (state.lang === "zh" ? "深色" : "Dark") : (state.lang === "zh" ? "浅色" : "Light")}</span></button>
+      <button class="btn small lg2-glass-pill" id="login-lang-toggle" type="button"><i class="bi bi-translate" aria-hidden="true"></i><span>${state.lang === "zh" ? "EN" : "中文"}</span></button>
+    </div>
+    <section class="login-box panel lg2-login-card">
+      <div class="lg2-login-header">
+        <span class="lg2-login-emblem" aria-hidden="true"><i class="bi bi-triangle-fill"></i></span>
+        <span class="lg2-login-badge">Liquid Glass 2.0</span>
+        <h1>${escapeHTML(loginTitle)}</h1>
+        <p>${escapeHTML(t("loginHint"))}</p>
+        <small class="lg2-login-sub">${escapeHTML(subtitle)}</small>
+      </div>
+      <form class="form-stack lg2-login-form" id="login-form">
+        <div class="field"><label><i class="bi bi-person" aria-hidden="true"></i> ${t("username")}</label><input class="input lg2-input" name="username" autocomplete="username" placeholder="${state.lang === "zh" ? "请输入管理员账号" : "Enter admin username"}" required></div>
+        <div class="field"><label><i class="bi bi-shield-lock" aria-hidden="true"></i> ${t("password")}</label><input class="input lg2-input" type="password" name="password" autocomplete="current-password" placeholder="${state.lang === "zh" ? "请输入登录密码" : "Enter password"}" required></div>
+        <div class="form-error"></div>
+        <button class="btn primary lg2-login-submit" type="submit"><i class="bi bi-arrow-right-circle" aria-hidden="true"></i><span>${t("login")}</span></button>
+      </form>
+      <footer class="lg2-login-footer">
+        <span><i class="bi bi-lock-fill" aria-hidden="true"></i> ${state.lang === "zh" ? "仅面板授权 IP 可访问解锁链路" : "Allowlist-protected unlock control plane"}</span>
+        <span>v2.0.1</span>
+      </footer>
+    </section>
+  </main>`;
 }
-function bindLogin() { document.getElementById("login-form").addEventListener("submit", login); }
+function bindLogin() {
+  document.getElementById("login-form").addEventListener("submit", login);
+  document.getElementById("login-theme-toggle")?.addEventListener("click", () => {
+    state.theme = state.theme === "light" ? "dark" : "light";
+    localStorage.setItem("enhancer_theme", state.theme);
+    render();
+  });
+  document.getElementById("login-lang-toggle")?.addEventListener("click", () => {
+    state.lang = state.lang === "zh" ? "en" : "zh";
+    localStorage.setItem("enhancer_lang", state.lang);
+    render();
+  });
+}
 
 function activeContentHTML() {
   if (state.tab === "services") return servicesHTML();

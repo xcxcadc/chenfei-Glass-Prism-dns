@@ -14,11 +14,11 @@ mkdir -p "$(dirname "$BIN_PATH")"
 cp ./prismctl.sh "$(dirname "$BIN_PATH")/prismctl"
 cmd_self_install
 [[ -x "$BIN_PATH" ]]
-[[ "$(env -u PRISMCTL_SOURCE_ONLY "$BIN_PATH" version)" == 'dns 2.0.0' ]]
+[[ "$(env -u PRISMCTL_SOURCE_ONLY "$BIN_PATH" version)" == 'dns 2.0.1' ]]
 [[ -L "$(dirname "$BIN_PATH")/prismctl" ]]
-[[ "$(env -u PRISMCTL_SOURCE_ONLY "$(dirname "$BIN_PATH")/prismctl" version)" == 'dns 2.0.0' ]]
+[[ "$(env -u PRISMCTL_SOURCE_ONLY "$(dirname "$BIN_PATH")/prismctl" version)" == 'dns 2.0.1' ]]
 cmd_self_install
-[[ "$(env -u PRISMCTL_SOURCE_ONLY "$BIN_PATH" version)" == 'dns 2.0.0' ]]
+[[ "$(env -u PRISMCTL_SOURCE_ONLY "$BIN_PATH" version)" == 'dns 2.0.1' ]]
 
 BIN_PATH="$test_directory/unrelated/dns"
 mkdir -p "$(dirname "$BIN_PATH")"
@@ -43,7 +43,7 @@ if (cmd_self_install >/dev/null 2>&1); then
   exit 1
 fi
 [[ "$(sha256sum "$BIN_PATH")" == "$baseline" ]]
-SCRIPT_REF=v2.0.0
+SCRIPT_REF=v2.0.1
 
 mkdir -p "$test_directory/mockbin"
 cat >"$test_directory/mockbin/curl" <<'SCRIPT'
@@ -59,9 +59,9 @@ exit 1
 SCRIPT
 chmod +x "$test_directory/mockbin/curl"
 export DNS_CONTROL_FIXTURE="$PWD/dns.sh"
-[[ "$(env -u PRISMCTL_SOURCE_ONLY bash <(cat ./dns.sh) version)" == 'dns 2.0.0' ]]
-[[ "$(env -u PRISMCTL_SOURCE_ONLY bash ./prismctl.sh version)" == 'dns 2.0.0' ]]
-[[ "$(PATH="$test_directory/mockbin:$PATH" env -u PRISMCTL_SOURCE_ONLY bash <(cat ./prismctl.sh) version)" == 'dns 2.0.0' ]]
+[[ "$(env -u PRISMCTL_SOURCE_ONLY bash <(cat ./dns.sh) version)" == 'dns 2.0.1' ]]
+[[ "$(env -u PRISMCTL_SOURCE_ONLY bash ./prismctl.sh version)" == 'dns 2.0.1' ]]
+[[ "$(PATH="$test_directory/mockbin:$PATH" env -u PRISMCTL_SOURCE_ONLY bash <(cat ./prismctl.sh) version)" == 'dns 2.0.1' ]]
 
 require_root() { :; }
 BIN_PATH="$test_directory/menu/dns"
@@ -75,7 +75,7 @@ mkdir -p "$WORK_DIR"
 menu_output=$(main menu)
 [[ "$menu_output" == *'已退出'* ]]
 [[ -x "$BIN_PATH" ]]
-[[ "$(env -u PRISMCTL_SOURCE_ONLY "$BIN_PATH" version)" == 'dns 2.0.0' ]]
+[[ "$(env -u PRISMCTL_SOURCE_ONLY "$BIN_PATH" version)" == 'dns 2.0.1' ]]
 
 curl() {
   [[ "${!#}" == 'https://github.com/xcxcadc/chenfei-Glass-Prism-dns/releases/latest' ]] || return 2

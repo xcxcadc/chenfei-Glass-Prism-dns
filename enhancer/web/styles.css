@@ -1590,96 +1590,324 @@ body {
 }
 
 /* ================================================================
-   v2.0.0 Apple Liquid Glass 2.0 Design System & UX Overhaul
+   v2.0.1 Apple Liquid Glass 2.0 Design System & Login UI Overhaul
    ================================================================ */
 :root {
-  --glass-bg: rgba(255, 255, 255, 0.72);
-  --glass-bg-strong: rgba(255, 255, 255, 0.88);
-  --glass-border: rgba(255, 255, 255, 0.78);
-  --glass-line: rgba(15, 23, 42, 0.08);
-  --glass-shadow: 0 10px 30px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --glass-bg: rgba(255, 255, 255, 0.58);
+  --glass-bg-strong: rgba(255, 255, 255, 0.80);
+  --glass-sidebar: rgba(255, 255, 255, 0.52);
+  --glass-topbar: rgba(255, 255, 255, 0.48);
+  --glass-border: rgba(255, 255, 255, 0.82);
+  --glass-line: rgba(59, 102, 180, 0.13);
+  --glass-shadow: 0 14px 36px rgba(64, 105, 194, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.94);
+  --glass-shadow-hover: 0 18px 44px rgba(59, 130, 246, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.98);
+  --surface: rgba(255, 255, 255, 0.68);
+  --surface-strong: rgba(255, 255, 255, 0.84);
+  --surface-soft: rgba(240, 246, 255, 0.64);
+  --surface-alt: rgba(235, 243, 255, 0.62);
+  --line: rgba(59, 102, 180, 0.14);
+  --line-strong: rgba(59, 102, 180, 0.24);
   --accent: #2563eb;
-  --accent-soft: rgba(37, 99, 235, 0.10);
+  --accent-soft: linear-gradient(135deg, rgba(96, 165, 250, 0.28), rgba(129, 140, 248, 0.24));
   --accent-text: #ffffff;
 }
 
 :root[data-theme="dark"] {
-  --glass-bg: rgba(18, 24, 38, 0.72);
-  --glass-bg-strong: rgba(22, 29, 46, 0.90);
-  --glass-border: rgba(255, 255, 255, 0.09);
-  --glass-line: rgba(148, 163, 184, 0.14);
-  --glass-shadow: 0 18px 44px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --glass-bg: rgba(15, 23, 42, 0.58);
+  --glass-bg-strong: rgba(18, 28, 50, 0.84);
+  --glass-sidebar: rgba(13, 20, 38, 0.62);
+  --glass-topbar: rgba(13, 20, 38, 0.54);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-line: rgba(148, 163, 184, 0.18);
+  --glass-shadow: 0 20px 48px rgba(0, 0, 0, 0.44), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  --glass-shadow-hover: 0 24px 56px rgba(37, 99, 235, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.20);
+  --surface: rgba(18, 28, 50, 0.64);
+  --surface-strong: rgba(22, 33, 58, 0.82);
+  --surface-soft: rgba(25, 37, 64, 0.58);
+  --surface-alt: rgba(20, 30, 54, 0.72);
+  --line: rgba(148, 163, 184, 0.18);
+  --line-strong: rgba(148, 163, 184, 0.30);
   --accent: #60a5fa;
-  --accent-soft: rgba(96, 165, 250, 0.14);
-  --accent-text: #09101d;
+  --accent-soft: linear-gradient(135deg, rgba(59, 130, 246, 0.26), rgba(129, 140, 248, 0.22));
+  --accent-text: #071022;
 }
 
 body {
   background:
-    radial-gradient(1200px 620px at 8% -10%, rgba(59, 130, 246, 0.13), transparent 60%),
-    radial-gradient(960px 560px at 94% 0%, rgba(16, 185, 129, 0.10), transparent 58%),
-    radial-gradient(900px 600px at 50% 105%, rgba(139, 92, 246, 0.08), transparent 60%),
-    #eef2f8;
-  background-attachment: fixed;
+    radial-gradient(900px 560px at 8% 6%, rgba(86, 204, 242, 0.42), transparent 58%),
+    radial-gradient(820px 580px at 90% 10%, rgba(167, 139, 250, 0.36), transparent 60%),
+    radial-gradient(880px 620px at 52% 96%, rgba(125, 211, 252, 0.36), transparent 60%),
+    radial-gradient(640px 480px at 26% 78%, rgba(196, 181, 253, 0.28), transparent 62%),
+    linear-gradient(135deg, #cde7ff 0%, #dee7ff 45%, #ebe1ff 78%, #d7ecff 100%) !important;
+  background-attachment: fixed !important;
 }
 
 :root[data-theme="dark"] body {
   background:
-    radial-gradient(1100px 580px at 8% -10%, rgba(59, 130, 246, 0.18), transparent 60%),
-    radial-gradient(900px 520px at 92% 0%, rgba(16, 185, 129, 0.12), transparent 58%),
-    radial-gradient(880px 560px at 50% 105%, rgba(139, 92, 246, 0.12), transparent 60%),
-    #090d16;
-  background-attachment: fixed;
+    radial-gradient(960px 580px at 10% 4%, rgba(37, 99, 235, 0.34), transparent 58%),
+    radial-gradient(840px 540px at 92% 10%, rgba(139, 92, 246, 0.28), transparent 60%),
+    radial-gradient(860px 560px at 48% 98%, rgba(6, 182, 212, 0.24), transparent 60%),
+    linear-gradient(140deg, #070b18 0%, #0b1226 48%, #111530 100%) !important;
+  background-attachment: fixed !important;
 }
 
 .sidebar {
-  background: var(--glass-bg) !important;
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  border-right: 1px solid var(--glass-line) !important;
+  background: var(--glass-sidebar) !important;
+  backdrop-filter: blur(28px) saturate(190%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(190%) !important;
+  border-right: 1px solid var(--glass-border) !important;
+  box-shadow: 4px 0 30px rgba(64, 105, 194, 0.08) !important;
+}
+
+.brand-mark {
+  background: linear-gradient(135deg, #38bdf8 0%, #3b82f6 52%, #a855f7 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
 }
 
 .topbar {
-  background: var(--glass-bg) !important;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid var(--glass-line) !important;
+  background: var(--glass-topbar) !important;
+  backdrop-filter: blur(24px) saturate(185%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(185%) !important;
+  border-bottom: 1px solid var(--glass-border) !important;
 }
 
 .panel {
   background: var(--glass-bg) !important;
-  backdrop-filter: blur(18px) saturate(165%);
-  -webkit-backdrop-filter: blur(18px) saturate(165%);
+  backdrop-filter: blur(22px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(180%) !important;
   border: 1px solid var(--glass-border) !important;
   box-shadow: var(--glass-shadow) !important;
-  border-radius: 16px !important;
+  border-radius: 20px !important;
 }
 
 .modal.panel {
   background: var(--glass-bg-strong) !important;
-  backdrop-filter: blur(26px) saturate(190%);
-  -webkit-backdrop-filter: blur(26px) saturate(190%);
+  backdrop-filter: blur(32px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(200%) !important;
   border: 1px solid var(--glass-border) !important;
-  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22) !important;
+  box-shadow: 0 28px 72px rgba(15, 23, 42, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.72) !important;
+  border-radius: 24px !important;
 }
 
+.btn {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(12px);
+  border-color: var(--glass-border);
+  border-radius: 12px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.12);
+}
+.btn.primary {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 55%, #4f46e5 100%) !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.35) !important;
+}
+.btn.primary:hover:not(:disabled) {
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.45) !important;
+}
+
+.tab {
+  border-radius: 13px !important;
+  transition: all 0.18s ease !important;
+}
 .tab.active {
   background: var(--accent-soft) !important;
   color: var(--accent) !important;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.18);
-  font-weight: 600;
+  border: 1px solid rgba(96, 165, 250, 0.38) !important;
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.65) !important;
+  font-weight: 650 !important;
 }
 
 .dashboard-stat {
-  border-radius: 14px;
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  border-radius: 18px !important;
+  background: rgba(255, 255, 255, 0.46) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85) !important;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
-.dashboard-stat.clickable {
-  cursor: pointer;
+:root[data-theme="dark"] .dashboard-stat {
+  background: rgba(255, 255, 255, 0.04) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10) !important;
 }
-.dashboard-stat.clickable:hover {
+.dashboard-stat:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08);
+  box-shadow: var(--glass-shadow-hover) !important;
+}
+
+.live-state {
+  background: rgba(255, 255, 255, 0.60) !important;
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 999px !important;
+}
+:root[data-theme="dark"] .live-state {
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* ================================================================
+   Apple Liquid Glass 2.0 Login Screen
+   ================================================================ */
+.lg2-login {
+  position: relative;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px 18px;
+  overflow: hidden;
+}
+.lg2-orb {
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(72px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.72;
+  animation: lg2-float 14s ease-in-out infinite alternate;
+}
+.lg2-orb-1 {
+  width: 420px; height: 420px;
+  top: -110px; left: -80px;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.65), rgba(59, 130, 246, 0.12) 70%);
+}
+.lg2-orb-2 {
+  width: 460px; height: 460px;
+  right: -120px; bottom: -130px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.52), rgba(99, 102, 241, 0.12) 70%);
+  animation-delay: -5s;
+}
+.lg2-orb-3 {
+  width: 300px; height: 300px;
+  top: 48%; left: 60%;
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.36), transparent 70%);
+  animation-delay: -9s;
+}
+@keyframes lg2-float {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(24px, -22px, 0) scale(1.08); }
+}
+.lg2-login-topbar {
+  position: fixed;
+  top: 20px;
+  right: 22px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lg2-glass-pill {
+  border-radius: 999px !important;
+  padding: 6px 13px !important;
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(18px) saturate(180%) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: 0 8px 20px rgba(59, 102, 180, 0.10) !important;
+}
+.lg2-login-card {
+  position: relative;
+  z-index: 1;
+  width: min(440px, 100%) !important;
+  padding: 36px 34px 26px !important;
+  border-radius: 28px !important;
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(32px) saturate(195%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(195%) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: 0 28px 68px rgba(51, 88, 173, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.94) !important;
+}
+:root[data-theme="dark"] .lg2-login-card {
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+.lg2-login-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.lg2-login-emblem {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #38bdf8 0%, #3b82f6 52%, #a855f7 100%);
+  color: #fff;
+  font-size: 24px;
+  box-shadow: 0 14px 30px rgba(59, 130, 246, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  margin-bottom: 12px;
+}
+.lg2-login-badge {
+  display: inline-block;
+  margin: 0 auto 8px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.24);
+}
+.lg2-login-header h1 {
+  margin: 4px 0 6px !important;
+  font-size: 24px !important;
+  letter-spacing: -0.02em;
+}
+.lg2-login-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.lg2-login-sub {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.85;
+}
+.lg2-login-form .field label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.lg2-input {
+  height: 44px !important;
+  border-radius: 13px !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease !important;
+}
+:root[data-theme="dark"] .lg2-input {
+  background: rgba(15, 23, 42, 0.56) !important;
+}
+.lg2-input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18) !important;
+}
+.lg2-login-submit {
+  width: 100%;
+  height: 46px !important;
+  margin-top: 6px;
+  border-radius: 14px !important;
+  font-size: 14px !important;
+  font-weight: 650 !important;
+  justify-content: center;
+}
+.lg2-login-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--glass-line);
+  font-size: 11px;
+  color: var(--muted);
 }
 
 /* Topbar Ctrl+K Command Trigger */

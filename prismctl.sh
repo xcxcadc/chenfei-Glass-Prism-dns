@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-PRISMCTL_COMPAT_VERSION="2.0.0"
+PRISMCTL_COMPAT_VERSION="2.0.1"
 PRISMCTL_COMPAT_NAME="Prism DNS"
 compat_source="${BASH_SOURCE[0]}"
 compat_ref="${PRISM_SCRIPT_REF:-v${PRISMCTL_COMPAT_VERSION}}"

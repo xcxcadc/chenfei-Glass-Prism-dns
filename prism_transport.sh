@@ -4,7 +4,7 @@ set +x
 set -Eeuo pipefail
 
 VERSION="2.7.0"
-SCRIPT_REF="${PRISM_SCRIPT_REF:-v2.0.0}"
+SCRIPT_REF="${PRISM_SCRIPT_REF:-v2.0.1}"
 INSTALL_DIR="/usr/local/lib/prismdns"
 INSTALL_PATH="$INSTALL_DIR/prism_transport.sh"
 STATE_DIR="/var/lib/prism-transport"
