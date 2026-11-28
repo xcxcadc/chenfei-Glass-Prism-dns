@@ -90,11 +90,14 @@ const translations = {
 const commonNames = {
   "ChatGPT / OpenAI": "ChatGPT / OpenAI", "Disney+": "Disney+", "Prime Video": "Prime Video", "Apple TV+": "Apple TV+",
   "Bilibili": "哔哩哔哩", "YouTube": "YouTube", "Gemini": "Gemini", "Claude": "Claude", "Netflix": "Netflix",
-  "TikTok": "TikTok", "Spotify": "Spotify", "Meta AI": "Meta AI", "Suno": "Suno"
+  "TikTok": "TikTok", "Spotify": "Spotify", "Meta AI": "Meta AI", "Suno": "Suno",
+  "X (Twitter)": "X (Twitter)", "Instagram (INS)": "Instagram (INS)", "Facebook": "Facebook",
+  "Threads": "Threads", "WhatsApp": "WhatsApp", "Telegram": "Telegram", "Discord": "Discord",
+  "Reddit": "Reddit", "Pinterest": "Pinterest", "Line": "Line"
 };
 
 const categoryNames = {
-  "AI Platform": "AI 服务", "Canada Media": "加拿大媒体", "China Media": "中国大陆媒体", "Europe Media": "欧洲媒体",
+  "AI Platform": "AI 服务", "Social Platform": "社交与主流应用", "Canada Media": "加拿大媒体", "China Media": "中国大陆媒体", "Europe Media": "欧洲媒体",
   "Global Plaform": "全球服务", "Global Platform": "全球服务", "Hong Kong Media": "香港媒体", "Indian Media": "印度媒体",
   "Japan Media": "日本媒体", "Korean Media": "韩国媒体", "North America Media": "北美媒体", "Oceania Media": "大洋洲媒体",
   "Others": "其他服务", "South America Media": "南美媒体", "Southeast Asia Media": "东南亚媒体", "Sports Media": "体育服务", "Taiwan Media": "台湾媒体"
@@ -2030,7 +2033,7 @@ function ipFormHTML() {
   const services = state.catalog;
   const selectedCount = Object.keys(modal.routes).length;
   const bulkProxy = modal.bulkProxy || modal.defaultProxy || nodeID(proxies[0]?.id);
-  return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><div class="ip-quick-bar"><div class="ip-preset-buttons"><button class="btn small" type="button" data-ip-preset="ai"><i class="bi bi-stars"></i>${state.lang === "zh" ? "AI 全家桶" : "AI Bundle"}</button><button class="btn small" type="button" data-ip-preset="stream"><i class="bi bi-film"></i>${state.lang === "zh" ? "流媒体全家桶" : "Streaming Bundle"}</button><button class="btn small" type="button" data-ip-preset="clear">${state.lang === "zh" ? "清空已选" : "Clear all"}</button></div><div class="ip-bulk-assign"><select class="select compact-select" id="ip-bulk-proxy">${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(bulkProxy) ? "selected" : ""}>${escapeHTML(node.name)}${node.country ? ` (${escapeHTML(node.country)})` : ""}</option>`).join("")}</select><button class="btn small" type="button" id="ip-apply-bulk-proxy">${state.lang === "zh" ? "已选统一改节点" : "Apply to selected"}</button></div></div><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
+  return `<div class="modal-backdrop"><form class="modal ip-modal panel" id="ip-form"><header class="modal-head"><div><h2>${t("chooseServices")}</h2><p>${escapeHTML(draft.ip)} · ${t("selectedServices")} <span id="ip-selected-count">${selectedCount}</span></p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body ip-config-body"><div class="ip-quick-bar"><div class="ip-preset-buttons"><button class="btn small" type="button" data-ip-preset="ai"><i class="bi bi-stars"></i>${state.lang === "zh" ? "AI 全家桶" : "AI Bundle"}</button><button class="btn small" type="button" data-ip-preset="stream"><i class="bi bi-film"></i>${state.lang === "zh" ? "流媒体全家桶" : "Streaming Bundle"}</button><button class="btn small" type="button" data-ip-preset="social"><i class="bi bi-chat-dots"></i>${state.lang === "zh" ? "社交全家桶" : "Social Bundle"}</button><button class="btn small" type="button" data-ip-preset="clear">${state.lang === "zh" ? "清空已选" : "Clear all"}</button></div><div class="ip-bulk-assign"><select class="select compact-select" id="ip-bulk-proxy">${proxies.map(node => `<option value="${nodeID(node.id)}" ${nodeID(node.id) === nodeID(bulkProxy) ? "selected" : ""}>${escapeHTML(node.name)}${node.country ? ` (${escapeHTML(node.country)})` : ""}</option>`).join("")}</select><button class="btn small" type="button" id="ip-apply-bulk-proxy">${state.lang === "zh" ? "已选统一改节点" : "Apply to selected"}</button></div></div><input class="input" id="ip-service-search" value="${escapeHTML(modal.serviceSearch)}" placeholder="${t("search")}" autocomplete="off" autocapitalize="off" spellcheck="false"><div class="ip-service-picker">${services.map(service => {
     const selectedProxy = serviceRouteEntry({routes:modal.routes}, service)?.value || "";
     const checked = !!selectedProxy;
     const proxyExists = proxies.some(node => nodeID(node.id) === nodeID(selectedProxy));
@@ -2818,7 +2821,8 @@ function applyIPServicePreset(preset) {
   }
   const aiMatchers = [/^chatgpt\b|openai/i, /^gemini$/i, /^google ai studio$/i, /^claude$/i, /^grok$/i];
   const streamMatchers = [/^netflix$/i, /^disney\+$/i, /^youtube$/i, /^tiktok$/i, /^spotify$/i, /prime video/i];
-  const matchers = preset === "ai" ? aiMatchers : streamMatchers;
+  const socialMatchers = [/^x \(twitter\)$/i, /^instagram \(ins\)$/i, /^facebook$/i, /^threads$/i, /^whatsapp$/i, /^telegram$/i, /^discord$/i, /^reddit$/i];
+  const matchers = preset === "ai" ? aiMatchers : preset === "social" ? socialMatchers : streamMatchers;
   let added = 0;
   for (const service of state.catalog) {
     if (matchers.some(re => re.test(service.name))) {

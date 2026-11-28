@@ -8,7 +8,7 @@
 #   3. 只处理 Prism 自有的服务、nft 表和 iptables 链，不触碰 V2bX、XrayR、Docker、nginx 等业务。
 set -Eeuo pipefail
 
-PRISMCTL_VERSION="1.6.5"
+PRISMCTL_VERSION="1.6.6"
 SCRIPT_REPO="${PRISM_SCRIPT_REPO:-xcxcadc/chenfei-Glass-Prism-dns}"
 SCRIPT_REF="${PRISM_SCRIPT_REF:-v${PRISMCTL_VERSION}}"
 ETC_DIR="${PRISMCTL_ETC_DIR:-/etc/prismdns}"

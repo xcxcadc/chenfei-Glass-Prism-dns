@@ -365,6 +365,106 @@ func runProxyQuickProbe(ctx context.Context, proxyIP string, service Service) qu
 		}
 		return finish("warn", fmt.Sprintf("HTTP %d", code), "")
 
+	case strings.Contains(key, "x (twitter)") || key == "x" || strings.Contains(key, "twitter"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://x.com/robots.txt")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case strings.Contains(key, "instagram"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://www.instagram.com/robots.txt")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case strings.Contains(key, "facebook"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://www.facebook.com/robots.txt")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case strings.Contains(key, "threads"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://www.threads.net/robots.txt")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case strings.Contains(key, "whatsapp"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://www.whatsapp.com/")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case strings.Contains(key, "telegram"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://telegram.org/")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case strings.Contains(key, "discord"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://discord.com/api/v10/gateway")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case strings.Contains(key, "reddit"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://www.reddit.com/robots.txt")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case strings.Contains(key, "pinterest"):
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://www.pinterest.com/robots.txt")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
+	case key == "line":
+		code, _, _, err := fetchViaProxySNI(ctx, client, "https://line.me/")
+		if err != nil {
+			return finish("error", "SNI 连接失败: "+compactProbeErr(err), "")
+		}
+		if code >= 200 && code < 400 {
+			return finish("yes", fmt.Sprintf("Yes (HTTP %d)", code), "")
+		}
+		return finish("no", fmt.Sprintf("No (HTTP %d)", code), "")
+
 	case strings.Contains(key, "netflix"):
 		code, finalURL, body, err := fetchViaProxySNI(ctx, client, "https://www.netflix.com/title/81280792")
 		if err != nil {

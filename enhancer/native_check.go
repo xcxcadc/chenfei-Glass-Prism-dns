@@ -75,6 +75,26 @@ func nativeProbeTarget(service Service) (domain, probeURL string) {
 		return "www.tiktok.com", "https://www.tiktok.com/"
 	case strings.Contains(nameLower, "prime video"):
 		return "www.primevideo.com", "https://www.primevideo.com/"
+	case strings.Contains(nameLower, "x (twitter)") || nameLower == "x" || strings.Contains(nameLower, "twitter"):
+		return "x.com", "https://x.com/robots.txt"
+	case strings.Contains(nameLower, "instagram"):
+		return "www.instagram.com", "https://www.instagram.com/robots.txt"
+	case strings.Contains(nameLower, "facebook"):
+		return "www.facebook.com", "https://www.facebook.com/robots.txt"
+	case strings.Contains(nameLower, "threads"):
+		return "www.threads.net", "https://www.threads.net/robots.txt"
+	case strings.Contains(nameLower, "whatsapp"):
+		return "www.whatsapp.com", "https://www.whatsapp.com/"
+	case strings.Contains(nameLower, "telegram"):
+		return "telegram.org", "https://telegram.org/"
+	case strings.Contains(nameLower, "discord"):
+		return "discord.com", "https://discord.com/api/v10/gateway"
+	case strings.Contains(nameLower, "reddit"):
+		return "www.reddit.com", "https://www.reddit.com/robots.txt"
+	case strings.Contains(nameLower, "pinterest"):
+		return "www.pinterest.com", "https://www.pinterest.com/robots.txt"
+	case nameLower == "line":
+		return "line.me", "https://line.me/"
 	}
 	for _, d := range service.Domains {
 		clean := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(d)), "*.")
