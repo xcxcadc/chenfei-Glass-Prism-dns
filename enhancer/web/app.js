@@ -113,6 +113,15 @@ const state = {
   loading: false, modal: null, scrollPositions: {}, backgroundPending: false, lastBackgroundSync: "", syncError: "", routingError: "",
   mediaChecks: new Map(), mediaCheckView: null, mediaCheckPositions: new Map(),
   quickChecks: new Map(),
+  nodeViewMode: localStorage.getItem("prism_node_view") || "table",
+  nodeRoleFilter: "all",
+  nodeSearch: "",
+  syncCategory: "",
+  syncSearch: "",
+  auditTargetFilter: "",
+  auditKindFilter: "",
+  auditSearch: "",
+  sseConnected: false,
   branding: {site_name:"", browser_title:"", site_tagline:""},
   nodeRelease: {status:"loading"}, nodeInventory: {status:"loading"}, nodeUpdatesSubmitting: new Set(), nodeUpdateErrors: new Map()
 };
@@ -1112,7 +1121,7 @@ function shellHTML() {
     <nav class="tabs" aria-label="${escapeHTML(browserTitle())}">${navigationHTML()}</nav>
     <div class="sidebar-footer"><button class="user-button account-settings-trigger" id="account-settings" title="${t("accountSettings")}"><span class="user-avatar">${escapeHTML(Array.from(state.user.username || "A")[0] || "A")}</span><span class="user-copy"><strong>${escapeHTML(state.user.username || "admin")}</strong><small>${state.lang === "zh" ? "超级管理员" : "Administrator"}</small></span><i class="bi bi-chevron-up" aria-hidden="true"></i></button>
     <div class="sidebar-tools"><button class="btn small theme-toggle-trigger" id="theme-toggle" title="${t("theme")}"><i class="bi ${state.theme === "light" ? "bi-moon" : "bi-sun"}" aria-hidden="true"></i></button><button class="btn small lang-toggle-trigger" id="lang-toggle">${t("language")}</button><button class="btn small danger logout-trigger" id="logout">${t("logout")}</button></div></div></aside>
-    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(meta.title)}</h1><p>${escapeHTML(meta.hint)}</p></div><div class="toolbar-right"><span class="topbar-clock" id="topbar-clock"></span><span class="topbar-divider"></span><span class="live-state authorization-state" title="${state.lang === "zh" ? "只有面板授权目标 IP 可使用 DNS 解锁" : "Only panel-authorized target IPs may use unlock DNS"}"><span class="status-dot"></span>${state.lang === "zh" ? "授权白名单" : "Allowlist"}</span><span class="live-state" id="background-sync-state"><span class="status-dot"></span><span>${state.lang === "zh" ? "数据已同步" : "Data synced"}</span></span><button class="btn icon" id="refresh" title="${t("refresh")}"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button><button class="btn icon theme-toggle-trigger" title="${t("theme")}"><i class="bi ${state.theme === "light" ? "bi-moon" : "bi-sun"}" aria-hidden="true"></i></button><button class="btn lang-toggle-trigger"><i class="bi bi-translate" aria-hidden="true"></i>${state.lang === "zh" ? "中文" : "EN"}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
+    <section class="workspace"><header class="topbar"><div class="page-heading"><h1>${escapeHTML(meta.title)}</h1><p>${escapeHTML(meta.hint)}</p></div><div class="toolbar-right"><button class="cmdk-trigger" id="open-cmdk" type="button" title="${state.lang === "zh" ? "全局快速搜索与指令 (Ctrl+K)" : "Quick search & commands (Ctrl+K)"}"><i class="bi bi-search"></i><span>${state.lang === "zh" ? "快速搜索服务 / 节点…" : "Quick search…"}</span><kbd>Ctrl K</kbd></button><span class="topbar-clock" id="topbar-clock"></span><span class="topbar-divider"></span><span class="live-state authorization-state" title="${state.lang === "zh" ? "只有面板授权目标 IP 可使用 DNS 解锁" : "Only panel-authorized target IPs may use unlock DNS"}"><span class="status-dot"></span>${state.lang === "zh" ? "授权白名单" : "Allowlist"}</span><span class="live-state" id="background-sync-state"><span class="status-dot"></span><span>${state.sseConnected ? (state.lang === "zh" ? "SSE 实时同步" : "Live SSE") : (state.lang === "zh" ? "数据已同步" : "Data synced")}</span></span><button class="btn icon" id="refresh" title="${t("refresh")}"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button><button class="btn icon theme-toggle-trigger" title="${t("theme")}"><i class="bi ${state.theme === "light" ? "bi-moon" : "bi-sun"}" aria-hidden="true"></i></button><button class="btn lang-toggle-trigger"><i class="bi bi-translate" aria-hidden="true"></i>${state.lang === "zh" ? "中文" : "EN"}</button><div class="mobile-controls"><button class="btn small account-settings-trigger">${escapeHTML(state.user.username || "admin")}</button><button class="btn small danger logout-trigger">${t("logout")}</button></div></div></header>
     ${viewHTML()}</section></div>`;
 }
 
@@ -1202,10 +1211,34 @@ function contentHeaderHTML(title, hint, actions = "") {
 function syncHTML() {
   const updatedAt = state.catalogMeta.updated_at || state.catalogMeta.updated || state.catalogMeta.source_updated_at;
   const error = state.catalogMeta.error || "";
-  const categoryRows = catalogCategories().map(category => `<div class="compact-row"><span>${escapeHTML(displayCategory(category))}</span><strong>${state.catalog.filter(service => service.category === category).length}</strong></div>`).join("");
-  return `${contentHeaderHTML(state.lang === "zh" ? "同步域名名单" : "Domain catalog", state.lang === "zh" ? "从细化域名库更新服务、泛域名与分类，现有目标路由不会被自动切换。" : "Refresh services, wildcards, and categories without changing selected target routes.", `<button class="btn primary" id="refresh-catalog"><i class="bi bi-arrow-repeat"></i>${t("catalogRefresh")}</button>`)}
-    <section class="two-column-layout"><article class="panel info-card"><span class="info-card-icon"><i class="bi bi-database-check"></i></span><div><span>${state.lang === "zh" ? "当前服务库" : "Current catalog"}</span><strong>${state.catalog.length}</strong><small>${state.lang === "zh" ? `自定义服务 ${state.catalog.filter(service => service.custom).length} 项` : `${state.catalog.filter(service => service.custom).length} custom services`}</small></div></article><article class="panel info-card ${error ? "danger-card" : ""}"><span class="info-card-icon"><i class="bi ${error ? "bi-exclamation-triangle" : "bi-cloud-check"}"></i></span><div><span>${state.lang === "zh" ? "上次同步" : "Last sync"}</span><strong>${escapeHTML(formatRelativeDate(updatedAt))}</strong><small>${escapeHTML(error || formatDate(updatedAt))}</small></div></article></section>
-    <section class="panel settings-card"><div class="settings-card-head"><div><h3>${state.lang === "zh" ? "服务分类概览" : "Category overview"}</h3><p>${state.lang === "zh" ? "同步只更新域名库；你的自定义分类、节点和目标路由保持不变。" : "Sync updates the catalog only. Custom categories, nodes, and target routes remain unchanged."}</p></div><button class="btn" id="manage-categories">${t("manageCategories")}</button></div><div class="compact-list">${categoryRows}</div></section>`;
+  const categories = catalogCategories();
+  const activeCat = state.syncCategory && categories.includes(state.syncCategory) ? state.syncCategory : "";
+  const query = String(state.syncSearch || "").trim();
+  const matchedServices = state.catalog.filter(service => {
+    if (activeCat && service.category !== activeCat) return false;
+    if (query && !serviceMatches(service, query)) return false;
+    return true;
+  });
+  const visibleServices = matchedServices.slice(0, 60);
+  const categoryCards = [
+    `<button type="button" class="domain-cat-card ${!activeCat ? "active" : ""}" data-sync-cat=""><span>${state.lang === "zh" ? "全部分类" : "All categories"}</span><strong>${state.catalog.length}</strong></button>`,
+    ...categories.map(category => `<button type="button" class="domain-cat-card ${activeCat === category ? "active" : ""}" data-sync-cat="${escapeHTML(category)}"><span>${escapeHTML(displayCategory(category))}</span><strong>${state.catalog.filter(service => service.category === category).length}</strong></button>`)
+  ].join("");
+  const actions = `<div class="inline-actions"><button class="btn" id="manage-categories" type="button"><i class="bi bi-tags"></i>${t("manageCategories")}</button><button class="btn" id="add-service" type="button"><i class="bi bi-plus-circle"></i>${t("addService")}</button><button class="btn primary" id="refresh-catalog" type="button"><i class="bi bi-arrow-repeat"></i>${t("catalogRefresh")}</button></div>`;
+  return `${contentHeaderHTML(state.lang === "zh" ? "域名库与服务管理" : "Domain & Service Library", state.lang === "zh" ? "点击下方任意分类直接查看、搜索并编辑具体服务域名、关键词与 CIDR 规则；同步不会改写已配置路由。" : "Click any category to inspect and edit service domains, keywords, and CIDRs directly.", actions)}
+    <section class="two-column-layout"><article class="panel info-card"><span class="info-card-icon"><i class="bi bi-database-check"></i></span><div><span>${state.lang === "zh" ? "当前服务库" : "Current catalog"}</span><strong>${state.catalog.length}</strong><small>${state.lang === "zh" ? `自定义服务 ${state.catalog.filter(service => service.custom).length} 项 · 覆盖 ${categories.length} 个分类` : `${state.catalog.filter(service => service.custom).length} custom services`}</small></div></article><article class="panel info-card ${error ? "danger-card" : ""}"><span class="info-card-icon"><i class="bi ${error ? "bi-exclamation-triangle" : "bi-cloud-check"}"></i></span><div><span>${state.lang === "zh" ? "上次同步" : "Last sync"}</span><strong>${escapeHTML(formatRelativeDate(updatedAt))}</strong><small>${escapeHTML(error || formatDate(updatedAt))}</small></div></article></section>
+    <section class="panel settings-card"><div class="settings-card-head"><div><h3>${state.lang === "zh" ? "点击分类直接管理服务与域名" : "Select a category to edit services & domains"}</h3><p>${state.lang === "zh" ? "支持增删域名、泛域名、关键词与 IP-CIDR，修改后 5 秒内自动下发至所有使用该服务的节点。" : "Edit domains, wildcards, keywords, and CIDRs directly; changes sync within 5s."}</p></div></div><div class="domain-cat-grid">${categoryCards}</div></section>
+    <section class="panel domain-service-panel"><div class="domain-service-head"><div><h3>${activeCat ? escapeHTML(displayCategory(activeCat)) : (state.lang === "zh" ? "全部服务与域名规则" : "All services & domain rules")} <span class="badge">${matchedServices.length}</span></h3></div><label class="search-control" style="max-width:340px;flex:1"><i class="bi bi-search"></i><input id="sync-service-search" value="${escapeHTML(state.syncSearch || "")}" placeholder="${state.lang === "zh" ? "搜索服务名、别名或具体域名（如 x.com、instagram）…" : "Search service or domain…"}"></label></div><div class="domain-service-list">${visibleServices.length ? visibleServices.map(service => {
+      const preview = (service.domains || []).slice(0, 8);
+      const more = Math.max(0, (service.domains || []).length - preview.length);
+      const extraMeta = [
+        service.domain_keywords?.length ? `${service.domain_keywords.length} ${state.lang === "zh" ? "关键词" : "keywords"}` : "",
+        service.cidrs?.length ? `${service.cidrs.length} CIDR` : "",
+        service.domain_override ? (state.lang === "zh" ? "已自定义覆盖" : "Overridden") : "",
+        service.custom ? (state.lang === "zh" ? "自定义服务" : "Custom") : ""
+      ].filter(Boolean).join(" · ");
+      return `<article class="domain-service-row"><div class="domain-service-main">${serviceIconHTML(service)}<div class="domain-service-meta"><strong>${escapeHTML(displayServiceName(service))} <span class="badge">${escapeHTML(displayCategory(service.category))}</span>${extraMeta ? `<small style="font-weight:400;color:var(--muted)">${escapeHTML(extraMeta)}</small>` : ""}</strong><div class="domain-service-chips">${preview.map(d => `<code>${escapeHTML(d)}</code>`).join("")}${more ? `<span class="badge">+${more}</span>` : ""}</div></div></div><div class="inline-actions"><button class="btn small primary service-domains-open" type="button" data-service-id="${escapeHTML(service.id)}"><i class="bi bi-pencil-square"></i>${state.lang === "zh" ? "编辑域名" : "Edit domains"}</button><button class="btn small service-category-open" type="button" data-service-id="${escapeHTML(service.id)}">${t("editCategory")}</button><button class="btn small icon danger service-delete" type="button" data-service-id="${escapeHTML(service.id)}" title="${escapeHTML(t("deleteService"))}"><i class="bi bi-trash3"></i></button></div></article>`;
+    }).join("") : `<div class="empty"><strong>${t("noServices")}</strong></div>`}${matchedServices.length > visibleServices.length ? `<p class="hint" style="text-align:center;margin-top:8px">${state.lang === "zh" ? `仅展示前 ${visibleServices.length} 项，请点击上方分类或输入关键词精确筛选（共 ${matchedServices.length} 项）` : `Showing first ${visibleServices.length} of ${matchedServices.length}; filter by category or search.`}</p>` : ""}</div></section>`;
 }
 
 function auditRows() {
@@ -1220,8 +1253,21 @@ function auditRows() {
 }
 
 function auditHTML() {
-  const rows = auditRows();
-  return `${contentHeaderHTML(state.lang === "zh" ? "日志与审计" : "Logs & Audits", state.lang === "zh" ? "被解锁机实际 DNS 链路的媒体原始结果；NOT COVERED 表示脚本未覆盖。完整跨国平台输出及任务进度请打开媒体实测；解锁机自检不能替代被解锁机实测。" : "Raw media results through the target's actual DNS path. NOT COVERED means the script does not cover that service. Open media tests for full multinational output and progress. Proxy self-checks do not replace target tests.", `<button class="btn" id="refresh-audits"><i class="bi bi-arrow-clockwise"></i>${t("refresh")}</button>`)}
+  const allRows = auditRows();
+  const q = String(state.auditSearch || "").trim().toLowerCase();
+  const rows = allRows.filter(item => {
+    if (state.auditTargetFilter && item.config.ip !== state.auditTargetFilter) return false;
+    if (state.auditKindFilter === "good" && item.audit.kind !== "good") return false;
+    if (state.auditKindFilter === "issue" && item.audit.kind === "good") return false;
+    if (q) {
+      const hay = `${item.config.ip} ${item.service ? displayServiceName(item.service) : item.serviceID} ${item.proxy?.name || ""} ${item.raw}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const targetIPs = [...new Set(state.ipConfigs.map(c => c.ip).filter(Boolean))];
+  return `${contentHeaderHTML(state.lang === "zh" ? "日志与审计" : "Logs & Audits", state.lang === "zh" ? "被解锁机实际 DNS 链路的媒体原始结果；支持按目标 IP、状态与关键词快速筛选。" : "Raw media results through each target's actual DNS path with quick filtering.", `<button class="btn" id="refresh-audits"><i class="bi bi-arrow-clockwise"></i>${t("refresh")}</button>`)}
+    <div class="audit-toolbar"><label class="search-control" style="max-width:280px"><i class="bi bi-search"></i><input id="audit-search" value="${escapeHTML(state.auditSearch || "")}" placeholder="${state.lang === "zh" ? "搜索服务、IP 或原始结果…" : "Search service, IP, result…"}"></label><select class="select compact-select" id="audit-target-filter"><option value="">${state.lang === "zh" ? "全部目标 IP" : "All targets"}</option>${targetIPs.map(ip => `<option value="${escapeHTML(ip)}" ${state.auditTargetFilter === ip ? "selected" : ""}>${escapeHTML(ip)}</option>`).join("")}</select><select class="select compact-select" id="audit-kind-filter"><option value="">${state.lang === "zh" ? "全部状态" : "All statuses"}</option><option value="good" ${state.auditKindFilter === "good" ? "selected" : ""}>${state.lang === "zh" ? "仅看可用" : "Passed only"}</option><option value="issue" ${state.auditKindFilter === "issue" ? "selected" : ""}>${state.lang === "zh" ? "仅看异常/未覆盖" : "Issues only"}</option></select><span class="badge">${rows.length} / ${allRows.length}</span></div>
     <section class="panel audit-table"><div class="audit-table-head"><span>${state.lang === "zh" ? "目标 / 服务" : "Target / service"}</span><span>${state.lang === "zh" ? "路由节点" : "Route node"}</span><span>${state.lang === "zh" ? "真实结果" : "Real result"}</span><span>${state.lang === "zh" ? "检测时间" : "Checked"}</span></div>${rows.length ? rows.map(item => `<article class="audit-row"><div>${item.service ? serviceIconHTML(item.service) : ""}<span><strong>${escapeHTML(item.service ? displayServiceName(item.service) : item.serviceID)}</strong><small>${escapeHTML(item.config.ip)}</small></span></div><div><strong>${escapeHTML(item.proxy?.name || "-")}</strong><small>${escapeHTML(item.proxy?.country || "")}</small></div><div><span class="result-badge ${item.audit.kind}">${escapeHTML(item.audit.label)}</span><small title="${escapeHTML(item.raw)}">${escapeHTML(item.raw)}</small></div><div><strong>${escapeHTML(formatRelativeDate(item.config.service_audited_at))}</strong><small>${escapeHTML(formatDate(item.config.service_audited_at))}</small></div></article>`).join("") : `<div class="empty"><strong>${t("noTargetAudit")}</strong></div>`}</section>`;
 }
 
@@ -1229,6 +1275,10 @@ function currentAlerts() {
   const alerts = [];
   state.nodes.forEach(node => {
     if (!isOnline(node)) alerts.push({kind:"bad", title:`${node.name} · OFFLINE`, detail:state.lang === "zh" ? "控制通道已离线" : "Control channel is offline", tab:"nodes"});
+    const verInfo = nodeOutdatedInfo(node);
+    if (verInfo.outdated) {
+      alerts.push({kind:"warn", title:`${node.name} · ${state.lang === "zh" ? "版本待升级" : "Update available"}`, detail:`${verInfo.current} → ${verInfo.latest}`, tab:"nodes"});
+    }
   });
   state.ipConfigs.forEach(config => {
     const node = ipConfigNode(config);
@@ -1472,13 +1522,78 @@ function proxyCapabilityChipsHTML(node) {
   return chips.length ? `<div class="proxy-capability-strip">${chips.join("")}</div>` : "";
 }
 
+function nodeOutdatedInfo(node) {
+  const current = String(node?.management?.version || "").trim();
+  const latest = state.nodeRelease?.status === "ready" && isNodeVersion(state.nodeRelease.version)
+    ? state.nodeRelease.version
+    : (isNodeVersion(prismSourceRef) ? prismSourceRef : "");
+  if (!current || !latest) return {outdated: false, current, latest};
+  const cmp = compareNodeVersions(current, latest);
+  return {outdated: cmp !== null && cmp < 0, current, latest};
+}
+
+function nodeTableRowHTML(node) {
+  const online = isOnline(node);
+  const proxyDetail = nodeMediaSummary(node);
+  const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail, tooltip:nodeMediaDetail(node)};
+  const management = node.management;
+  const ipv4 = management?.ipv4;
+  const reportedIPv4 = typeof ipv4 === "string" && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(ipv4) && ipv4.split(".").every(part => Number(part) <= 255) ? ipv4 : "";
+  const values = [["nodeVersion", management?.version], ["nodeTransportVersion", management?.transport_version],
+    ["nodeAgentVersion", management?.agent_version], ["nodeIPv4", reportedIPv4], ["nodeLastSeen", nodeReportedDate(management?.last_seen)]];
+  const worker = nodeWorkerStatus(management);
+  const control = nodeUpdateControl(node, worker);
+  const submitError = state.nodeUpdateErrors.get(nodeID(node.id));
+  const ver = nodeOutdatedInfo(node);
+  const job = management?.update;
+  const jobState = Object.hasOwn(nodeUpdateStates, job?.status) ? nodeUpdateStates[job.status] : null;
+  const verPill = ver.outdated
+    ? `<span class="version-pill outdated" title="${escapeHTML(state.lang === "zh" ? `当前 ${ver.current}，可升级至 ${ver.latest}` : `Current ${ver.current}, latest ${ver.latest}`)}">⚠ ${escapeHTML(ver.current)} → ${escapeHTML(ver.latest)}</span>`
+    : ver.current
+      ? `<span class="version-pill latest">✓ ${escapeHTML(ver.current)}</span>`
+      : `<span class="version-pill unknown">${t("nodeNotReported")}</span>`;
+  const transportVer = management?.transport_version ? `<small style="color:var(--muted);font-size:10px">transport ${escapeHTML(management.transport_version)}</small>` : "";
+  const caps = node.role === "proxy" ? proxyCapabilityChipsHTML(node) : `<small style="color:var(--muted)" title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.detail || "-")}</small>`;
+  const updateBtn = `<button type="button" class="btn small ${control.enabled ? "primary" : "subtle"} node-update-trigger" data-node-id="${escapeHTML(nodeID(node.id))}" ${control.enabled ? "" : "disabled"} title="${escapeHTML(control.reason)}"><i class="bi bi-arrow-up-circle" aria-hidden="true"></i>${control.enabled ? (state.lang === "zh" ? "立即更新" : "Update") : t("nodeUpdate")}</button>`;
+  const telemetryDetails = `<details class="node-row-telemetry"><summary>${state.lang === "zh" ? "上报详情" : "Telemetry"} · <span class="badge ${worker.kind}">${t(worker.label)}</span></summary><dl class="node-inventory">${values.map(([label, value]) => `<div><dt>${t(label)}</dt><dd>${escapeHTML(typeof value === "string" && value.trim() ? value : t("nodeNotReported"))}</dd></div>`).join("")}</dl>${!control.enabled && control.reason !== t(worker.label) && (!jobState || control.reason !== t(jobState[0])) ? `<small class="node-telemetry-reason">${escapeHTML(control.reason)}</small>` : ""}${jobState ? `<small class="node-telemetry-reason">${t("nodeUpdateRequestedAt")}: ${escapeHTML(nodeReportedDate(job.requested_at))} · ${t("nodeUpdateUpdatedAt")}: ${escapeHTML(nodeReportedDate(job.updated_at))}</small>` : ""}</details>`;
+  return `<tr class="${ver.outdated ? "row-outdated" : ""}" data-node-id="${escapeHTML(nodeID(node.id))}">
+    <td><div class="node-cell-name"><strong><span class="status-dot" style="background:${status.kind === "good" ? "var(--good)" : status.kind === "warn" ? "var(--warn)" : "var(--bad)"}"></span>${escapeHTML(node.name)}</strong><small>${node.role === "proxy" ? t("proxy") : t("dns")}${node.country ? ` · ${escapeHTML(node.country)}` : ""}${node.priority ? ` · P${node.priority}` : ""}</small></div></td>
+    <td class="node-cell-ip"><span class="sr-only">${t("address")}</span><strong>${escapeHTML(node.public_ip || node.address || "-")}</strong></td>
+    <td><span class="badge ${status.kind}" title="${escapeHTML(status.tooltip || status.detail)}">${escapeHTML(status.label)}</span></td>
+    <td><div class="node-cell-caps">${caps}</div></td>
+    <td><div class="version-cell"><div class="version-cell-top">${verPill}${updateBtn}</div>${transportVer}${jobState ? `<span class="badge ${jobState[1]}">${t(jobState[0])}${job.version ? ` · ${escapeHTML(job.version)}` : ""}</span>` : ""}${submitError ? `<small class="node-update-error" role="status">${t("nodeUpdateSubmitFailed")}: ${escapeHTML(submitError)}</small>` : ""}${telemetryDetails}</div></td>
+    <td><div class="node-row-actions">${node.role === "proxy" ? `<button class="btn small node-warp" type="button" data-node-id="${escapeHTML(nodeID(node.id))}" title="WARP 分流"><i class="bi bi-cloud-check"></i>WARP</button><button class="btn small icon node-test" type="button" data-node-id="${escapeHTML(nodeID(node.id))}" title="${t("triggerUnlock")}"><i class="bi bi-play-circle"></i></button>` : (!configForNode(node) ? `<button class="btn small primary node-manage-ip" type="button" data-node-id="${escapeHTML(nodeID(node.id))}">${state.lang === "zh" ? "接入IP" : "Enroll"}</button>` : "")}<button class="btn small icon node-install" type="button" data-node-id="${escapeHTML(nodeID(node.id))}" title="${t("showInstallCommand")}"><i class="bi bi-terminal"></i></button><button class="btn small icon node-edit" type="button" data-node-id="${escapeHTML(nodeID(node.id))}" title="${t("editNode")}"><i class="bi bi-pencil"></i></button><button class="btn small icon danger node-delete" type="button" data-node-id="${escapeHTML(nodeID(node.id))}" title="${t("deleteNode")}"><i class="bi bi-trash3"></i></button></div></td>
+  </tr>`;
+}
+
 function nodeListHTML() {
   if (!state.nodes.length) {
     const ready = state.nodeInventory.status === "ready";
     const label = ready ? (state.lang === "zh" ? "还没有节点" : "No nodes") : t(state.nodeInventory.status === "error" ? "nodeInventoryMissing" : "nodeInventoryLoading");
     return `<div class="panel empty"><strong>${label}</strong>${ready ? `<button class="btn primary" id="empty-add-node"><i class="bi bi-plus-circle"></i>${t("addNode")}</button>` : ""}</div>`;
   }
-  return `<section class="node-grid">${state.nodes.map(node => {
+  const proxiesCount = state.nodes.filter(n => n.role === "proxy").length;
+  const dnsCount = state.nodes.filter(n => n.role === "dns").length;
+  const outdatedNodes = state.nodes.filter(n => nodeOutdatedInfo(n).outdated);
+  const q = String(state.nodeSearch || "").trim().toLowerCase();
+  const filtered = state.nodes.filter(node => {
+    if (state.nodeRoleFilter === "proxy" && node.role !== "proxy") return false;
+    if (state.nodeRoleFilter === "dns" && node.role !== "dns") return false;
+    if (state.nodeRoleFilter === "outdated" && !nodeOutdatedInfo(node).outdated) return false;
+    if (q) {
+      const hay = `${node.name || ""} ${node.public_ip || ""} ${node.address || ""} ${node.country || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const outdatedBanner = outdatedNodes.length ? `<div class="version-alert-banner"><div class="version-alert-copy"><i class="bi bi-exclamation-triangle-fill"></i><div><strong>${state.lang === "zh" ? `检测到 ${outdatedNodes.length} 台节点版本落后（最新可用 ${escapeHTML(nodeOutdatedInfo(outdatedNodes[0]).latest)}）` : `${outdatedNodes.length} nodes are outdated`}</strong><span>${state.lang === "zh" ? `待升级：${outdatedNodes.map(n => n.name).slice(0, 6).join("、")}${outdatedNodes.length > 6 ? "…" : ""}。点击右侧按钮可一键在线热更新，不中断现有解锁流量。` : "Click to upgrade all outdated nodes online."}</span></div></div><button class="btn small primary" id="banner-batch-update" type="button"><i class="bi bi-cloud-arrow-up"></i>${state.lang === "zh" ? `一键升级全部 (${outdatedNodes.length})` : `Update all (${outdatedNodes.length})`}</button></div>` : "";
+  const toolbar = `<div class="node-toolbar"><div class="node-filter-pills"><button type="button" class="pill-tab ${state.nodeRoleFilter === "all" ? "active" : ""}" data-node-filter="all">${state.lang === "zh" ? "全部" : "All"} (${state.nodes.length})</button><button type="button" class="pill-tab ${state.nodeRoleFilter === "proxy" ? "active" : ""}" data-node-filter="proxy">${t("proxy")} (${proxiesCount})</button><button type="button" class="pill-tab ${state.nodeRoleFilter === "dns" ? "active" : ""}" data-node-filter="dns">${t("dns")} (${dnsCount})</button>${outdatedNodes.length ? `<button type="button" class="pill-tab warn-pill ${state.nodeRoleFilter === "outdated" ? "active" : ""}" data-node-filter="outdated">⚠ ${state.lang === "zh" ? "待升级" : "Outdated"} (${outdatedNodes.length})</button>` : ""}</div><div class="node-view-controls"><label class="search-control" style="max-width:210px;height:32px"><i class="bi bi-search"></i><input id="node-search-input" value="${escapeHTML(state.nodeSearch || "")}" placeholder="${state.lang === "zh" ? "搜节点名或 IP…" : "Search nodes…"}"></label><div class="segmented"><button type="button" class="segment ${state.nodeViewMode === "table" ? "active" : ""}" data-node-view="table"><i class="bi bi-list-ul"></i> ${state.lang === "zh" ? "横列" : "Table"}</button><button type="button" class="segment ${state.nodeViewMode === "cards" ? "active" : ""}" data-node-view="cards"><i class="bi bi-grid"></i> ${state.lang === "zh" ? "卡片" : "Cards"}</button></div></div></div>`;
+
+  if (state.nodeViewMode === "table") {
+    return `${outdatedBanner}${toolbar}<section class="panel node-table-wrap"><table class="node-table"><thead><tr><th>${state.lang === "zh" ? "节点名称" : "Node"}</th><th>IP</th><th>${state.lang === "zh" ? "状态" : "Status"}</th><th>${state.lang === "zh" ? "解锁能力 / WARP" : "Capabilities / WARP"}</th><th>${state.lang === "zh" ? "版本与更新" : "Version"}</th><th style="text-align:right">${state.lang === "zh" ? "操作" : "Actions"}</th></tr></thead><tbody>${filtered.length ? filtered.map(nodeTableRowHTML).join("") : `<tr><td colspan="6" style="text-align:center;padding:28px;color:var(--muted)">${state.lang === "zh" ? "没有匹配的节点" : "No matching nodes"}</td></tr>`}</tbody></table></section>`;
+  }
+
+  return `${outdatedBanner}${toolbar}<section class="node-grid">${filtered.map(node => {
     const online = isOnline(node);
     const proxyDetail = nodeMediaSummary(node);
     const status = node.role === "dns" ? clientState(configForNode(node), node) : {kind:online ? "good" : "bad", label:online ? "ONLINE" : "OFFLINE", detail:proxyDetail, tooltip:nodeMediaDetail(node)};
@@ -1580,6 +1695,17 @@ function bindShell() {
   document.querySelectorAll(".logout-trigger").forEach(button => button.addEventListener("click", () => logout(true)));
   document.querySelectorAll(".sidebar .account-settings-trigger, .topbar .account-settings-trigger").forEach(button => button.addEventListener("click", openAccountSettings));
   document.getElementById("refresh")?.addEventListener("click", () => loadAll());
+  document.getElementById("open-cmdk")?.addEventListener("click", openCmdkModal);
+  if (!window.__prismCmdkBound) {
+    window.__prismCmdkBound = true;
+    document.addEventListener("keydown", event => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (state.token) openCmdkModal();
+      }
+    });
+  }
+  startV2EventStream();
   document.querySelector(".tabs")?.addEventListener("click", event => {
     const button = event.target.closest?.(".tab[data-tab]");
     if (button) selectTab(button.dataset.tab);
@@ -1601,6 +1727,33 @@ function bindContent() {
   document.getElementById("import-ip-config")?.addEventListener("change", event => importIPConfigs(event.target.files?.[0]));
   document.getElementById("refresh-catalog")?.addEventListener("click", refreshCatalog);
   document.getElementById("manage-categories")?.addEventListener("click", () => openCategoryManager());
+  document.querySelectorAll("[data-sync-cat]").forEach(btn => btn.addEventListener("click", () => {
+    state.syncCategory = btn.dataset.syncCat || "";
+    render();
+  }));
+  document.getElementById("sync-service-search")?.addEventListener("input", event => {
+    state.syncSearch = event.target.value;
+    const pos = event.target.selectionStart;
+    render();
+    const next = document.getElementById("sync-service-search");
+    if (next) { next.focus({preventScroll:true}); if (Number.isInteger(pos)) next.setSelectionRange(pos, pos); }
+  });
+  document.getElementById("audit-search")?.addEventListener("input", event => {
+    state.auditSearch = event.target.value;
+    const pos = event.target.selectionStart;
+    render();
+    const next = document.getElementById("audit-search");
+    if (next) { next.focus({preventScroll:true}); if (Number.isInteger(pos)) next.setSelectionRange(pos, pos); }
+  });
+  document.getElementById("audit-target-filter")?.addEventListener("change", event => { state.auditTargetFilter = event.target.value; render(); });
+  document.getElementById("audit-kind-filter")?.addEventListener("change", event => { state.auditKindFilter = event.target.value; render(); });
+  document.getElementById("node-search-input")?.addEventListener("input", event => {
+    state.nodeSearch = event.target.value;
+    const pos = event.target.selectionStart;
+    refreshNodeInventoryUI();
+    const next = document.getElementById("node-search-input");
+    if (next) { next.focus({preventScroll:true}); if (Number.isInteger(pos)) next.setSelectionRange(pos, pos); }
+  });
   const search = document.getElementById("service-search");
   search?.addEventListener("compositionstart", () => { searchComposing = true; });
   search?.addEventListener("compositionend", event => { searchComposing = false; scheduleServiceSearch(event.target); });
@@ -1678,6 +1831,9 @@ function bindContent() {
     if (button && container.contains(button)) {
       const node = state.nodes.find(item => nodeID(item.id) === nodeID(button.dataset.nodeId));
       if (button.id === "empty-add-node") { event.preventDefault(); openNodeForm(); return; }
+      if (button.id === "banner-batch-update") { event.preventDefault(); requestBatchNodeUpdate(); return; }
+      if (button.dataset.nodeFilter) { event.preventDefault(); state.nodeRoleFilter = button.dataset.nodeFilter; refreshNodeInventoryUI(); return; }
+      if (button.dataset.nodeView) { event.preventDefault(); state.nodeViewMode = button.dataset.nodeView; localStorage.setItem("prism_node_view", state.nodeViewMode); refreshNodeInventoryUI(); return; }
       if (button.matches(".node-update-trigger")) { event.preventDefault(); requestNodeUpdate(node); return; }
       if (button.matches(".service-custom-edit")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) openServiceForm(service); return; }
        if (button.matches(".service-domains-open")) { event.preventDefault(); const service = state.catalog.find(item => item.id === button.dataset.serviceId); if (service) openServiceDomains(service.id); return; }
@@ -1933,6 +2089,7 @@ function renderModal() {
   if (state.modal.type === "branding") root.innerHTML = brandingModalHTML();
   if (state.modal.type === "quick-check") root.innerHTML = quickCheckModalHTML();
   if (state.modal.type === "warp-manager") root.innerHTML = warpManagerHTML();
+  if (state.modal.type === "cmdk") root.innerHTML = cmdkModalHTML();
   bindModal();
   markLoadedServiceIcons(root);
   if (state.modal.type === "ip-form" && state.modal.step === 2) updateIPSaveControls(state.modal);
@@ -2209,6 +2366,20 @@ function bindModal() {
   }));
   document.getElementById("warp-preset-google")?.addEventListener("click", () => applyWarpGooglePreset(state.modal?.nodeId));
   document.getElementById("warp-preset-clear")?.addEventListener("click", () => clearAllWarpPolicies(state.modal?.nodeId));
+  const cmdkInput = document.getElementById("cmdk-search");
+  if (cmdkInput) {
+    cmdkInput.focus({preventScroll:true});
+    cmdkInput.addEventListener("input", event => {
+      if (state.modal?.type !== "cmdk") return;
+      state.modal.query = event.target.value;
+      const list = document.getElementById("cmdk-results");
+      if (list) {
+        list.innerHTML = cmdkResultsHTML(state.modal.query);
+        bindCmdkItems();
+      }
+    });
+    bindCmdkItems();
+  }
   document.querySelectorAll(".quick-enable-warp").forEach(button => button.addEventListener("click", async () => {
     const proxyId = button.dataset.proxyId;
     const serviceId = state.modal?.service?.id;
@@ -2921,6 +3092,86 @@ function syncWarpModalPoll() {
       }
     } catch {}
   }, 4000);
+}
+
+let v2EventSource = null;
+
+function startV2EventStream() {
+  if (typeof EventSource !== "function" || !state.token || v2EventSource) return;
+  try {
+    v2EventSource = new EventSource(`/enhancer/api/v2/events?token=${encodeURIComponent(state.token)}`);
+    v2EventSource.addEventListener("sync", () => {
+      state.sseConnected = true;
+      const pill = document.querySelector("#background-sync-state span:last-child");
+      if (pill) pill.textContent = state.lang === "zh" ? "SSE 实时同步" : "Live SSE";
+      if (!panelRefreshInProgress && !document.hidden && !state.modal && !state.mediaCheckView && ["nodes", "ips", "alerts"].includes(state.tab)) {
+        pollNodeInventory();
+      }
+    });
+    v2EventSource.onerror = () => {
+      state.sseConnected = false;
+      try { v2EventSource?.close(); } catch {}
+      v2EventSource = null;
+    };
+  } catch {}
+}
+
+function openCmdkModal() {
+  state.modal = {type: "cmdk", query: ""};
+  renderModal();
+}
+
+function cmdkResultsHTML(query = "") {
+  const q = String(query || "").trim().toLowerCase();
+  const items = [];
+  const quickActions = [
+    {kind: "action", id: "add-node", icon: "bi-plus-circle", label: state.lang === "zh" ? "新增解锁机 / 被解锁机节点" : "Add node", meta: "节点管理"},
+    {kind: "action", id: "batch-update", icon: "bi-cloud-arrow-up", label: state.lang === "zh" ? "一键升级全部旧版本节点" : "Update all outdated nodes", meta: "节点管理"},
+    {kind: "action", id: "add-service", icon: "bi-grid-plus", label: state.lang === "zh" ? "新增自定义分流服务" : "Add custom service", meta: "域名库"},
+    {kind: "action", id: "refresh-catalog", icon: "bi-arrow-repeat", label: state.lang === "zh" ? "同步最新域名名单" : "Sync domain catalog", meta: "域名库"}
+  ];
+  for (const act of quickActions) {
+    if (!q || act.label.toLowerCase().includes(q) || act.meta.toLowerCase().includes(q)) items.push(act);
+  }
+  for (const node of state.nodes) {
+    const label = `${node.name} (${node.public_ip || node.address || "-"})`;
+    if (!q || label.toLowerCase().includes(q) || String(node.country || "").toLowerCase().includes(q)) {
+      items.push({kind: "node", id: nodeID(node.id), icon: node.role === "proxy" ? "bi-hdd-network" : "bi-pc-display", label, meta: node.role === "proxy" ? "解锁机 · 管理 WARP" : "被解锁机 · 查看节点"});
+    }
+  }
+  for (const svc of state.catalog) {
+    if (items.length >= 24) break;
+    if (!q && items.length >= 10) break;
+    if (!q || serviceMatches(svc, q)) {
+      items.push({kind: "service", id: svc.id, icon: "bi-lightning-charge", label: displayServiceName(svc), meta: `${displayCategory(svc.category)} · 秒测 / 改域名`});
+    }
+  }
+  if (!items.length) return `<div class="empty" style="padding:24px"><strong>${t("noServices")}</strong></div>`;
+  return items.slice(0, 20).map(item => `<button type="button" class="cmdk-item" data-cmdk-kind="${item.kind}" data-cmdk-id="${escapeHTML(item.id)}"><span><i class="bi ${item.icon}" style="margin-right:8px;color:var(--accent)"></i>${escapeHTML(item.label)}</span><small>${escapeHTML(item.meta)}</small></button>`).join("");
+}
+
+function cmdkModalHTML() {
+  return `<div class="modal-backdrop"><section class="modal cmdk-modal panel"><header class="modal-head"><div><h2>⌘ ${state.lang === "zh" ? "全局快捷指令与搜索" : "Command Palette"}</h2><p>${state.lang === "zh" ? "随时按 Ctrl+K 快速搜索任意服务、节点或执行一键操作" : "Press Ctrl+K anywhere to jump to services, nodes, or actions"}</p></div><button class="btn icon modal-close" type="button">×</button></header><div class="modal-body"><input class="input" id="cmdk-search" value="${escapeHTML(state.modal?.query || "")}" placeholder="${state.lang === "zh" ? "输入服务名（如 Gemini、X、INS）、节点名或 IP…" : "Search service, node, IP, or action…"}" autocomplete="off"><div class="cmdk-list" id="cmdk-results">${cmdkResultsHTML(state.modal?.query || "")}</div></div></section></div>`;
+}
+
+function bindCmdkItems() {
+  document.querySelectorAll(".cmdk-item").forEach(btn => btn.addEventListener("click", () => {
+    const kind = btn.dataset.cmdkKind;
+    const id = btn.dataset.cmdkId;
+    closeModal();
+    if (kind === "action") {
+      if (id === "add-node") openNodeForm();
+      else if (id === "batch-update") requestBatchNodeUpdate();
+      else if (id === "add-service") openServiceForm();
+      else if (id === "refresh-catalog") refreshCatalog();
+    } else if (kind === "node") {
+      const node = state.nodes.find(n => nodeID(n.id) === id);
+      if (node?.role === "proxy") openWarpManager(id);
+      else selectTab("nodes");
+    } else if (kind === "service") {
+      openQuickCheck(id);
+    }
+  }));
 }
 
 function openWarpManager(nodeId) {

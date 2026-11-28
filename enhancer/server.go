@@ -147,6 +147,8 @@ func (app *App) rewriteUpstreamHTMLError(response *http.Response) bool {
 func (app *App) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/enhancer/api/health", app.handleHealth)
+	mux.HandleFunc("/enhancer/api/v2/dashboard", app.handleV2Dashboard)
+	mux.HandleFunc("/enhancer/api/v2/events", app.handleV2Events)
 	mux.HandleFunc("/enhancer/api/catalog", app.handleCatalog)
 	mux.HandleFunc("/enhancer/api/custom-services", app.handleCustomServices)
 	mux.HandleFunc("/enhancer/api/custom-services/", app.handleCustomService)
